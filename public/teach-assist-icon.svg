@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Rounded square background -->
+  <rect width="64" height="64" rx="14" fill="#0d1117"/>
+  <!-- Subtle grid lines -->
+  <line x1="0" y1="32" x2="64" y2="32" stroke="#1e2a38" stroke-width="0.5"/>
+  <line x1="32" y1="0" x2="32" y2="64" stroke="#1e2a38" stroke-width="0.5"/>
+  <!-- Graduation cap body (mortarboard) -->
+  <!-- Board -->
+  <polygon points="32,10 56,22 32,34 8,22" fill="#00c8c8" opacity="0.95"/>
+  <!-- Tassel cord line -->
+  <line x1="56" y1="22" x2="56" y2="34" stroke="#00c8c8" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="56" cy="37" r="3" fill="#00c8c8"/>
+  <!-- Cap top highlight -->
+  <polygon points="32,10 56,22 32,34 8,22" fill="none" stroke="#7fffff" stroke-width="1" opacity="0.4"/>
+  <!-- Cap cylinder / body -->
+  <path d="M16 25 Q16 38 32 42 Q48 38 48 25" fill="#0a4f6e" stroke="#00c8c8" stroke-width="1.5"/>
+  <!-- Pencil icon at bottom-right corner (small) -->
+  <g transform="translate(10,40)">
+    <rect x="0" y="0" width="6" height="14" rx="1" fill="#f59e0b" transform="rotate(-35 3 7)"/>
+    <polygon points="0,14 6,14 3,18" fill="#e5e7eb" transform="rotate(-35 3 7)"/>
+    <line x1="0" y1="3" x2="6" y2="3" stroke="#d97706" stroke-width="0.7" transform="rotate(-35 3 7)"/>
+  </g>
+</svg>
