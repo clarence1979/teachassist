@@ -10,26 +10,29 @@ export default {
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
+        // All color tokens reference CSS variables so theme switching works globally.
+        // Tailwind generates e.g. `background-color: rgb(var(--bg-base))` which
+        // responds instantly when the html[data-theme] attribute changes.
         bg: {
-          base: '#050a14',
-          panel: '#0a1628',
-          elevated: '#0f1f3a',
+          base:    'rgb(var(--tw-bg-base) / <alpha-value>)',
+          panel:   'rgb(var(--tw-bg-panel) / <alpha-value>)',
+          elevated:'rgb(var(--tw-bg-elevated) / <alpha-value>)',
         },
         border: {
-          DEFAULT: '#1e3a5f',
-          glow: '#2563eb33',
+          DEFAULT: 'rgb(var(--tw-border) / <alpha-value>)',
+          glow:    'rgb(var(--tw-border-glow) / <alpha-value>)',
         },
         text: {
-          primary: '#e0e6f0',
-          secondary: '#94a3b8',
-          dim: '#64748b',
+          primary:   'rgb(var(--tw-text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--tw-text-secondary) / <alpha-value>)',
+          dim:       'rgb(var(--tw-text-dim) / <alpha-value>)',
         },
         accent: {
-          cyan: '#22d3ee',
-          purple: '#a855f7',
-          amber: '#f59e0b',
-          green: '#22c55e',
-          red: '#ef4444',
+          cyan:   'rgb(var(--tw-accent-cyan) / <alpha-value>)',
+          purple: 'rgb(var(--tw-accent-purple) / <alpha-value>)',
+          amber:  'rgb(var(--tw-accent-amber) / <alpha-value>)',
+          green:  'rgb(var(--tw-accent-green) / <alpha-value>)',
+          red:    'rgb(var(--tw-accent-red) / <alpha-value>)',
         },
       },
       borderRadius: {
