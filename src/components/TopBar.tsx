@@ -10,7 +10,12 @@ import { useAdminDb } from '../db/DbContext';
 import { useMobile } from '../lib/useMobile';
 import { ContextPanelBody } from './ContextPanelBody';
 
-export function TopBar() {
+interface TopBarProps {
+  /** When true, renders at reduced height for mobile landscape */
+  landscape?: boolean;
+}
+
+export function TopBar({ landscape = false }: TopBarProps) {
   const { toggleContextPanel, contextPanelOpen } = useAppStore();
   const { username, isAdmin, isIframe } = useCredentials();
   const { viewedAsUser, setViewedAsUser, allUsers, refreshAllUsers } = useAdminDb();
@@ -20,8 +25,8 @@ export function TopBar() {
   const [mobileContextOpen, setMobileContextOpen] = useState(false);
   const adminMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // Compact mode: iframe on mobile saves every pixel (especially landscape)
-  const isCompact = isIframe && isMobile;
+  // Compact mode: iframe on mobile OR landscape on mobile
+  const isCompact = (isIframe && isMobile) || landscape;
 
   useEffect(() => {
     if (!adminMenuOpen) return;
@@ -39,10 +44,10 @@ export function TopBar() {
     <header
       className="flex items-center justify-between border-b border-border bg-bg-panel shrink-0"
       style={{
-        height: isCompact ? '44px' : isMobile ? '52px' : '48px',
-        paddingTop: isMobile ? 'max(6px, env(safe-area-inset-top))' : undefined,
-        paddingLeft: 'max(12px, env(safe-area-inset-left))',
-        paddingRight: 'max(12px, env(safe-area-inset-right))',
+        height: landscape ? '40px' : isCompact ? '44px' : isMobile ? '52px' : '48px',
+        paddingTop: (isMobile && !landscape) ? 'max(6px, env(safe-area-inset-top))' : undefined,
+        paddingLeft: landscape ? 'max(8px, env(safe-area-inset-left))' : 'max(12px, env(safe-area-inset-left))',
+        paddingRight: landscape ? 'max(8px, env(safe-area-inset-right))' : 'max(12px, env(safe-area-inset-right))',
       }}
     >
       {/* Left: brand + admin indicator */}

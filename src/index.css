@@ -193,13 +193,34 @@ html, body, #root {
 @media (max-width: 767px) {
   body:not(.is-iframe) button,
   body:not(.is-iframe) [role="button"] {
-    min-height: 40px;
-    min-width: 40px;
+    min-height: 36px;
+    min-width: 36px;
   }
   /* Improve tap highlight */
   * {
     -webkit-tap-highlight-color: transparent;
   }
+}
+
+/* On mobile landscape the bottom nav is replaced by a side rail, so
+   touch targets in the landscape utility bar can be smaller */
+@media (max-width: 1024px) and (orientation: landscape) {
+  body:not(.is-iframe) button,
+  body:not(.is-iframe) [role="button"] {
+    min-height: 28px;
+    min-width: 28px;
+  }
+}
+
+/* Force the root to always fill the visible viewport, including after
+   orientation changes on iOS Safari where 100dvh can briefly be stale. */
+html {
+  height: 100%;
+  height: -webkit-fill-available;
+}
+body {
+  min-height: 100%;
+  min-height: -webkit-fill-available;
 }
 
 /* Landscape safe-area: respect notches on left/right in landscape mode */
