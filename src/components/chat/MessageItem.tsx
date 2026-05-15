@@ -20,7 +20,22 @@ import {
   CalendarPlus,
   Square,
   Trash2,
+  Clock,
 } from 'lucide-react';
+
+const AEST_TZ = 'Australia/Sydney';
+
+function fmtAEST(ts: number): { date: string; time: string } {
+  const d = new Date(ts);
+  const today = new Date();
+  const dateStr = d.toLocaleDateString('en-AU', { timeZone: AEST_TZ, weekday: 'short', day: 'numeric', month: 'short' });
+  const todayStr = today.toLocaleDateString('en-AU', { timeZone: AEST_TZ, weekday: 'short', day: 'numeric', month: 'short' });
+  const timeStr = d.toLocaleTimeString('en-AU', { timeZone: AEST_TZ, hour: '2-digit', minute: '2-digit', hour12: true });
+  return {
+    date: dateStr === todayStr ? 'Today' : dateStr,
+    time: timeStr,
+  };
+}
 import { renderMarkdown } from '../../lib/markdown';
 import type { Message, MessageAttachment, Artifact } from '../../db/schema';
 import { ToolCallCard } from './ToolCallCard';
@@ -397,6 +412,20 @@ export function MessageItem({ message, siblings, artifacts = [], onRegenerate, o
             </div>
           )}
         </div>
+
+        {/* Timestamp — always visible, subtle */}
+        {message.createdAt && !editing && (
+          <div className={clsx(
+            'flex items-center gap-1 mt-1 text-[10px] font-mono text-text-dim',
+            isUser ? 'justify-end' : 'justify-start',
+          )}>
+            <Clock size={9} className="shrink-0" />
+            {(() => {
+              const { date, time } = fmtAEST(message.createdAt);
+              return <span>{date === 'Today' ? time : `${date}, ${time}`} AEST</span>;
+            })()}
+          </div>
+        )}
 
         {/* User actions */}
         {isUser && !editing && (
