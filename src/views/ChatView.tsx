@@ -512,13 +512,13 @@ export function ChatView() {
           </div>
         )}
 
-        <QuickPrompts onPick={(p) => setComposerSeed(p)} />
+        <QuickPrompts onPick={(p) => setComposerSeed(p)} compact={isMobile} />
         <Composer
           onSend={handleSend}
           onStop={handleStop}
           busy={busy}
           initialValue={composerSeed}
-          compact={isIframe && isMobile}
+          compact={isMobile}
         />
       </div>
 

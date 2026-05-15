@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, type CSSProperties } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { clsx } from 'clsx';
-import { Paperclip, MapPin, Repeat, Sparkles, Check, X } from 'lucide-react';
+import { Paperclip, MapPin, Repeat, Sparkles, Check, X, Edit3, AlertTriangle } from 'lucide-react';
 import type { TimetableBlock, SchoolCalendarEntry } from '../../db/schema';
 import type { BlockOccurrence } from '../../lib/timetable/recurrence';
 import { type ConflictMap, occKey } from '../../lib/timetable/conflicts';
@@ -9,6 +9,7 @@ import { parseLocal, fmtTime, isoDate, isToday, fmtDayShort } from '../../lib/ti
 import { isHoliday } from '../../lib/timetable/schoolCalendar';
 import { typeColor } from './blockTypes';
 import type { GhostBlock } from '../../lib/timetable/aiPopulate';
+import { useMobile } from '../../lib/useMobile';
 
 const MINUTES_PER_DAY = 24 * 60;
 // Base px-per-minute at zoom level 1.0 (~1728px for full 24h at 1.2)
@@ -55,6 +56,9 @@ export function DayWeekGrid(props: DayWeekGridProps) {
     onAcceptGhost, onRejectGhost,
   } = props;
 
+  const isMobile = useMobile();
+  const [detailOcc, setDetailOcc] = useState<BlockOccurrence | null>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const pxPerMin = BASE_PX_PER_MIN * zoomLevel;
   const fullHeight = MINUTES_PER_DAY * pxPerMin;
@@ -78,6 +82,16 @@ export function DayWeekGrid(props: DayWeekGridProps) {
   })();
 
   return (
+    <>
+    {detailOcc && (
+      <SlotDetailSheet
+        occ={detailOcc}
+        hasConflict={conflicts.has(occKey(detailOcc))}
+        onEdit={() => { setDetailOcc(null); onEditBlock(detailOcc); }}
+        onViewMaterials={onViewMaterials ? () => { setDetailOcc(null); onViewMaterials(detailOcc); } : undefined}
+        onClose={() => setDetailOcc(null)}
+      />
+    )}
     <div ref={containerRef} className="flex-1 min-h-0 overflow-auto">
       <div className="flex" style={{ minHeight: fullHeight + 40 }}>
         {/* Hour rail */}
@@ -119,6 +133,7 @@ export function DayWeekGrid(props: DayWeekGridProps) {
               onMove={onMove}
               onAcceptGhost={onAcceptGhost}
               onRejectGhost={onRejectGhost}
+              onShowDetail={isMobile ? (occ) => setDetailOcc(occ) : undefined}
               currentMin={isToday(day) ? currentMin : null}
               isSingle={days.length === 1}
             />
@@ -126,6 +141,7 @@ export function DayWeekGrid(props: DayWeekGridProps) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -146,6 +162,8 @@ interface DayColumnProps {
   onMove: (occ: BlockOccurrence, newDateISO: string, newStartMinutes: number) => void;
   onAcceptGhost?: (id: string) => void;
   onRejectGhost?: (id: string) => void;
+  /** If set, tapping a block shows a detail sheet instead of opening the editor directly */
+  onShowDetail?: (occ: BlockOccurrence) => void;
   currentMin: number | null;
   isSingle: boolean;
 }
@@ -153,7 +171,7 @@ interface DayColumnProps {
 function DayColumn({
   day, occurrences, ghosts, conflicts, calendar, pxPerMin, fullHeight,
   onCreate, onEditBlock, onViewMaterials, onContextMenu, onAttachArtifact, onResize, onMove,
-  onAcceptGhost, onRejectGhost, currentMin, isSingle,
+  onAcceptGhost, onRejectGhost, onShowDetail, currentMin, isSingle,
 }: DayColumnProps) {
   const dateISO = isoDate(day);
   const holiday = isHoliday(dateISO, calendar);
@@ -258,6 +276,7 @@ function DayColumn({
             conflicts={conflicts}
             pxPerMin={pxPerMin}
             onEdit={() => onEditBlock(occ)}
+            onShowDetail={onShowDetail ? () => onShowDetail(occ) : undefined}
             onViewMaterials={onViewMaterials ? () => onViewMaterials(occ) : undefined}
             onContextMenu={(x, y) => onContextMenu(occ, x, y)}
             onAttachArtifact={(aid) => onAttachArtifact(occ.block, aid)}
@@ -334,6 +353,8 @@ interface BlockCardProps {
   conflicts: ConflictMap;
   pxPerMin: number;
   onEdit: () => void;
+  /** If set, tap shows detail sheet instead of directly editing (mobile) */
+  onShowDetail?: () => void;
   onViewMaterials?: () => void;
   onContextMenu: (x: number, y: number) => void;
   onAttachArtifact: (artifactId: string) => void;
@@ -346,7 +367,7 @@ interface BlockCardProps {
 
 function BlockCard({
   occ, conflicts, pxPerMin,
-  onEdit, onViewMaterials, onContextMenu, onAttachArtifact, onResizeEnd, onResizeStart, onMoveLocal,
+  onEdit, onShowDetail, onViewMaterials, onContextMenu, onAttachArtifact, onResizeEnd, onResizeStart, onMoveLocal,
   isArtifactOver, setArtifactOverId,
 }: BlockCardProps) {
   const startMin = minutesFromMidnight(occ.startISO);
@@ -442,7 +463,8 @@ function BlockCard({
       onClick={(e) => {
         e.stopPropagation();
         if (isDragging) return;
-        onEdit();
+        if (onShowDetail) onShowDetail();
+        else onEdit();
       }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e.clientX, e.clientY); }}
       onKeyDown={onKeyDown}
@@ -505,6 +527,97 @@ function BlockCard({
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       />
+    </div>
+  );
+}
+
+/** Bottom sheet shown on mobile when a slot is tapped — shows full details */
+interface SlotDetailSheetProps {
+  occ: BlockOccurrence;
+  hasConflict: boolean;
+  onEdit: () => void;
+  onViewMaterials?: () => void;
+  onClose: () => void;
+}
+
+function SlotDetailSheet({ occ, hasConflict, onEdit, onViewMaterials, onClose }: SlotDetailSheetProps) {
+  const color = typeColor(occ.block.type, occ.block.color);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
+      <div
+        className="w-full bg-bg-panel border-t border-border rounded-t-2xl shadow-2xl"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="flex justify-center pt-2 pb-1">
+          <div className="w-10 h-1 rounded-full bg-border" />
+        </div>
+
+        {/* Colour band + title */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+          <div className="w-3 h-10 rounded-full shrink-0" style={{ background: color }} />
+          <div className="flex-1 min-w-0">
+            <div className="font-rajdhani font-bold text-base text-text-primary leading-tight">{occ.block.title}</div>
+            <div className="text-xs font-mono text-text-dim mt-0.5">
+              {fmtTime(occ.startISO)} – {fmtTime(occ.endISO)}
+              {occ.block.type && <span className="ml-2 uppercase text-[10px]">{occ.block.type}</span>}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-btn text-text-dim hover:text-text-primary transition-colors shrink-0">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-4 py-3 space-y-2">
+          {occ.block.location && (
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
+              <MapPin size={14} className="shrink-0 text-text-dim" />
+              <span>{occ.block.location}</span>
+            </div>
+          )}
+          {occ.isRecurrence && (
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
+              <Repeat size={14} className="shrink-0 text-text-dim" />
+              <span>Recurring event</span>
+            </div>
+          )}
+          {hasConflict && (
+            <div className="flex items-center gap-2 text-sm text-accent-red">
+              <AlertTriangle size={14} className="shrink-0" />
+              <span>Time conflict detected</span>
+            </div>
+          )}
+          {occ.block.notes && (
+            <div className="text-sm text-text-secondary leading-relaxed border-t border-border pt-2">{occ.block.notes}</div>
+          )}
+          {(occ.block.artifactIds?.length ?? 0) > 0 && (
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
+              <Paperclip size={14} className="shrink-0 text-text-dim" />
+              <span>{occ.block.artifactIds!.length} material{occ.block.artifactIds!.length !== 1 ? 's' : ''} attached</span>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2 px-4 pb-4">
+          <button
+            onClick={() => { onClose(); onEdit(); }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-btn bg-accent-amber text-bg-base font-rajdhani font-bold text-sm uppercase tracking-wider hover:brightness-110 transition-all"
+          >
+            <Edit3 size={14} />Edit
+          </button>
+          {onViewMaterials && (
+            <button
+              onClick={() => { onClose(); onViewMaterials(); }}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-btn border border-border text-text-secondary font-rajdhani font-bold text-sm uppercase tracking-wider hover:text-text-primary hover:border-text-dim transition-colors"
+            >
+              <Paperclip size={14} />Materials
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="absolute inset-0 -z-10 bg-black/60 backdrop-blur-sm" />
     </div>
   );
 }
