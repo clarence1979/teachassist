@@ -90,7 +90,7 @@ export function DayWeekGrid(props: DayWeekGridProps) {
                 className="absolute left-0 right-0 flex items-start justify-end pr-2"
                 style={{ top: h * 60 * pxPerMin, height: 60 * pxPerMin }}
               >
-                <span className="text-[10px] font-mono text-text-dim -mt-1.5">
+                <span className="text-[0.625em] font-mono text-text-dim -mt-1.5">
                   {String(h).padStart(2, '0')}:00
                 </span>
               </div>
@@ -202,7 +202,7 @@ function DayColumn({
           <>
             <span>{fmtDayShort(day)}</span>
             <span className={clsx('w-5 h-5 rounded-full flex items-center justify-center text-[10px]', isToday(day) && 'bg-accent-amber text-bg-base')}>{day.getDate()}</span>
-            {holiday && <span className="text-[9px] font-mono text-red-400 normal-case" title={holiday.label}>holiday</span>}
+            {holiday && <span className="text-[0.5625em] font-mono text-red-400 normal-case" title={holiday.label}>holiday</span>}
           </>
         )}
       </div>
@@ -243,7 +243,7 @@ function DayColumn({
             className="absolute left-1 right-1 rounded-btn bg-accent-amber/20 border border-accent-amber/60 pointer-events-none"
             style={{ top: creating.startMin * pxPerMin, height: (creating.endMin - creating.startMin) * pxPerMin }}
           >
-            <div className="px-2 py-1 text-[10px] font-mono text-accent-amber">
+            <div className="px-2 py-1 text-[0.625em] font-mono text-accent-amber">
               {String(Math.floor(creating.startMin / 60)).padStart(2, '0')}:{String(creating.startMin % 60).padStart(2, '0')} –
               {' '}{String(Math.floor(creating.endMin / 60)).padStart(2, '0')}:{String(creating.endMin % 60).padStart(2, '0')}
             </div>
@@ -303,8 +303,8 @@ function DayColumn({
               <div className="px-1.5 py-1 flex items-start gap-1 h-full">
                 <Sparkles size={8} className="mt-0.5 shrink-0" style={{ color }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-rajdhani font-bold truncate leading-tight" style={{ color: `${color}cc` }}>{ghost.title}</div>
-                  <div className="text-[8px] font-mono" style={{ color: `${color}80` }}>{fmtTime(ghost.startISO)}–{fmtTime(ghost.endISO)}</div>
+                  <div className="text-[0.625em] font-rajdhani font-bold truncate leading-tight" style={{ color: `${color}cc` }}>{ghost.title}</div>
+                  <div className="text-[0.5em] font-mono" style={{ color: `${color}80` }}>{fmtTime(ghost.startISO)}–{fmtTime(ghost.endISO)}</div>
                 </div>
                 {ghost.status === 'pending' && (
                   <div className="flex items-center gap-0.5 opacity-0 group-hover/ghost:opacity-100 transition-opacity shrink-0">
@@ -463,16 +463,16 @@ function BlockCard({
         <div className="flex items-start gap-1">
           <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-1" style={{ background: color }} />
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-rajdhani font-bold leading-tight truncate" style={{ color }}>
+            <div className="text-[0.6875em] font-rajdhani font-bold leading-tight truncate" style={{ color }}>
               {occ.block.title}
             </div>
-            <div className="text-[9px] font-mono text-text-dim leading-tight">
+            <div className="text-[0.5625em] font-mono text-text-dim leading-tight">
               {fmtTime(occ.startISO)}–{fmtTime(occ.endISO)}
             </div>
           </div>
         </div>
         {dur >= 45 && (
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] font-mono text-text-dim">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.5625em] font-mono text-text-dim">
             {occ.block.location && <span className="flex items-center gap-0.5"><MapPin size={8} />{occ.block.location}</span>}
             {occ.isRecurrence && <span className="flex items-center gap-0.5"><Repeat size={8} />recurring</span>}
             {(occ.block.artifactIds?.length ?? 0) > 0 && (
@@ -488,7 +488,7 @@ function BlockCard({
           </div>
         )}
         {dur >= 90 && occ.block.notes && (
-          <div className="mt-1 text-[9px] text-text-dim line-clamp-3 font-sans">{occ.block.notes}</div>
+          <div className="mt-1 text-[0.5625em] text-text-dim line-clamp-3 font-sans">{occ.block.notes}</div>
         )}
       </div>
 
