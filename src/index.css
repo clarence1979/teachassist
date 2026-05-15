@@ -5,7 +5,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Base font-size scale ─────────────────────────────────────────────────── */
 :root {
+  --font-scale: 1;
+}
+html[data-font-size="sm"] { --font-scale: 0.875; }
+html[data-font-size="md"] { --font-scale: 1; }
+html[data-font-size="lg"] { --font-scale: 1.125; }
+html[data-font-size="xl"] { --font-scale: 1.25; }
+
+html { font-size: calc(16px * var(--font-scale)); }
+
+/* ─── Theme: Midnight (default dark) ──────────────────────────────────────── */
+:root,
+html[data-theme="midnight"] {
   --bg-base:     #050a14;
   --bg-panel:    #0a1628;
   --bg-elevated: #0f1f3a;
@@ -21,6 +34,82 @@
   --accent-amber:  #f59e0b;
   --accent-green:  #22c55e;
   --accent-red:    #ef4444;
+}
+
+/* ─── Theme: Light ────────────────────────────────────────────────────────── */
+html[data-theme="light"] {
+  --bg-base:     #f5f7fa;
+  --bg-panel:    #ffffff;
+  --bg-elevated: #eef1f6;
+  --border:      #cbd5e1;
+  --border-glow: #3b82f633;
+
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-dim:       #94a3b8;
+
+  --accent-cyan:   #0891b2;
+  --accent-purple: #7c3aed;
+  --accent-amber:  #d97706;
+  --accent-green:  #16a34a;
+  --accent-red:    #dc2626;
+}
+
+/* ─── Theme: Forest ───────────────────────────────────────────────────────── */
+html[data-theme="forest"] {
+  --bg-base:     #0c1a0e;
+  --bg-panel:    #132618;
+  --bg-elevated: #1a3320;
+  --border:      #2d5c35;
+  --border-glow: #22c55e33;
+
+  --text-primary:   #d4edda;
+  --text-secondary: #86b88e;
+  --text-dim:       #4d7a56;
+
+  --accent-cyan:   #34d399;
+  --accent-purple: #a3e635;
+  --accent-amber:  #fbbf24;
+  --accent-green:  #4ade80;
+  --accent-red:    #f87171;
+}
+
+/* ─── Theme: Ocean ────────────────────────────────────────────────────────── */
+html[data-theme="ocean"] {
+  --bg-base:     #020e1a;
+  --bg-panel:    #041c2e;
+  --bg-elevated: #072a42;
+  --border:      #0e4d72;
+  --border-glow: #0ea5e933;
+
+  --text-primary:   #e0f2fe;
+  --text-secondary: #7dd3fc;
+  --text-dim:       #38bdf8;
+
+  --accent-cyan:   #0ea5e9;
+  --accent-purple: #06b6d4;
+  --accent-amber:  #f59e0b;
+  --accent-green:  #34d399;
+  --accent-red:    #f87171;
+}
+
+/* ─── Theme: Slate ────────────────────────────────────────────────────────── */
+html[data-theme="slate"] {
+  --bg-base:     #0f1117;
+  --bg-panel:    #161b22;
+  --bg-elevated: #1e242e;
+  --border:      #30363d;
+  --border-glow: #58a6ff33;
+
+  --text-primary:   #e6edf3;
+  --text-secondary: #8b949e;
+  --text-dim:       #484f58;
+
+  --accent-cyan:   #58a6ff;
+  --accent-purple: #bc8cff;
+  --accent-amber:  #e3b341;
+  --accent-green:  #3fb950;
+  --accent-red:    #f85149;
 }
 
 * {
@@ -159,7 +248,7 @@ html, body, #root {
   border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
-  background: #0b1220;
+  background: var(--bg-base);
 }
 .prose-chat .code-lang {
   font-family: 'JetBrains Mono', monospace;

@@ -13,15 +13,27 @@ import { LibraryView } from './views/LibraryView';
 import { SettingsView } from './views/SettingsView';
 import { LlmTestView } from './views/dev/LlmTestView';
 import { SharedBlockView } from './views/SharedBlockView';
+import { useAppStore } from './store/appStore';
 
 function AppRoutes() {
   const { authStage, isIframe } = useCredentials();
   const location = useLocation();
+  const theme = useAppStore((s) => s.theme);
+  const fontSize = useAppStore((s) => s.fontSize);
 
   // Mark body so CSS can differentiate iframe vs standalone
   useEffect(() => {
     document.body.classList.toggle('is-iframe', isIframe);
   }, [isIframe]);
+
+  // Apply theme and font-size to <html> so CSS vars cascade everywhere
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-font-size', fontSize);
+  }, [fontSize]);
 
   const isPublic = location.pathname.startsWith('/share/');
   if (isPublic) {

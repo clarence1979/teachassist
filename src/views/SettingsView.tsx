@@ -2,11 +2,11 @@ import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, BarChart3, Download, Upload, AlertTriangle,
-  CheckCircle, Accessibility, LogOut,
+  CheckCircle, Accessibility, LogOut, Palette, Type,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useCredentials } from '../contexts/CredentialsContext';
-import { useAppStore } from '../store/appStore';
+import { useAppStore, type ThemeId, type FontSize } from '../store/appStore';
 import { useDb } from '../db/DbContext';
 import { exportAll, importAll, downloadBackup, type BackupBundle } from '../lib/backup';
 
@@ -158,10 +158,25 @@ function BackupSection() {
   );
 }
 
+const THEMES: Array<{ id: ThemeId; label: string; description: string; bg: string; panel: string; accent: string; text: string }> = [
+  { id: 'midnight', label: 'Midnight', description: 'Deep navy dark mode', bg: '#050a14', panel: '#0a1628', accent: '#22d3ee', text: '#e0e6f0' },
+  { id: 'light',    label: 'Light',    description: 'Clean light mode',    bg: '#f5f7fa', panel: '#ffffff', accent: '#0891b2', text: '#0f172a' },
+  { id: 'forest',   label: 'Forest',   description: 'Deep green dark',     bg: '#0c1a0e', panel: '#132618', accent: '#34d399', text: '#d4edda' },
+  { id: 'ocean',    label: 'Ocean',    description: 'Deep ocean dark',     bg: '#020e1a', panel: '#041c2e', accent: '#0ea5e9', text: '#e0f2fe' },
+  { id: 'slate',    label: 'Slate',    description: 'GitHub-style dark',   bg: '#0f1117', panel: '#161b22', accent: '#58a6ff', text: '#e6edf3' },
+];
+
+const FONT_SIZES: Array<{ id: FontSize; label: string; px: string }> = [
+  { id: 'sm', label: 'Small',        px: '14px' },
+  { id: 'md', label: 'Default',      px: '16px' },
+  { id: 'lg', label: 'Large',        px: '18px' },
+  { id: 'xl', label: 'Extra Large',  px: '20px' },
+];
+
 export function SettingsView() {
   const navigate = useNavigate();
   const { isIframe, username, logout } = useCredentials();
-  const { timezone, setTimezone, reducedMotion, setReducedMotion } = useAppStore();
+  const { timezone, setTimezone, reducedMotion, setReducedMotion, theme, setTheme, fontSize, setFontSize } = useAppStore();
 
   return (
     <div className="flex-1 overflow-y-auto grid-bg">
@@ -194,6 +209,89 @@ export function SettingsView() {
             </button>
           )}
         </div>
+
+        {/* Appearance */}
+        <section className="space-y-6">
+          <h2 className="font-rajdhani text-base font-semibold text-text-primary border-b border-border pb-2 flex items-center gap-2">
+            <Palette size={14} className="text-accent-cyan" />
+            Appearance
+          </h2>
+
+          {/* Theme picker */}
+          <div>
+            <div className="text-xs font-rajdhani font-semibold text-text-secondary uppercase tracking-wider mb-3">
+              Colour theme
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {THEMES.map((t) => {
+                const active = theme === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTheme(t.id)}
+                    title={t.description}
+                    className={clsx(
+                      'relative rounded-btn border-2 overflow-hidden transition-all group',
+                      active ? 'border-accent-cyan shadow-[0_0_12px_rgba(34,211,238,0.35)]' : 'border-border hover:border-text-dim',
+                    )}
+                    style={{ background: t.bg }}
+                  >
+                    {/* Mini preview */}
+                    <div className="h-14 flex flex-col p-1.5 gap-1">
+                      <div className="rounded-sm h-2" style={{ background: t.panel, border: `1px solid ${t.accent}40` }} />
+                      <div className="flex gap-1 flex-1">
+                        <div className="w-4 rounded-sm" style={{ background: t.panel }} />
+                        <div className="flex-1 rounded-sm" style={{ background: t.panel }} />
+                      </div>
+                      <div className="h-1.5 rounded-sm w-2/3" style={{ background: t.accent, opacity: 0.8 }} />
+                    </div>
+                    {/* Label */}
+                    <div
+                      className="text-center py-1 text-[11px] font-rajdhani font-bold tracking-wide border-t"
+                      style={{ color: active ? t.accent : t.text, borderColor: `${t.accent}30`, background: t.panel }}
+                    >
+                      {t.label}
+                    </div>
+                    {active && (
+                      <div className="absolute top-1 right-1 w-3 h-3 rounded-full flex items-center justify-center" style={{ background: t.accent }}>
+                        <CheckCircle size={8} style={{ color: t.bg }} />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Font size */}
+          <div>
+            <div className="text-xs font-rajdhani font-semibold text-text-secondary uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Type size={12} className="text-text-dim" />
+              Font size
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {FONT_SIZES.map((f) => {
+                const active = fontSize === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setFontSize(f.id)}
+                    className={clsx(
+                      'flex flex-col items-center gap-1 px-4 py-2.5 rounded-btn border-2 transition-all min-w-[72px]',
+                      active
+                        ? 'border-accent-cyan bg-accent-cyan/10 text-accent-cyan'
+                        : 'border-border text-text-secondary hover:border-text-dim hover:text-text-primary',
+                    )}
+                  >
+                    <span className="font-rajdhani font-bold" style={{ fontSize: f.px, lineHeight: 1 }}>Aa</span>
+                    <span className="text-[10px] font-mono tracking-wider">{f.label}</span>
+                    <span className="text-[9px] font-mono text-text-dim">{f.px}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
         {/* Preferences */}
         <section className="space-y-4">

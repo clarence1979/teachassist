@@ -15,6 +15,11 @@ function pushPref(key: string, value: unknown): void {
 
 export type ViewId = 'chat' | 'studio' | 'todo' | 'timetable' | 'library' | 'settings';
 
+/** Available colour themes */
+export type ThemeId = 'midnight' | 'light' | 'forest' | 'ocean' | 'slate';
+/** Base font-size multiplier stored as a label */
+export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
+
 interface SessionUsage {
   inputTokens: number;
   outputTokens: number;
@@ -76,6 +81,12 @@ interface AppState {
   /** Selected on-device (offline) model id, e.g. "llama-3.2-3b". Null when no offline model is chosen. */
   offlineModelId: string | null;
   setOfflineModelId: (id: string | null) => void;
+
+  theme: ThemeId;
+  setTheme: (t: ThemeId) => void;
+
+  fontSize: FontSize;
+  setFontSize: (s: FontSize) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -157,6 +168,18 @@ export const useAppStore = create<AppState>()(
         set({ offlineModelId: id });
         pushPref('offlineModelId', id);
       },
+
+      theme: 'midnight',
+      setTheme: (t) => {
+        set({ theme: t });
+        pushPref('theme', t);
+      },
+
+      fontSize: 'md',
+      setFontSize: (s) => {
+        set({ fontSize: s });
+        pushPref('fontSize', s);
+      },
     }),
     {
       name: 'pedagogy-app-store',
@@ -177,6 +200,8 @@ export const useAppStore = create<AppState>()(
         // explicitly re-selects an offline model.
         sidebarCollapsed: s.sidebarCollapsed,
         conversationListCollapsed: s.conversationListCollapsed,
+        theme: s.theme,
+        fontSize: s.fontSize,
       }),
     },
   ),
