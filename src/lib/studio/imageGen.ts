@@ -34,11 +34,11 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
     model,
     prompt: req.prompt,
     n: 1,
-    response_format: 'b64_json',
   };
 
-  // dall-e-3 only supports 1024x1024, 1792x1024, 1024x1792
   if (isDallE) {
+    // dall-e-2/3 support b64_json; dall-e-3 size mapping
+    body.response_format = 'b64_json';
     const raw = req.size;
     if (raw === '1536x1024') {
       body.size = '1792x1024';
@@ -51,8 +51,9 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
     }
     body.quality = 'standard';
   } else {
-    // gpt-image-1 and future models
+    // gpt-image-1: does NOT accept response_format; returns b64_json by default
     body.size = req.size ?? '1536x1024';
+    body.output_format = 'png';
   }
 
   const res = await fetch(ENDPOINT, {
@@ -74,6 +75,7 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
   }
 
   const data = await res.json();
+  // gpt-image-1 returns b64_json directly; dall-e-3 also returns b64_json
   const b64 = data?.data?.[0]?.b64_json as string | undefined;
   if (!b64) throw new Error('No image returned from OpenAI');
   return b64;

@@ -22,7 +22,10 @@ const inlineMath = {
   },
   renderer(token: Tokens.Generic) {
     try {
-      return katex.renderToString(token.text as string, { throwOnError: false, displayMode: false });
+      // Strip LaTeX % comments (everything from % to end of line) to avoid
+      // KaTeX "commentAtEnd" warning when a comment terminates a math delimiter.
+      const clean = (token.text as string).replace(/%[^\n]*/g, '');
+      return katex.renderToString(clean, { throwOnError: false, displayMode: false });
     } catch {
       return `<code>${token.text}</code>`;
     }
@@ -46,7 +49,8 @@ const blockMath = {
   },
   renderer(token: Tokens.Generic) {
     try {
-      return `<div class="math-block">${katex.renderToString(token.text as string, { throwOnError: false, displayMode: true })}</div>`;
+      const clean = (token.text as string).replace(/%[^\n]*/g, '');
+      return `<div class="math-block">${katex.renderToString(clean, { throwOnError: false, displayMode: true })}</div>`;
     } catch {
       return `<pre><code>${token.text}</code></pre>`;
     }
