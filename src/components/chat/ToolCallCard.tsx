@@ -57,6 +57,8 @@ function extFor(mime: string): string {
   if (mime.includes('wordprocessing')) return 'docx';
   if (mime === 'application/pdf') return 'pdf';
   if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/jpeg' || mime === 'image/jpg') return 'jpg';
   if (mime === 'text/markdown') return 'md';
   return 'bin';
 }

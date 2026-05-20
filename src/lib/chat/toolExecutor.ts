@@ -330,26 +330,21 @@ function buildEducationalImagePrompt(rawPrompt: string, topic: string, yearLevel
   ].join('\n');
 }
 
-async function execGenerateImage(ctx: ToolExecContext, args: Args): Promise<ToolExecResult> {
-  const rawPrompt = s(args.prompt);
-  const topic = s(args.topic, rawPrompt);
-  const yearLevel = s(args.yearLevel, 'secondary');
-  const educational = s(args.style, 'educational') !== 'decorative';
-  const prompt = educational
-    ? buildEducationalImagePrompt(rawPrompt, topic, yearLevel)
-    : rawPrompt;
+async function execGenerateImage(_ctx: ToolExecContext, args: Args): Promise<ToolExecResult> {
+  const prompt = s(args.prompt);
+  if (!prompt) throw new Error('prompt is required');
   const rawAr = s(args.aspectRatio, '16:9');
   const aspect_ratio: '1:1' | '16:9' | '9:16' =
     rawAr === '1:1' ? '1:1'
     : rawAr === '9:16' || rawAr === '3:4' ? '9:16'
     : '16:9';
   const b64 = await generateImage({ prompt, aspect_ratio });
-  const art = await artifactsRepo.create(ctx.db, {
+  const art = await artifactsRepo.create(_ctx.db, {
     type: 'image',
     title: prompt.slice(0, 60),
     data: b64,
     mediaType: 'image/webp',
-    conversationId: ctx.conversationId,
+    conversationId: _ctx.conversationId,
     meta: { prompt, aspectRatio: aspect_ratio },
   });
   return { ok: true, summary: prompt.slice(0, 60), artifactIds: [art.id] };

@@ -7,7 +7,6 @@ const corsHeaders = {
 };
 
 const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY") ?? "";
-const MODEL = "black-forest-labs/flux-schnell";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -30,7 +29,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Create prediction
+    // Create prediction with Prefer: wait so we get the result immediately
     const createRes = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions", {
       method: "POST",
       headers: {
@@ -68,11 +67,9 @@ Deno.serve(async (req: Request) => {
       urls?: { get: string };
     };
 
-    // If the prediction completed immediately (Prefer: wait), use output directly.
-    // Otherwise poll.
+    // Poll if not immediately done
     let output: string[] | undefined = prediction.output;
     if (!output && prediction.status !== "succeeded" && prediction.urls?.get) {
-      // Poll until done (max 90s)
       const pollUrl = prediction.urls.get;
       const deadline = Date.now() + 90_000;
       while (Date.now() < deadline) {
@@ -95,8 +92,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch the image and return as base64 so the frontend doesn't need to
-    // handle cross-origin image URLs.
+    // Fetch the image and convert to base64 safely (chunked to avoid stack overflow)
     const imgRes = await fetch(imageUrl);
     if (!imgRes.ok) {
       return new Response(JSON.stringify({ error: "Failed to fetch generated image." }), {
@@ -104,8 +100,15 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const imgBytes = await imgRes.arrayBuffer();
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(imgBytes)));
+
+    const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
+    // Chunk the conversion to avoid maximum call stack errors on large images
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < imgBytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...imgBytes.subarray(i, i + chunkSize));
+    }
+    const b64 = btoa(binary);
 
     return new Response(JSON.stringify({ b64, mediaType: "image/webp" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
