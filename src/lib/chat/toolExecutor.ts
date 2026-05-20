@@ -121,23 +121,17 @@ async function execGenerateSlides(ctx: ToolExecContext, args: Args): Promise<Too
     await populatePexelsImages(photoCandidates, { deckTopic: deck.topic || topic });
   }
 
-  if (useAiImages && ctx.openaiKey) {
-    // OpenAI fallback for slides Pexels couldn't satisfy, plus any decorative
-    // slide whose author supplied a specific abstract prompt.
-    const openAiCandidates = deck.slides
+  if (useAiImages) {
+    const aiCandidates = deck.slides
       .map((slide, i) => ({ slide, i }))
       .filter(({ slide }) =>
         !slide.structured && slide.layout !== 'title' && !slide.imageBase64,
       );
-    for (const { slide, i } of openAiCandidates) {
+    for (const { slide, i } of aiCandidates) {
       const prompt = slide.imagePrompt
         || `${deck.topic || topic}: editorial classroom-safe illustration for "${slide.title}". Abstract thematic composition, no text, no numbers, no letters.`;
       try {
-        const b64 = await generateImage({
-          apiKey: ctx.openaiKey,
-          prompt,
-          size: '1536x1024',
-        });
+        const b64 = await generateImage({ prompt, aspect_ratio: '16:9' });
         deck.slides[i] = { ...slide, imageBase64: b64 };
       } catch {
         // ignore
@@ -337,7 +331,6 @@ function buildEducationalImagePrompt(rawPrompt: string, topic: string, yearLevel
 }
 
 async function execGenerateImage(ctx: ToolExecContext, args: Args): Promise<ToolExecResult> {
-  if (!ctx.openaiKey) throw new Error('OpenAI API key required for image generation.');
   const rawPrompt = s(args.prompt);
   const topic = s(args.topic, rawPrompt);
   const yearLevel = s(args.yearLevel, 'secondary');
@@ -345,19 +338,19 @@ async function execGenerateImage(ctx: ToolExecContext, args: Args): Promise<Tool
   const prompt = educational
     ? buildEducationalImagePrompt(rawPrompt, topic, yearLevel)
     : rawPrompt;
-  const aspectRatio = s(args.aspectRatio, '16:9');
-  const size: '1024x1024' | '1536x1024' | '1024x1536' =
-    aspectRatio === '1:1' ? '1024x1024'
-    : aspectRatio === '3:4' ? '1024x1536'
-    : '1536x1024';
-  const b64 = await generateImage({ apiKey: ctx.openaiKey, prompt, size });
+  const rawAr = s(args.aspectRatio, '16:9');
+  const aspect_ratio: '1:1' | '16:9' | '9:16' =
+    rawAr === '1:1' ? '1:1'
+    : rawAr === '9:16' || rawAr === '3:4' ? '9:16'
+    : '16:9';
+  const b64 = await generateImage({ prompt, aspect_ratio });
   const art = await artifactsRepo.create(ctx.db, {
     type: 'image',
     title: prompt.slice(0, 60),
     data: b64,
-    mediaType: 'image/png',
+    mediaType: 'image/webp',
     conversationId: ctx.conversationId,
-    meta: { prompt, aspectRatio },
+    meta: { prompt, aspectRatio: aspect_ratio },
   });
   return { ok: true, summary: prompt.slice(0, 60), artifactIds: [art.id] };
 }

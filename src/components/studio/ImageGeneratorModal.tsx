@@ -4,7 +4,6 @@ import {
   Download, Image as ImageIcon, RotateCcw, Edit3, Wand2,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { useCredentials } from '../../contexts/CredentialsContext';
 import { useAppStore } from '../../store/appStore';
 import { useDb } from '../../db/DbContext';
 import { artifactsRepo } from '../../db/repos';
@@ -14,7 +13,6 @@ type Stage = 'form' | 'generating' | 'preview' | 'error';
 
 interface Props {
   onClose: () => void;
-  /** Pre-filled prompt, e.g. from a slide or worksheet */
   seed?: { prompt?: string; topic?: string };
 }
 
@@ -26,20 +24,19 @@ const USE_CASES = [
   { label: 'Custom prompt', template: '' },
 ];
 
-const SIZES = [
-  { label: 'Landscape (1536×1024)', value: '1536x1024' as const },
-  { label: 'Square (1024×1024)', value: '1024x1024' as const },
-  { label: 'Portrait (1024×1536)', value: '1024x1536' as const },
+const ASPECT_RATIOS: { label: string; value: '1:1' | '16:9' | '9:16' }[] = [
+  { label: 'Landscape (16:9)', value: '16:9' },
+  { label: 'Square (1:1)', value: '1:1' },
+  { label: 'Portrait (9:16)', value: '9:16' },
 ];
 
 export function ImageGeneratorModal({ onClose, seed }: Props) {
-  const { getKey } = useCredentials();
   const { notifyArtifactGenerated } = useAppStore();
   const db = useDb();
 
-  const [useCase, setUseCase] = useState(seed?.prompt ? 4 : 0); // custom if seed
+  const [useCase, setUseCase] = useState(seed?.prompt ? 4 : 0);
   const [prompt, setPrompt] = useState(seed?.prompt ?? '');
-  const [size, setSize] = useState<'1024x1024' | '1536x1024' | '1024x1536'>('1536x1024');
+  const [aspectRatio, setAspectRatio] = useState<'1:1' | '16:9' | '9:16'>('16:9');
   const [editMode, setEditMode] = useState(false);
   const [editPrompt, setEditPrompt] = useState('');
 
@@ -48,30 +45,32 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
   const [usedPrompt, setUsedPrompt] = useState('');
   const [saved, setSaved] = useState(false);
 
-  const openaiKey = getKey('openai');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const getEffectivePrompt = () => {
     const tmpl = USE_CASES[useCase].template;
     if (!tmpl || useCase === 4) return prompt.trim();
-    // Merge template with user prompt if provided
-    return prompt.trim() ? `${tmpl.replace('[topic]', prompt).replace('[year level]', 'students')}` : tmpl.replace('[topic]', 'the given subject').replace('[year level]', 'students');
+    return prompt.trim()
+      ? tmpl.replace('[topic]', prompt).replace('[year level]', 'students')
+      : tmpl.replace('[topic]', 'the given subject').replace('[year level]', 'students');
   };
 
   const handleGenerate = async (overridePrompt?: string) => {
-    if (!openaiKey) { setState({ stage: 'error', error: 'An OpenAI API key is required for image generation. Add one in Settings.' }); return; }
     const finalPrompt = overridePrompt ?? getEffectivePrompt();
     if (!finalPrompt) { setState({ stage: 'error', error: 'Please enter a prompt or topic.' }); return; }
 
     setState({ stage: 'generating' });
     setUsedPrompt(finalPrompt);
     try {
-      const b64 = await generateImage({ apiKey: openaiKey, prompt: finalPrompt, size });
+      const b64 = await generateImage({ prompt: finalPrompt, aspect_ratio: aspectRatio });
       setImageB64(b64);
 
       const savedArtifact = await artifactsRepo.create(db, {
-        type: 'image', title: finalPrompt.slice(0, 80), data: b64, mediaType: 'image/png',
-        meta: { prompt: finalPrompt, size, useCase: USE_CASES[useCase].label, generatedAt: Date.now(), provider: 'openai' },
+        type: 'image',
+        title: finalPrompt.slice(0, 80),
+        data: b64,
+        mediaType: 'image/webp',
+        meta: { prompt: finalPrompt, aspectRatio, useCase: USE_CASES[useCase].label, generatedAt: Date.now(), provider: 'replicate' },
       });
       notifyArtifactGenerated(savedArtifact.id);
       setSaved(true);
@@ -90,8 +89,8 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
   const handleDownload = () => {
     if (!imageB64) return;
     const a = document.createElement('a');
-    a.href = `data:image/png;base64,${imageB64}`;
-    a.download = `pedagogy_image_${Date.now()}.png`;
+    a.href = `data:image/webp;base64,${imageB64}`;
+    a.download = `image_${Date.now()}.webp`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
@@ -103,26 +102,15 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
             <div className="p-1.5 rounded-btn bg-bg-panel border border-border"><ImageIcon size={16} className="text-accent-cyan" /></div>
             <div>
               <h2 className="font-orbitron font-bold text-text-primary text-sm tracking-wide uppercase">AI Image Generator</h2>
-              <p className="font-mono text-[10px] text-text-dim tracking-wider">AI IMAGE · PNG · CLASSROOM SAFE</p>
+              <p className="font-mono text-[10px] text-text-dim tracking-wider">AI IMAGE · WEBP · CLASSROOM SAFE</p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-btn text-text-dim hover:text-accent-cyan transition-colors"><X size={16} /></button>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-          {!openaiKey && (
-            <div className="m-4 p-4 border border-accent-amber/40 bg-accent-amber/5 rounded-btn flex items-start gap-3">
-              <AlertCircle size={16} className="text-accent-amber shrink-0 mt-0.5" />
-              <div>
-                <div className="text-xs font-rajdhani font-bold text-accent-amber uppercase tracking-wider">OpenAI key required</div>
-                <p className="text-xs text-text-secondary mt-1">Image generation requires an OpenAI API key. Add yours in Settings to unlock this feature.</p>
-              </div>
-            </div>
-          )}
-
           {state.stage === 'form' && (
             <div className="p-5 space-y-5">
-              {/* Use case chips */}
               <div>
                 <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-2">Use case</label>
                 <div className="flex flex-wrap gap-2">
@@ -134,7 +122,6 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
                 </div>
               </div>
 
-              {/* Prompt */}
               <div>
                 <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1.5">
                   {useCase < 4 ? 'Topic / subject' : 'Custom prompt'}
@@ -154,13 +141,12 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
                 )}
               </div>
 
-              {/* Size */}
               <div>
-                <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-2">Size</label>
+                <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-2">Aspect ratio</label>
                 <div className="flex flex-wrap gap-2">
-                  {SIZES.map((s) => (
-                    <button key={s.value} onClick={() => setSize(s.value)} className={clsx('px-3 py-1.5 rounded-btn border text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors', s.value === size ? 'border-accent-cyan text-accent-cyan bg-bg-elevated' : 'border-border text-text-secondary hover:border-text-dim')}>
-                      {s.label}
+                  {ASPECT_RATIOS.map((ar) => (
+                    <button key={ar.value} onClick={() => setAspectRatio(ar.value)} className={clsx('px-3 py-1.5 rounded-btn border text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors', ar.value === aspectRatio ? 'border-accent-cyan text-accent-cyan bg-bg-elevated' : 'border-border text-text-secondary hover:border-text-dim')}>
+                      {ar.label}
                     </button>
                   ))}
                 </div>
@@ -191,12 +177,10 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
 
           {state.stage === 'preview' && imageB64 && (
             <div className="flex-1 flex flex-col p-5 gap-4 min-h-0">
-              {/* Image */}
               <div className="flex-1 min-h-0 flex items-center justify-center border border-border rounded-btn overflow-hidden bg-white">
-                <img src={`data:image/png;base64,${imageB64}`} alt="Generated" className="max-w-full max-h-full object-contain" />
+                <img src={`data:image/webp;base64,${imageB64}`} alt="Generated" className="max-w-full max-h-full object-contain" />
               </div>
 
-              {/* Prompt display / editor */}
               <div className="shrink-0 border border-border rounded-btn bg-bg-elevated overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-border">
                   <div className="flex items-center gap-2">
@@ -217,24 +201,23 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="shrink-0 flex items-center justify-between px-5 py-3 border-t border-border bg-bg-elevated gap-3">
           <div className="font-mono text-[10px] text-text-dim tracking-wider">
             {state.stage === 'preview' && saved && <span className="flex items-center gap-1.5 text-accent-green"><CheckCircle2 size={11} />SAVED TO LIBRARY</span>}
-            {state.stage === 'form' && (openaiKey ? 'READY' : 'OPENAI KEY REQUIRED')}
+            {state.stage === 'form' && 'READY'}
             {state.stage === 'generating' && 'GENERATING...'}
           </div>
           <div className="flex items-center gap-2">
             {state.stage === 'form' && (<>
               <button onClick={onClose} className="px-4 py-2 rounded-btn border border-border text-text-secondary hover:text-text-primary text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors">Cancel</button>
-              <button onClick={() => handleGenerate()} disabled={!openaiKey || (!prompt.trim() && useCase === 4)} className="px-4 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-2"><Sparkles size={13} />Generate</button>
+              <button onClick={() => handleGenerate()} disabled={!prompt.trim() && useCase === 4} className="px-4 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 disabled:opacity-40 transition-all flex items-center gap-2"><Sparkles size={13} />Generate</button>
             </>)}
             {state.stage === 'preview' && (<>
               <button onClick={handleReset} className="px-3 py-2 rounded-btn border border-border text-text-secondary hover:text-text-primary text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors flex items-center gap-1.5"><RotateCcw size={13} />New</button>
-              <button onClick={handleRegenerate} disabled={!openaiKey} className="px-3 py-2 rounded-btn border border-border text-text-secondary hover:text-accent-amber hover:border-accent-amber text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors flex items-center gap-1.5 disabled:opacity-40">
+              <button onClick={handleRegenerate} className="px-3 py-2 rounded-btn border border-border text-text-secondary hover:text-accent-amber hover:border-accent-amber text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors flex items-center gap-1.5">
                 <Sparkles size={13} />{editMode ? 'Regenerate with edit' : 'Regenerate'}
               </button>
-              <button onClick={handleDownload} className="px-3 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 transition-all flex items-center gap-1.5"><Download size={13} />.png</button>
+              <button onClick={handleDownload} className="px-3 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 transition-all flex items-center gap-1.5"><Download size={13} />.webp</button>
             </>)}
           </div>
         </div>
