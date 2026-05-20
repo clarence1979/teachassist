@@ -25,6 +25,8 @@ export async function saveUserPref(
   value: unknown,
 ): Promise<void> {
   if (!username || username === 'default') return;
+  // user_prefs.value has a NOT NULL constraint — skip null/undefined values
+  if (value === null || value === undefined) return;
   const { error } = await supabase.from('user_prefs').upsert(
     {
       username,
