@@ -20,14 +20,14 @@ export interface ImageGenRequest {
 
 export async function generateImage(req: ImageGenRequest): Promise<string> {
   // Resolve the best image model the account has access to via the live catalog.
-  // Falls back to gpt-image-1 (widely available) if catalog fetch fails.
+  // Falls back to dall-e-3 if catalog fetch fails — it is universally available.
   let model = req.model;
   if (!model) {
     try {
       const catalog = await fetchOpenAIModelCatalog(req.apiKey);
       model = catalog.imageModel;
     } catch {
-      model = 'gpt-image-1';
+      model = 'dall-e-3';
     }
   }
 

@@ -11,8 +11,14 @@ export interface OpenAIModelCatalog {
   imageModel: string;
 }
 
-// In-memory cache: apiKey → catalog
+// In-memory cache: apiKey → catalog. Keyed by a version stamp so stale cached
+// catalogs from a previous build are automatically discarded on page reload.
+const CACHE_VERSION = '3';
 const cache = new Map<string, OpenAIModelCatalog>();
+
+function cacheKey(apiKey: string): string {
+  return `${CACHE_VERSION}:${apiKey}`;
+}
 
 // Models we prefer in order — latest / most capable first.
 // The fetcher will keep only IDs that actually appear in the API response.
@@ -71,7 +77,8 @@ function isImageModel(id: string): boolean {
 }
 
 export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIModelCatalog> {
-  if (cache.has(apiKey)) return cache.get(apiKey)!;
+  const ck = cacheKey(apiKey);
+  if (cache.has(ck)) return cache.get(ck)!;
 
   let allIds: string[] = [];
   try {
@@ -107,35 +114,36 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
     chatModels.push('gpt-4o', 'gpt-4o-mini');
   }
 
-  // Image model: pick the best one the account actually has access to.
-  // PREFERRED_IMAGE_MODELS is ordered newest-first, so the first match wins.
-  let imageModel = 'gpt-image-1'; // safe fallback — widely available
+  // Image model: pick the best one this account actually has access to.
+  // Only ever use a model that appears in the live API response.
+  // PREFERRED_IMAGE_MODELS is ordered newest-first so the first match wins.
+  let imageModel = '';
   for (const id of PREFERRED_IMAGE_MODELS) {
     if (idSet.has(id)) {
       imageModel = id;
       break;
     }
   }
-  // If no preferred model matched but the API returned a gpt-image-* model, use it
-  if (imageModel === 'gpt-image-1' && !idSet.has('gpt-image-1')) {
+  // If none of the preferred models are in the account, check for any gpt-image-* live model
+  if (!imageModel) {
     const liveGptImage = allIds
       .filter((id) => id.startsWith('gpt-image-'))
       .sort()
       .reverse()[0];
-    if (liveGptImage) imageModel = liveGptImage;
+    imageModel = liveGptImage ?? 'dall-e-3';
   }
 
   const catalog: OpenAIModelCatalog = { chatModels, imageModel };
-  cache.set(apiKey, catalog);
+  cache.set(cacheKey(apiKey), catalog);
   return catalog;
 }
 
 /** Invalidate the cached catalog for a given key (e.g. when the key changes). */
 export function invalidateOpenAIModelCache(apiKey: string) {
-  cache.delete(apiKey);
+  cache.delete(cacheKey(apiKey));
 }
 
-/** Returns the best available image model, falling back to gpt-image-1 if catalog not yet loaded. */
+/** Returns the best available image model, falling back to dall-e-3 if catalog not yet loaded. */
 export function getBestImageModel(catalog: OpenAIModelCatalog | null): string {
-  return catalog?.imageModel ?? 'gpt-image-1';
+  return catalog?.imageModel ?? 'dall-e-3';
 }
