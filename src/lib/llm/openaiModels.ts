@@ -39,12 +39,13 @@ const PREFERRED_CHAT_MODELS = [
   'gpt-3.5-turbo',
 ];
 
-// Image generation model preference order — latest first
+// Image generation model preference order — latest first.
+// dall-e models are retired as of March 2026.
 const PREFERRED_IMAGE_MODELS = [
   'gpt-image-2',
+  'gpt-image-1.5',
   'gpt-image-1',
-  'dall-e-3',
-  'dall-e-2',
+  'gpt-image-1-mini',
 ];
 
 // IDs that match "chat-capable"
@@ -73,7 +74,7 @@ function sortUnlistedChatModels(ids: string[]): string[] {
 }
 
 function isImageModel(id: string): boolean {
-  return id.startsWith('dall-e') || id.startsWith('gpt-image-');
+  return id.startsWith('gpt-image-') || id.startsWith('dall-e');
 }
 
 export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIModelCatalog> {
@@ -115,8 +116,7 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
   }
 
   // Image model: pick the best one this account actually has access to.
-  // Only ever use a model that appears in the live API response.
-  // PREFERRED_IMAGE_MODELS is ordered newest-first so the first match wins.
+  // Only use a model that appears in the live API response.
   let imageModel = '';
   for (const id of PREFERRED_IMAGE_MODELS) {
     if (idSet.has(id)) {
@@ -124,13 +124,13 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
       break;
     }
   }
-  // If none of the preferred models are in the account, check for any gpt-image-* live model
+  // If none of the preferred models matched, check for any gpt-image-* model
   if (!imageModel) {
     const liveGptImage = allIds
       .filter((id) => id.startsWith('gpt-image-'))
       .sort()
       .reverse()[0];
-    imageModel = liveGptImage ?? 'dall-e-3';
+    imageModel = liveGptImage ?? 'gpt-image-1';
   }
 
   const catalog: OpenAIModelCatalog = { chatModels, imageModel };
@@ -143,7 +143,7 @@ export function invalidateOpenAIModelCache(apiKey: string) {
   cache.delete(cacheKey(apiKey));
 }
 
-/** Returns the best available image model, falling back to dall-e-3 if catalog not yet loaded. */
+/** Returns the best available image model, falling back to gpt-image-1 if catalog not yet loaded. */
 export function getBestImageModel(catalog: OpenAIModelCatalog | null): string {
-  return catalog?.imageModel ?? 'dall-e-3';
+  return catalog?.imageModel ?? 'gpt-image-1';
 }

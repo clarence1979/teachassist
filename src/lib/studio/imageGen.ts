@@ -1,9 +1,9 @@
 /**
- * Image generation via OpenAI's images API.
+ * Image generation via OpenAI's Images API.
  * Auto-selects the best available model from the account's catalog.
- * GPT image models (gpt-image-2, gpt-image-1) return b64_json by default
- * and do NOT accept a response_format parameter.
- * dall-e-3/2 require response_format: 'b64_json' to return base64.
+ *
+ * As of 2026, the Images API always returns b64_json — the `response_format`
+ * parameter is no longer accepted and will cause a 400 error.
  */
 
 import { fetchOpenAIModelCatalog } from '../llm/openaiModels';
@@ -19,19 +19,15 @@ export interface ImageGenRequest {
 }
 
 export async function generateImage(req: ImageGenRequest): Promise<string> {
-  // Resolve the best image model the account has access to via the live catalog.
-  // Falls back to dall-e-3 if catalog fetch fails — it is universally available.
   let model = req.model;
   if (!model) {
     try {
       const catalog = await fetchOpenAIModelCatalog(req.apiKey);
       model = catalog.imageModel;
     } catch {
-      model = 'dall-e-3';
+      model = 'gpt-image-1';
     }
   }
-
-  const isDallE = model === 'dall-e-2' || model === 'dall-e-3';
 
   const body: Record<string, unknown> = {
     model,
@@ -39,28 +35,9 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
     n: 1,
   };
 
-  if (isDallE) {
-    // dall-e-2/3 need explicit response_format to get base64 back
-    body.response_format = 'b64_json';
-    // dall-e-3 uses different size names
-    const raw = req.size;
-    if (model === 'dall-e-3') {
-      if (raw === '1536x1024') body.size = '1792x1024';
-      else if (raw === '1024x1536') body.size = '1024x1792';
-      else body.size = '1024x1024';
-    } else {
-      // dall-e-2 only supports square sizes
-      body.size = '1024x1024';
-    }
-    body.quality = 'standard';
-  } else {
-    // GPT image models (gpt-image-2, gpt-image-1, etc.):
-    // - Do NOT accept response_format (causes 400)
-    // - Return b64_json automatically
-    // - Accept flexible sizes
-    const raw = req.size;
-    body.size = (!raw || raw === 'auto') ? '1024x1024' : raw;
-  }
+  // Size handling
+  const raw = req.size;
+  body.size = (!raw || raw === 'auto') ? '1024x1024' : raw;
 
   const res = await fetch(ENDPOINT, {
     method: 'POST',
