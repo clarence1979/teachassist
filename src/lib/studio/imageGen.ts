@@ -19,20 +19,15 @@ export interface ImageGenRequest {
 }
 
 export async function generateImage(req: ImageGenRequest): Promise<string> {
-  // Default to the latest GPT image model. The catalog fetch is only used to
-  // discover even newer models if they appear — but we never fall back to dall-e
-  // unless explicitly requested by the caller.
+  // Resolve the best image model the account has access to via the live catalog.
+  // Falls back to gpt-image-1 (widely available) if catalog fetch fails.
   let model = req.model;
   if (!model) {
     try {
       const catalog = await fetchOpenAIModelCatalog(req.apiKey);
       model = catalog.imageModel;
     } catch {
-      model = 'gpt-image-2';
-    }
-    // Ensure we always prefer a GPT image model over dall-e for quality
-    if (!model || model.startsWith('dall-e')) {
-      model = 'gpt-image-2';
+      model = 'gpt-image-1';
     }
   }
 
