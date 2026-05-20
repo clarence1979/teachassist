@@ -41,15 +41,29 @@ const PREFERRED_IMAGE_MODELS = [
   'dall-e-2',
 ];
 
-// IDs that match "chat-capable" if they aren't in PREFERRED_CHAT_MODELS
+// IDs that match "chat-capable"
 function isChatModel(id: string): boolean {
   return (
     id.startsWith('gpt-') ||
     id.startsWith('o1') ||
     id.startsWith('o3') ||
     id.startsWith('o4') ||
+    id.startsWith('o5') ||
     id === 'chatgpt-4o-latest'
   );
+}
+
+// Sort unlisted chat models: newer versions first, then alpha
+function sortUnlistedChatModels(ids: string[]): string[] {
+  return [...ids].sort((a, b) => {
+    // Extract highest numeric token from ID for rough version ordering
+    const ver = (id: string) => {
+      const nums = id.match(/\d+(\.\d+)?/g);
+      return nums ? parseFloat(nums[nums.length - 1]) : 0;
+    };
+    const vDiff = ver(b) - ver(a);
+    return vDiff !== 0 ? vDiff : b.localeCompare(a);
+  });
 }
 
 function isImageModel(id: string): boolean {
@@ -74,16 +88,18 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
 
   const idSet = new Set(allIds);
 
-  // Chat models: preferred order, then any other chat-capable models sorted alpha
+  // Chat models: preferred (known) models first in our defined order,
+  // then any live models not in the preferred list, sorted newest-first.
   const chatModels: string[] = [];
   for (const id of PREFERRED_CHAT_MODELS) {
     if (idSet.has(id)) chatModels.push(id);
   }
-  // Pick up any chat-capable models not in the preferred list
-  for (const id of allIds) {
-    if (!chatModels.includes(id) && isChatModel(id) && !isImageModel(id)) {
-      chatModels.push(id);
-    }
+  const preferredSet = new Set(PREFERRED_CHAT_MODELS);
+  const unlisted = allIds.filter(
+    (id) => !preferredSet.has(id) && isChatModel(id) && !isImageModel(id),
+  );
+  for (const id of sortUnlistedChatModels(unlisted)) {
+    chatModels.push(id);
   }
 
   // Fall back to a sensible static list if the fetch produced nothing useful

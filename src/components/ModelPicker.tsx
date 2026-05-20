@@ -5,7 +5,8 @@ import { useCredentials } from '../contexts/CredentialsContext';
 import { useAppStore } from '../store/appStore';
 import type { Provider } from '../types/credentials';
 import { DEFAULT_ANTHROPIC_MODELS, DEFAULT_OPENAI_MODELS } from '../types/credentials';
-import { fetchOpenAIModelCatalog } from '../lib/llm/openaiModels';
+import { fetchOpenAIModelCatalog, invalidateOpenAIModelCache } from '../lib/llm/openaiModels';
+import { fetchAnthropicModelCatalog, invalidateAnthropicModelCache } from '../lib/llm/anthropicModels';
 import { OFFLINE_MODELS as WEBLLM_MODELS, isModelCached, loadOfflineEngine, hasWebGPU } from '../lib/llm/webllm';
 
 type Tab = Provider | 'offline';
@@ -38,6 +39,7 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
 
   const [open, setOpen] = useState(false);
   const [liveOpenAIModels, setLiveOpenAIModels] = useState<string[] | null>(null);
+  const [liveAnthropicModels, setLiveAnthropicModels] = useState<string[] | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
   const isOfflineActive = !!offlineModelId;
   const [activeTab, setActiveTab] = useState<Tab>(isOfflineActive ? 'offline' : activeProvider);
@@ -51,6 +53,7 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
   const hasProvider = (id: Provider) => availableProviders.includes(id);
 
   const openaiKey = providers.find((p) => p.id === 'openai')?.apiKey;
+  const anthropicKey = providers.find((p) => p.id === 'anthropic')?.apiKey;
 
   // Fetch live OpenAI models whenever we have a key
   useEffect(() => {
@@ -58,22 +61,27 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
     let cancelled = false;
     setFetchingModels(true);
     fetchOpenAIModelCatalog(openaiKey).then((catalog) => {
-      if (!cancelled) {
-        setLiveOpenAIModels(catalog.chatModels);
-        setFetchingModels(false);
-      }
-    }).catch(() => {
-      if (!cancelled) setFetchingModels(false);
-    });
+      if (!cancelled) { setLiveOpenAIModels(catalog.chatModels); setFetchingModels(false); }
+    }).catch(() => { if (!cancelled) setFetchingModels(false); });
     return () => { cancelled = true; };
   }, [openaiKey]);
+
+  // Fetch live Anthropic models whenever we have a key
+  useEffect(() => {
+    if (!anthropicKey) { setLiveAnthropicModels(null); return; }
+    let cancelled = false;
+    fetchAnthropicModelCatalog(anthropicKey).then((catalog) => {
+      if (!cancelled) setLiveAnthropicModels(catalog.chatModels);
+    }).catch(() => { /* silently fall back to defaults */ });
+    return () => { cancelled = true; };
+  }, [anthropicKey]);
 
   const currentProviderCred = providers.find((p) => p.id === activeProvider);
 
   const modelList: string[] =
     activeProvider === 'openai'
       ? (liveOpenAIModels ?? currentProviderCred?.availableModels ?? DEFAULT_OPENAI_MODELS)
-      : (currentProviderCred?.availableModels ?? DEFAULT_ANTHROPIC_MODELS);
+      : (liveAnthropicModels ?? currentProviderCred?.availableModels ?? DEFAULT_ANTHROPIC_MODELS);
 
   const usage = sessionUsage[activeProvider];
   const totalTokens = usage.inputTokens + usage.outputTokens;
@@ -85,7 +93,7 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
     const models =
       id === 'openai'
         ? (liveOpenAIModels ?? cred?.availableModels ?? DEFAULT_OPENAI_MODELS)
-        : (cred?.availableModels ?? DEFAULT_ANTHROPIC_MODELS);
+        : (liveAnthropicModels ?? cred?.availableModels ?? DEFAULT_ANTHROPIC_MODELS);
     setActiveModel(cred?.defaultModel ?? models[0]);
     setOpen(false);
   };
@@ -98,17 +106,23 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
 
   const handleRefreshModels = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!openaiKey) return;
-    setLiveOpenAIModels(null);
-    setFetchingModels(true);
-    // invalidate cache and re-fetch
-    import('../lib/llm/openaiModels').then(({ invalidateOpenAIModelCache, fetchOpenAIModelCatalog: fetch2 }) => {
+    if (activeProvider === 'openai' && openaiKey) {
+      setLiveOpenAIModels(null);
+      setFetchingModels(true);
       invalidateOpenAIModelCache(openaiKey);
-      fetch2(openaiKey).then((catalog) => {
+      fetchOpenAIModelCatalog(openaiKey).then((catalog) => {
         setLiveOpenAIModels(catalog.chatModels);
         setFetchingModels(false);
       }).catch(() => setFetchingModels(false));
-    });
+    } else if (activeProvider === 'anthropic' && anthropicKey) {
+      setLiveAnthropicModels(null);
+      setFetchingModels(true);
+      invalidateAnthropicModelCache(anthropicKey);
+      fetchAnthropicModelCatalog(anthropicKey).then((catalog) => {
+        setLiveAnthropicModels(catalog.chatModels);
+        setFetchingModels(false);
+      }).catch(() => setFetchingModels(false));
+    }
   };
 
   const handleModelSelect = (model: string) => {
@@ -203,13 +217,16 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
           {/* Model list header */}
           <div className="flex items-center justify-between px-3 pt-2 pb-1">
             <span className="text-[10px] font-mono text-text-dim uppercase tracking-wider">
-              {activeProvider === 'openai' && liveOpenAIModels ? 'Live models' : 'Models'}
+              {(activeProvider === 'openai' && liveOpenAIModels) ||
+               (activeProvider === 'anthropic' && liveAnthropicModels)
+                ? 'Live models' : 'Models'}
             </span>
-            {activeProvider === 'openai' && openaiKey && (
+            {((activeProvider === 'openai' && openaiKey) ||
+              (activeProvider === 'anthropic' && anthropicKey)) && (
               <button
                 onClick={handleRefreshModels}
                 disabled={fetchingModels}
-                title="Refresh model list from OpenAI"
+                title="Refresh model list"
                 className="p-0.5 rounded text-text-dim hover:text-accent-cyan transition-colors disabled:opacity-40"
               >
                 <RefreshCw size={10} className={clsx(fetchingModels && 'animate-spin')} />
@@ -219,7 +236,7 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
 
           {/* Model list */}
           <ul role="listbox" className="py-1 max-h-56 overflow-y-auto">
-            {fetchingModels && activeProvider === 'openai' && liveOpenAIModels === null && (
+            {fetchingModels && liveOpenAIModels === null && liveAnthropicModels === null && (
               <li className="px-3 py-2 text-xs font-mono text-text-dim italic">Loading models…</li>
             )}
             {modelList.map((model) => (

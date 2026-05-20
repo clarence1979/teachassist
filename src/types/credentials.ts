@@ -24,14 +24,17 @@ export interface CredentialsMessage {
 export type Provider = 'anthropic' | 'openai';
 
 export const DEFAULT_ANTHROPIC_MODELS = [
-  'claude-sonnet-4-5',
+  'claude-opus-4-7',
+  'claude-sonnet-4-7',
   'claude-opus-4-5',
+  'claude-sonnet-4-5',
   'claude-haiku-4-5',
 ];
 
 export const DEFAULT_OPENAI_MODELS = [
+  'gpt-4.1',
   'gpt-4o',
   'gpt-4o-mini',
-  'gpt-4-turbo',
-  'o1-mini',
+  'o4-mini',
+  'o3',
 ];
