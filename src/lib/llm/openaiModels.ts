@@ -108,21 +108,20 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
   }
 
   // Image model: pick the first preferred one that the account can access.
-  // Also pick up any gpt-image-* models returned by the API that aren't in
-  // our static list yet (future-proofs against new model releases).
-  let imageModel = 'dall-e-3';
+  // Default is gpt-image-2 (the latest GPT image model).
+  let imageModel = 'gpt-image-2';
   for (const id of PREFERRED_IMAGE_MODELS) {
     if (idSet.has(id)) {
       imageModel = id;
       break;
     }
   }
-  // If no preferred model found but the API returned a gpt-image-* model, use it
-  if (imageModel === 'dall-e-3') {
+  // If only dall-e models found but the API returned a newer gpt-image-* model, prefer it
+  if (imageModel.startsWith('dall-e')) {
     const liveGptImage = allIds
       .filter((id) => id.startsWith('gpt-image-'))
       .sort()
-      .reverse()[0]; // highest version string first
+      .reverse()[0];
     if (liveGptImage) imageModel = liveGptImage;
   }
 
@@ -136,7 +135,7 @@ export function invalidateOpenAIModelCache(apiKey: string) {
   cache.delete(apiKey);
 }
 
-/** Returns the best available image model, falling back to dall-e-3 if catalog not yet loaded. */
+/** Returns the best available image model, falling back to gpt-image-2 if catalog not yet loaded. */
 export function getBestImageModel(catalog: OpenAIModelCatalog | null): string {
-  return catalog?.imageModel ?? 'dall-e-3';
+  return catalog?.imageModel ?? 'gpt-image-2';
 }
