@@ -33,8 +33,9 @@ const PREFERRED_CHAT_MODELS = [
   'gpt-3.5-turbo',
 ];
 
-// Image generation model preference order
+// Image generation model preference order — latest first
 const PREFERRED_IMAGE_MODELS = [
+  'gpt-image-2',
   'gpt-image-1',
   'dall-e-3',
   'dall-e-2',
@@ -52,7 +53,7 @@ function isChatModel(id: string): boolean {
 }
 
 function isImageModel(id: string): boolean {
-  return id.startsWith('dall-e') || id === 'gpt-image-1';
+  return id.startsWith('dall-e') || id.startsWith('gpt-image-');
 }
 
 export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIModelCatalog> {
@@ -90,7 +91,9 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
     chatModels.push('gpt-4o', 'gpt-4o-mini');
   }
 
-  // Image model: pick the first preferred one that the account can access
+  // Image model: pick the first preferred one that the account can access.
+  // Also pick up any gpt-image-* models returned by the API that aren't in
+  // our static list yet (future-proofs against new model releases).
   let imageModel = 'dall-e-3';
   for (const id of PREFERRED_IMAGE_MODELS) {
     if (idSet.has(id)) {
@@ -98,7 +101,14 @@ export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIMod
       break;
     }
   }
-  // If the fetch failed entirely, default to dall-e-3 (universally available)
+  // If no preferred model found but the API returned a gpt-image-* model, use it
+  if (imageModel === 'dall-e-3') {
+    const liveGptImage = allIds
+      .filter((id) => id.startsWith('gpt-image-'))
+      .sort()
+      .reverse()[0]; // highest version string first
+    if (liveGptImage) imageModel = liveGptImage;
+  }
 
   const catalog: OpenAIModelCatalog = { chatModels, imageModel };
   cache.set(apiKey, catalog);

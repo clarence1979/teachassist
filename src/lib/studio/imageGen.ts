@@ -1,7 +1,9 @@
 /**
  * Image generation via OpenAI's images API.
- * Prefers gpt-image-1 but falls back to dall-e-3 automatically.
- * Returns base64 PNG (no data-URL prefix) for embedding in pptx / preview.
+ * Auto-selects the best available model from the account's catalog.
+ * GPT image models (gpt-image-2, gpt-image-1) return b64_json by default
+ * and do NOT accept a response_format parameter.
+ * dall-e-3/2 require response_format: 'b64_json' to return base64.
  */
 
 import { fetchOpenAIModelCatalog } from '../llm/openaiModels';
@@ -12,12 +14,12 @@ export interface ImageGenRequest {
   apiKey: string;
   prompt: string;
   size?: '1024x1024' | '1536x1024' | '1024x1536' | 'auto';
-  /** Override the model (e.g. 'dall-e-3'). If omitted, best available is resolved automatically. */
+  /** Override the model. If omitted, best available is resolved automatically. */
   model?: string;
 }
 
 export async function generateImage(req: ImageGenRequest): Promise<string> {
-  // Resolve the best available image model unless the caller specified one
+  // Always resolve the live model catalog so we use the latest available model
   let model = req.model;
   if (!model) {
     try {
@@ -28,7 +30,7 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
     }
   }
 
-  const isDallE = model.startsWith('dall-e');
+  const isDallE = model === 'dall-e-2' || model === 'dall-e-3';
 
   const body: Record<string, unknown> = {
     model,
@@ -37,23 +39,26 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
   };
 
   if (isDallE) {
-    // dall-e-2/3 support b64_json; dall-e-3 size mapping
+    // dall-e-2/3 need explicit response_format to get base64 back
     body.response_format = 'b64_json';
+    // dall-e-3 uses different size names
     const raw = req.size;
-    if (raw === '1536x1024') {
-      body.size = '1792x1024';
-    } else if (raw === '1024x1536') {
-      body.size = '1024x1792';
-    } else if (!raw || raw === 'auto') {
-      body.size = '1024x1024';
+    if (model === 'dall-e-3') {
+      if (raw === '1536x1024') body.size = '1792x1024';
+      else if (raw === '1024x1536') body.size = '1024x1792';
+      else body.size = '1024x1024';
     } else {
-      body.size = raw;
+      // dall-e-2 only supports square sizes
+      body.size = '1024x1024';
     }
     body.quality = 'standard';
   } else {
-    // gpt-image-1: does NOT accept response_format; returns b64_json by default
-    body.size = req.size ?? '1536x1024';
-    body.output_format = 'png';
+    // GPT image models (gpt-image-2, gpt-image-1, etc.):
+    // - Do NOT accept response_format (causes 400)
+    // - Return b64_json automatically
+    // - Accept flexible sizes
+    const raw = req.size;
+    body.size = (!raw || raw === 'auto') ? '1024x1024' : raw;
   }
 
   const res = await fetch(ENDPOINT, {
@@ -75,7 +80,6 @@ export async function generateImage(req: ImageGenRequest): Promise<string> {
   }
 
   const data = await res.json();
-  // gpt-image-1 returns b64_json directly; dall-e-3 also returns b64_json
   const b64 = data?.data?.[0]?.b64_json as string | undefined;
   if (!b64) throw new Error('No image returned from OpenAI');
   return b64;
