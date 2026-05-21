@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import {
   ChevronDown, ChevronRight, Wrench, Loader2, CheckCircle2, AlertCircle,
   FileText, Presentation as PresentationIcon, BookOpen, ClipboardList, ImageIcon,
-  ListChecks, Calendar, ListTodo, Search, Paperclip, Download,
+  ListChecks, Calendar, ListTodo, Search, Paperclip, Download, X, ZoomIn,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { ToolInvocation } from '../../db/schema';
+import type { Artifact } from '../../db/schema';
 import { useDb } from '../../db/DbContext';
 
 const TOOL_META: Record<string, { label: string; Icon: typeof Wrench }> = {
@@ -63,6 +64,127 @@ function extFor(mime: string): string {
   return 'bin';
 }
 
+function downloadArtifact(a: Artifact) {
+  const blob = a.mediaType === 'text/markdown'
+    ? new Blob([decodeURIComponent(escape(atob(a.data)))], { type: 'text/markdown' })
+    : b64ToBlob(a.data, a.mediaType);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${a.title.replace(/[^a-z0-9_\-]/gi, '_')}.${extFor(a.mediaType)}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+// ─── Image lightbox ───────────────────────────────────────────────────────────
+
+function ImageLightbox({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
+  const src = `data:${artifact.mediaType};base64,${artifact.data}`;
+  const [downloading, setDownloading] = useState(false);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try { downloadArtifact(artifact); }
+    finally { setDownloading(false); }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-4xl w-full flex flex-col items-center gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close */}
+        <button
+          onClick={onClose}
+          className="absolute -top-2 -right-2 z-10 p-1.5 rounded-full bg-bg-elevated border border-border text-text-secondary hover:text-accent-red transition-colors"
+          aria-label="Close"
+        >
+          <X size={14} />
+        </button>
+
+        {/* Image */}
+        <img
+          src={src}
+          alt={artifact.title}
+          className="rounded-lg max-h-[75vh] w-auto object-contain shadow-2xl border border-white/10"
+        />
+
+        {/* Caption + download */}
+        <div className="flex items-center gap-3 px-4 py-2 rounded-btn bg-bg-elevated border border-border">
+          <span className="text-xs text-text-secondary truncate max-w-xs">{artifact.title}</span>
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-accent-cyan text-bg-base text-xs font-rajdhani font-bold uppercase tracking-wider hover:brightness-110 transition-colors shrink-0 disabled:opacity-60"
+          >
+            <Download size={11} />
+            {downloading ? 'Saving…' : 'Download'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Image thumbnail (inline in chat) ────────────────────────────────────────
+
+function ImageArtifactThumbnail({ id }: { id: string }) {
+  const db = useDb();
+  const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    void db.artifacts.get(id).then((a) => { if (a) setArtifact(a); });
+  }, [db, id]);
+
+  if (!artifact) return null;
+
+  const src = `data:${artifact.mediaType};base64,${artifact.data}`;
+
+  return (
+    <>
+      <button
+        onClick={() => setLightboxOpen(true)}
+        className="relative group/img block rounded-lg overflow-hidden border border-border hover:border-accent-cyan/60 transition-colors shadow-md"
+        aria-label="View generated image"
+        title="Click to view full size"
+      >
+        <img
+          src={src}
+          alt={artifact.title}
+          className="w-full max-w-sm object-cover block"
+          style={{ maxHeight: 220 }}
+        />
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/40 transition-colors flex items-center justify-center">
+          <div className="opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-bg-base/90 border border-border text-xs font-rajdhani font-semibold text-text-primary">
+            <ZoomIn size={12} />
+            View full size
+          </div>
+        </div>
+      </button>
+      {lightboxOpen && (
+        <ImageLightbox artifact={artifact} onClose={() => setLightboxOpen(false)} />
+      )}
+    </>
+  );
+}
+
+// ─── Generic download row (non-image artifacts) ───────────────────────────────
+
 function ArtifactRow({ id }: { id: string }) {
   const db = useDb();
   const [busy, setBusy] = useState(false);
@@ -79,15 +201,7 @@ function ArtifactRow({ id }: { id: string }) {
     try {
       const a = await db.artifacts.get(id);
       if (!a) return;
-      const blob = a.mediaType === 'text/markdown'
-        ? new Blob([decodeURIComponent(escape(atob(a.data)))], { type: 'text/markdown' })
-        : b64ToBlob(a.data, a.mediaType);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${a.title.replace(/[^a-z0-9_\-]/gi, '_')}.${extFor(a.mediaType)}`;
-      document.body.appendChild(anchor); anchor.click(); anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 500);
+      downloadArtifact(a);
     } finally { setBusy(false); }
   };
 
@@ -105,6 +219,23 @@ function ArtifactRow({ id }: { id: string }) {
   );
 }
 
+// ─── Smart artifact renderer: image → thumbnail, other → download row ─────────
+
+function ArtifactItem({ id }: { id: string }) {
+  const db = useDb();
+  const [mediaType, setMediaType] = useState<string | null>(null);
+
+  useEffect(() => {
+    void db.artifacts.get(id).then((a) => { if (a) setMediaType(a.mediaType); });
+  }, [db, id]);
+
+  if (mediaType === null) return null;
+  if (mediaType.startsWith('image/')) return <ImageArtifactThumbnail id={id} />;
+  return <ArtifactRow id={id} />;
+}
+
+// ─── Main card ────────────────────────────────────────────────────────────────
+
 export function ToolCallCard({ tc }: { tc: ToolInvocation }) {
   const [expanded, setExpanded] = useState(false);
   const meta = TOOL_META[tc.name] ?? { label: tc.name, Icon: Wrench };
@@ -112,6 +243,11 @@ export function ToolCallCard({ tc }: { tc: ToolInvocation }) {
 
   const result = tc.result as { artifactIds?: string[]; details?: Record<string, unknown> } | undefined;
   const artifactIds = result?.artifactIds ?? [];
+
+  // For generate_image, show thumbnail directly in the card header (always visible, not just when expanded)
+  const isImageTool = tc.name === 'generate_image';
+  const imageArtifactIds = isImageTool ? artifactIds : [];
+  const otherArtifactIds = isImageTool ? [] : artifactIds;
 
   const statusIcon =
     tc.status === 'pending' ? <Loader2 size={11} className="animate-spin text-accent-amber" />
@@ -143,15 +279,25 @@ export function ToolCallCard({ tc }: { tc: ToolInvocation }) {
           <ChevronRight size={11} className="shrink-0 text-text-dim" />
         )}
       </button>
+
+      {/* Image thumbnails always visible once generation is done */}
+      {imageArtifactIds.length > 0 && tc.status !== 'pending' && (
+        <div className="px-3 pb-3 space-y-2">
+          {imageArtifactIds.map((id) => (
+            <ImageArtifactThumbnail key={id} id={id} />
+          ))}
+        </div>
+      )}
+
       {expanded && (
         <div className="px-3 pb-2 space-y-2 border-t border-border/50">
-          {artifactIds.length > 0 && (
+          {otherArtifactIds.length > 0 && (
             <div className="pt-2">
               <div className="text-text-dim uppercase tracking-wider text-[10px] font-rajdhani font-semibold mb-1">
-                Generated files ({artifactIds.length})
+                Generated files ({otherArtifactIds.length})
               </div>
               <div className="space-y-1">
-                {artifactIds.map((id) => <ArtifactRow key={id} id={id} />)}
+                {otherArtifactIds.map((id) => <ArtifactItem key={id} id={id} />)}
               </div>
             </div>
           )}
