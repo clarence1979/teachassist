@@ -12,6 +12,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { useDb } from '../../db/DbContext';
 import { conversationsRepo } from '../../db/repos';
@@ -20,11 +21,12 @@ import { useAppStore } from '../../store/appStore';
 
 interface Props {
   activeId: string | null;
+  busyConvIds?: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onCreate: () => Promise<void>;
 }
 
-export function ConversationList({ activeId, onSelect, onCreate }: Props) {
+export function ConversationList({ activeId, busyConvIds, onSelect, onCreate }: Props) {
   const db = useDb();
   const { conversationListCollapsed, toggleConversationList } = useAppStore();
   const [query, setQuery] = useState('');
@@ -64,6 +66,7 @@ export function ConversationList({ activeId, onSelect, onCreate }: Props) {
   const renderRow = (c: Conversation) => {
     const isActive = c.id === activeId;
     const isRenaming = renamingId === c.id;
+    const isRunning = busyConvIds?.has(c.id) ?? false;
 
     return (
       <li key={c.id} className="relative group">
@@ -89,8 +92,18 @@ export function ConversationList({ activeId, onSelect, onCreate }: Props) {
                 : 'text-text-secondary hover:bg-bg-elevated border border-transparent',
             )}
           >
-            {c.pinned && <Pin size={10} className="text-accent-cyan shrink-0" />}
+            {isRunning
+              ? <Loader2 size={10} className="text-accent-cyan shrink-0 animate-spin" />
+              : c.pinned
+                ? <Pin size={10} className="text-accent-cyan shrink-0" />
+                : null
+            }
             <span className="text-xs truncate flex-1">{c.title}</span>
+            {isRunning && !isActive && (
+              <span className="text-[9px] font-rajdhani font-semibold text-accent-cyan uppercase tracking-wider shrink-0">
+                running
+              </span>
+            )}
           </button>
         )}
 
@@ -175,11 +188,12 @@ export function ConversationList({ activeId, onSelect, onCreate }: Props) {
         <div className="flex-1 overflow-y-auto py-1 flex flex-col items-center gap-1">
           {conversations.slice(0, 20).map((c) => {
             const isActive = c.id === activeId;
+            const isRunning = busyConvIds?.has(c.id) ?? false;
             return (
               <button
                 key={c.id}
                 onClick={() => onSelect(c.id)}
-                title={c.title}
+                title={isRunning ? `${c.title} (running…)` : c.title}
                 className={clsx(
                   'w-6 h-6 rounded-btn flex items-center justify-center transition-colors',
                   isActive
@@ -187,9 +201,11 @@ export function ConversationList({ activeId, onSelect, onCreate }: Props) {
                     : 'text-text-dim hover:text-text-primary hover:bg-bg-elevated',
                 )}
               >
-                {c.pinned
-                  ? <Pin size={10} className="text-accent-cyan" />
-                  : <MessageSquare size={10} />
+                {isRunning
+                  ? <Loader2 size={10} className="text-accent-cyan animate-spin" />
+                  : c.pinned
+                    ? <Pin size={10} className="text-accent-cyan" />
+                    : <MessageSquare size={10} />
                 }
               </button>
             );

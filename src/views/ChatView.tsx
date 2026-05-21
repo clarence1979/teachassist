@@ -32,25 +32,55 @@ export function ChatView() {
   const { activeProvider, activeModel, offlineModelId, addUsage, lastGeneratedArtifactId, clearGeneratedArtifact, memoryEnabled } = useAppStore();
 
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+
+  // Per-conversation abort controllers — keyed by conversationId.
+  // A conversation is "busy" when it has an entry in this map.
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  // React state version so renders update when busy set changes.
+  const [busyConvIds, setBusyConvIds] = useState<ReadonlySet<string>>(new Set());
+
+  const setConvBusy = useCallback((convId: string, controller: AbortController) => {
+    abortControllersRef.current.set(convId, controller);
+    setBusyConvIds(new Set(abortControllersRef.current.keys()));
+  }, []);
+
+  const setConvIdle = useCallback((convId: string) => {
+    abortControllersRef.current.delete(convId);
+    setBusyConvIds(new Set(abortControllersRef.current.keys()));
+  }, []);
+
+  // Per-conversation send errors (only shown for the active conversation)
+  const [sendErrors, setSendErrors] = useState<Map<string, string>>(new Map());
+  const sendError = activeConvId ? (sendErrors.get(activeConvId) ?? null) : null;
+  const setSendError = useCallback((convId: string, err: string | null) => {
+    setSendErrors((prev) => {
+      const next = new Map(prev);
+      if (err === null) next.delete(convId);
+      else next.set(convId, err);
+      return next;
+    });
+  }, []);
+
   const [composerSeed, setComposerSeed] = useState<string | undefined>(undefined);
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   const handleStop = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
+    if (!activeConvId) return;
+    abortControllersRef.current.get(activeConvId)?.abort();
+  }, [activeConvId]);
+
+  const busy = activeConvId ? busyConvIds.has(activeConvId) : false;
 
   const handleDeleteMessage = useCallback(
     async (msg: Message) => {
       if (!activeConvId) return;
-      // Abort any in-flight generation for this message so it can't keep writing.
-      if (busy) abortRef.current?.abort();
+      if (busyConvIds.has(activeConvId)) {
+        abortControllersRef.current.get(activeConvId)?.abort();
+      }
       await messagesRepo.removeWithDescendants(db, activeConvId, msg.id);
     },
-    [db, activeConvId, busy],
+    [db, activeConvId, busyConvIds],
   );
 
   const conversations = useLiveQuery(
@@ -118,7 +148,7 @@ export function ChatView() {
     return map;
   }, [allArtifacts]);
 
-  // Auto-scroll to bottom on new content
+  // Auto-scroll to bottom on new content (only for the active conversation)
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -133,14 +163,15 @@ export function ChatView() {
       model: activeModel,
     });
     setActiveConvId(conv.id);
-    setSendError(null);
-  }, [db, activeProvider, activeModel]);
+    setSendError(conv.id, null);
+  }, [db, activeProvider, activeModel, setSendError]);
 
   const doSend = useCallback(
     async (conversationId: string, parentId: string | null, text: string, attachments: MessageAttachment[]) => {
       if (offlineModelId) {
-        setSendError(null);
-        setBusy(true);
+        setSendError(conversationId, null);
+        const controller = new AbortController();
+        setConvBusy(conversationId, controller);
         try {
           const userMsg = await createUserMessage(db, conversationId, parentId, text, attachments);
           await sendMessageOffline({
@@ -151,24 +182,23 @@ export function ChatView() {
             onUpdate: () => { /* live */ },
           });
         } catch (err) {
-          setSendError(err instanceof Error ? err.message : String(err));
+          setSendError(conversationId, err instanceof Error ? err.message : String(err));
         } finally {
-          setBusy(false);
+          setConvIdle(conversationId);
         }
         return;
       }
 
       const apiKey = getKey(activeProvider);
       if (!apiKey) {
-        setSendError(`No API key for ${activeProvider}. Open Settings to add one.`);
+        setSendError(conversationId, `No API key for ${activeProvider}. Open Settings to add one.`);
         return;
       }
-      setSendError(null);
-      setBusy(true);
+      setSendError(conversationId, null);
+      const controller = new AbortController();
+      setConvBusy(conversationId, controller);
       try {
         const userMsg = await createUserMessage(db, conversationId, parentId, text, attachments);
-        const controller = new AbortController();
-        abortRef.current = controller;
         await sendMessage({
           db,
           conversationId,
@@ -184,12 +214,12 @@ export function ChatView() {
           signal: controller.signal,
         });
       } catch (err) {
-        setSendError(err instanceof Error ? err.message : String(err));
+        setSendError(conversationId, err instanceof Error ? err.message : String(err));
       } finally {
-        setBusy(false);
+        setConvIdle(conversationId);
       }
     },
-    [db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled],
+    [db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, setConvBusy, setConvIdle, setSendError],
   );
 
   const handleSend = useCallback(
@@ -215,8 +245,9 @@ export function ChatView() {
       if (!parentMsg) return;
 
       if (offlineModelId) {
-        setBusy(true);
-        setSendError(null);
+        setSendError(activeConvId, null);
+        const controller = new AbortController();
+        setConvBusy(activeConvId, controller);
         try {
           await sendMessageOffline({
             db,
@@ -226,23 +257,22 @@ export function ChatView() {
             onUpdate: () => { /* live */ },
           });
         } catch (err) {
-          setSendError(err instanceof Error ? err.message : String(err));
+          setSendError(activeConvId, err instanceof Error ? err.message : String(err));
         } finally {
-          setBusy(false);
+          setConvIdle(activeConvId);
         }
         return;
       }
 
       const apiKey = getKey(activeProvider);
       if (!apiKey) {
-        setSendError(`No API key for ${activeProvider}.`);
+        setSendError(activeConvId, `No API key for ${activeProvider}.`);
         return;
       }
-      setBusy(true);
-      setSendError(null);
+      setSendError(activeConvId, null);
+      const controller = new AbortController();
+      setConvBusy(activeConvId, controller);
       try {
-        const controller = new AbortController();
-        abortRef.current = controller;
         await sendMessage({
           db,
           conversationId: activeConvId,
@@ -258,12 +288,12 @@ export function ChatView() {
           signal: controller.signal,
         });
       } catch (err) {
-        setSendError(err instanceof Error ? err.message : String(err));
+        setSendError(activeConvId, err instanceof Error ? err.message : String(err));
       } finally {
-        setBusy(false);
+        setConvIdle(activeConvId);
       }
     },
-    [activeConvId, allMessages, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled],
+    [activeConvId, allMessages, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, setConvBusy, setConvIdle, setSendError],
   );
 
   const handleEdit = useCallback(
@@ -278,8 +308,9 @@ export function ChatView() {
         editedFromId: oldUserMsg.id,
       });
       if (offlineModelId) {
-        setBusy(true);
-        setSendError(null);
+        setSendError(activeConvId, null);
+        const controller = new AbortController();
+        setConvBusy(activeConvId, controller);
         try {
           await sendMessageOffline({
             db,
@@ -289,23 +320,22 @@ export function ChatView() {
             onUpdate: () => { /* live */ },
           });
         } catch (err) {
-          setSendError(err instanceof Error ? err.message : String(err));
+          setSendError(activeConvId, err instanceof Error ? err.message : String(err));
         } finally {
-          setBusy(false);
+          setConvIdle(activeConvId);
         }
         return;
       }
 
       const apiKey = getKey(activeProvider);
       if (!apiKey) {
-        setSendError(`No API key for ${activeProvider}.`);
+        setSendError(activeConvId, `No API key for ${activeProvider}.`);
         return;
       }
-      setBusy(true);
-      setSendError(null);
+      setSendError(activeConvId, null);
+      const controller = new AbortController();
+      setConvBusy(activeConvId, controller);
       try {
-        const controller = new AbortController();
-        abortRef.current = controller;
         await sendMessage({
           db,
           conversationId: activeConvId,
@@ -321,12 +351,12 @@ export function ChatView() {
           signal: controller.signal,
         });
       } catch (err) {
-        setSendError(err instanceof Error ? err.message : String(err));
+        setSendError(activeConvId, err instanceof Error ? err.message : String(err));
       } finally {
-        setBusy(false);
+        setConvIdle(activeConvId);
       }
     },
-    [activeConvId, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled],
+    [activeConvId, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, setConvBusy, setConvIdle, setSendError],
   );
 
   const handleSwitchBranch = useCallback(
@@ -363,7 +393,8 @@ export function ChatView() {
       {!isMobile && (
         <ConversationList
           activeId={activeConvId}
-          onSelect={(id) => { setActiveConvId(id); setSendError(null); }}
+          busyConvIds={busyConvIds}
+          onSelect={(id) => { setActiveConvId(id); }}
           onCreate={handleCreateConversation}
         />
       )}
@@ -380,9 +411,9 @@ export function ChatView() {
           >
             <ConversationList
               activeId={activeConvId}
+              busyConvIds={busyConvIds}
               onSelect={(id) => {
                 setActiveConvId(id);
-                setSendError(null);
                 setMobileConvOpen(false);
               }}
               onCreate={async () => {
@@ -495,7 +526,7 @@ export function ChatView() {
             <AlertCircle size={13} className="text-accent-red mt-0.5 shrink-0" />
             <span className="text-xs text-accent-red font-mono flex-1">{sendError}</span>
             <button
-              onClick={() => setSendError(null)}
+              onClick={() => activeConvId && setSendError(activeConvId, null)}
               className="text-xs text-accent-red hover:underline"
             >
               dismiss
