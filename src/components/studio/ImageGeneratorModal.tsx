@@ -42,6 +42,7 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
 
   const [state, setState] = useState<{ stage: Stage; error?: string }>({ stage: 'form' });
   const [imageB64, setImageB64] = useState<string | null>(null);
+  const [imageMediaType, setImageMediaType] = useState<string>('image/jpeg');
   const [usedPrompt, setUsedPrompt] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -62,14 +63,15 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
     setState({ stage: 'generating' });
     setUsedPrompt(finalPrompt);
     try {
-      const b64 = await generateImage({ prompt: finalPrompt, aspect_ratio: aspectRatio });
+      const { b64, mediaType } = await generateImage({ prompt: finalPrompt, aspect_ratio: aspectRatio });
       setImageB64(b64);
+      setImageMediaType(mediaType);
 
       const savedArtifact = await artifactsRepo.create(db, {
         type: 'image',
         title: finalPrompt.slice(0, 80),
         data: b64,
-        mediaType: 'image/webp',
+        mediaType,
         meta: { prompt: finalPrompt, aspectRatio, useCase: USE_CASES[useCase].label, generatedAt: Date.now(), provider: 'replicate' },
       });
       notifyArtifactGenerated(savedArtifact.id);
@@ -88,9 +90,10 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
 
   const handleDownload = () => {
     if (!imageB64) return;
+    const ext = imageMediaType === 'image/jpeg' ? 'jpg' : imageMediaType === 'image/png' ? 'png' : 'jpg';
     const a = document.createElement('a');
-    a.href = `data:image/webp;base64,${imageB64}`;
-    a.download = `image_${Date.now()}.webp`;
+    a.href = `data:${imageMediaType};base64,${imageB64}`;
+    a.download = `image_${Date.now()}.${ext}`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
@@ -178,7 +181,7 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
           {state.stage === 'preview' && imageB64 && (
             <div className="flex-1 flex flex-col p-5 gap-4 min-h-0">
               <div className="flex-1 min-h-0 flex items-center justify-center border border-border rounded-btn overflow-hidden bg-white">
-                <img src={`data:image/webp;base64,${imageB64}`} alt="Generated" className="max-w-full max-h-full object-contain" />
+                <img src={`data:${imageMediaType};base64,${imageB64}`} alt="Generated" className="max-w-full max-h-full object-contain" />
               </div>
 
               <div className="shrink-0 border border-border rounded-btn bg-bg-elevated overflow-hidden">
@@ -217,7 +220,7 @@ export function ImageGeneratorModal({ onClose, seed }: Props) {
               <button onClick={handleRegenerate} className="px-3 py-2 rounded-btn border border-border text-text-secondary hover:text-accent-amber hover:border-accent-amber text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors flex items-center gap-1.5">
                 <Sparkles size={13} />{editMode ? 'Regenerate with edit' : 'Regenerate'}
               </button>
-              <button onClick={handleDownload} className="px-3 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 transition-all flex items-center gap-1.5"><Download size={13} />.webp</button>
+              <button onClick={handleDownload} className="px-3 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 transition-all flex items-center gap-1.5"><Download size={13} />.jpg</button>
             </>)}
           </div>
         </div>

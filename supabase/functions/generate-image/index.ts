@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { encodeBase64 } from "jsr:@std/encoding/base64";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,6 +8,20 @@ const corsHeaders = {
 };
 
 const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY") ?? "";
+
+async function pollUntilDone(pollUrl: string, deadline: number): Promise<string[] | null> {
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const res = await fetch(pollUrl, {
+      headers: { Authorization: `Bearer ${REPLICATE_API_KEY}` },
+    });
+    if (!res.ok) return null;
+    const body = await res.json() as { status: string; output?: string[]; error?: string };
+    if (body.status === "succeeded") return body.output ?? null;
+    if (body.status === "failed" || body.status === "canceled") return null;
+  }
+  return null;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -21,7 +36,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { prompt, aspect_ratio = "1:1" } = await req.json();
+    const { prompt, aspect_ratio = "16:9" } = await req.json();
     if (!prompt) {
       return new Response(JSON.stringify({ error: "prompt is required" }), {
         status: 400,
@@ -29,27 +44,30 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Create prediction with Prefer: wait so we get the result immediately
-    const createRes = await fetch("https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${REPLICATE_API_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "wait",
-      },
-      body: JSON.stringify({
-        input: {
-          prompt,
-          go_fast: true,
-          megapixels: "1",
-          num_outputs: 1,
-          aspect_ratio,
-          output_format: "webp",
-          output_quality: 80,
-          num_inference_steps: 4,
+    // Use "jpeg" — valid Replicate output_format value (not "jpg")
+    const createRes = await fetch(
+      "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${REPLICATE_API_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "wait",
         },
-      }),
-    });
+        body: JSON.stringify({
+          input: {
+            prompt,
+            go_fast: true,
+            megapixels: "1",
+            num_outputs: 1,
+            aspect_ratio,
+            output_format: "jpeg",
+            output_quality: 90,
+            num_inference_steps: 4,
+          },
+        }),
+      }
+    );
 
     if (!createRes.ok) {
       const err = await createRes.json().catch(() => ({}));
@@ -65,54 +83,55 @@ Deno.serve(async (req: Request) => {
       status: string;
       output?: string[];
       urls?: { get: string };
+      error?: string;
     };
 
-    // Poll if not immediately done
-    let output: string[] | undefined = prediction.output;
-    if (!output && prediction.status !== "succeeded" && prediction.urls?.get) {
-      const pollUrl = prediction.urls.get;
-      const deadline = Date.now() + 90_000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 1500));
-        const pollRes = await fetch(pollUrl, {
-          headers: { Authorization: `Bearer ${REPLICATE_API_KEY}` },
-        });
-        if (!pollRes.ok) break;
-        const polled = await pollRes.json() as { status: string; output?: string[] };
-        if (polled.status === "succeeded") { output = polled.output; break; }
-        if (polled.status === "failed" || polled.status === "canceled") break;
-      }
+    if (prediction.error) {
+      return new Response(JSON.stringify({ error: prediction.error }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const imageUrl = output?.[0];
-    if (!imageUrl) {
+    let output: string[] | undefined = prediction.output;
+
+    // If not done yet, poll
+    if (!output && prediction.urls?.get) {
+      const polled = await pollUntilDone(prediction.urls.get, Date.now() + 90_000);
+      if (polled) output = polled;
+    }
+
+    const imageOutput = output?.[0];
+    if (!imageOutput) {
       return new Response(JSON.stringify({ error: "No image returned from Replicate." }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch the image and convert to base64 safely (chunked to avoid stack overflow)
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) {
-      return new Response(JSON.stringify({ error: "Failed to fetch generated image." }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let b64: string;
+
+    // Replicate flux-schnell sometimes returns base64 data URIs directly
+    if (imageOutput.startsWith("data:")) {
+      const commaIdx = imageOutput.indexOf(",");
+      b64 = commaIdx !== -1 ? imageOutput.slice(commaIdx + 1) : imageOutput;
+    } else {
+      // It's a URL — fetch and encode with Deno's standard library (no stack overflow)
+      const imgRes = await fetch(imageOutput);
+      if (!imgRes.ok) {
+        return new Response(JSON.stringify({ error: "Failed to fetch generated image." }), {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
+      b64 = encodeBase64(imgBytes);
     }
 
-    const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
-    // Chunk the conversion to avoid maximum call stack errors on large images
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < imgBytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...imgBytes.subarray(i, i + chunkSize));
-    }
-    const b64 = btoa(binary);
-
-    return new Response(JSON.stringify({ b64, mediaType: "image/webp" }), {
+    return new Response(JSON.stringify({ b64, mediaType: "image/jpeg" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return new Response(JSON.stringify({ error: message }), {

@@ -131,7 +131,7 @@ async function execGenerateSlides(ctx: ToolExecContext, args: Args): Promise<Too
       const prompt = slide.imagePrompt
         || `${deck.topic || topic}: editorial classroom-safe illustration for "${slide.title}". Abstract thematic composition, no text, no numbers, no letters.`;
       try {
-        const b64 = await generateImage({ prompt, aspect_ratio: '16:9' });
+        const { b64 } = await generateImage({ prompt, aspect_ratio: '16:9' });
         deck.slides[i] = { ...slide, imageBase64: b64 };
       } catch {
         // ignore
@@ -338,12 +338,12 @@ async function execGenerateImage(_ctx: ToolExecContext, args: Args): Promise<Too
     rawAr === '1:1' ? '1:1'
     : rawAr === '9:16' || rawAr === '3:4' ? '9:16'
     : '16:9';
-  const b64 = await generateImage({ prompt, aspect_ratio });
+  const { b64, mediaType } = await generateImage({ prompt, aspect_ratio });
   const art = await artifactsRepo.create(_ctx.db, {
     type: 'image',
     title: prompt.slice(0, 60),
     data: b64,
-    mediaType: 'image/webp',
+    mediaType,
     conversationId: _ctx.conversationId,
     meta: { prompt, aspectRatio: aspect_ratio },
   });

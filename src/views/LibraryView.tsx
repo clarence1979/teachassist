@@ -49,11 +49,17 @@ function fmtTime(ts: number) {
 }
 
 function fileExtension(mediaType: string): string {
+  if (mediaType?.startsWith('image/')) {
+    if (mediaType === 'image/jpeg') return '.jpg';
+    if (mediaType === 'image/png') return '.png';
+    if (mediaType === 'image/webp') return '.webp';
+    if (mediaType === 'image/gif') return '.gif';
+    return '.jpg';
+  }
   const map: Record<string, string> = {
     'application/pdf': '.pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-    'image/png': '.png',
     'text/html': '.html',
     'text/markdown': '.md',
     'application/json': '.json',
@@ -123,8 +129,8 @@ function VersionCompareModal({ versions, onClose }: { versions: Artifact[]; onCl
   const [rightIdx, setRightIdx] = useState(versions.length - 1);
 
   const renderPreview = (a: Artifact) => {
-    if (a.mediaType === 'image/png') {
-      return <img src={`data:image/png;base64,${a.data}`} alt={a.title} className="max-w-full max-h-full object-contain" />;
+    if (a.mediaType?.startsWith('image/')) {
+      return <img src={`data:${a.mediaType};base64,${a.data}`} alt={a.title} className="max-w-full max-h-full object-contain" />;
     }
     if (a.mediaType === 'application/pdf') {
       return <iframe title={a.title} src={`data:application/pdf;base64,${a.data}`} className="w-full h-full border-0" />;
@@ -289,9 +295,9 @@ function ArtifactCard({ artifact, selected, onSelect, onClick, active, onDragSta
     >
       <div className={clsx('absolute top-0 left-0 right-0 h-0.5', tm.accentBg)} />
       {/* Thumbnail */}
-      {artifact.mediaType === 'image/png' ? (
+      {artifact.mediaType?.startsWith('image/') ? (
         <div className="aspect-video bg-white overflow-hidden border-b border-border">
-          <img src={`data:image/png;base64,${artifact.data}`} alt={artifact.title} className="w-full h-full object-cover" />
+          <img src={`data:${artifact.mediaType};base64,${artifact.data}`} alt={artifact.title} className="w-full h-full object-cover" />
         </div>
       ) : (
         <div className="aspect-video bg-bg-elevated flex items-center justify-center border-b border-border">

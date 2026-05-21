@@ -217,7 +217,10 @@ export function ArtifactPreviewModal({ artifactId, onClose, initialAssign, focus
     const link = document.createElement('a');
     link.href = `data:${artifact.mediaType};base64,${artifact.data}`;
     const ext = artifact.mediaType === 'application/pdf' ? 'pdf'
-      : artifact.mediaType?.startsWith('image/') ? 'png'
+      : artifact.mediaType === 'image/jpeg' ? 'jpg'
+      : artifact.mediaType === 'image/png' ? 'png'
+      : artifact.mediaType === 'image/webp' ? 'webp'
+      : artifact.mediaType?.startsWith('image/') ? 'jpg'
       : artifact.mediaType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ? 'pptx'
       : artifact.mediaType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'docx'
       : 'bin';
