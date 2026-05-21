@@ -61,7 +61,7 @@ Deno.serve(async (req: Request) => {
             megapixels: "1",
             num_outputs: 1,
             aspect_ratio,
-            output_format: "jpeg",
+            output_format: "jpg",
             output_quality: 90,
             num_inference_steps: 4,
           },
