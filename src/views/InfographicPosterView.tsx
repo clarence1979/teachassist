@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Loader2, Download, ImagePlus, AlertCircle, X } from 'lucide-react';
+import { Loader2, Download, ImagePlus, AlertCircle, X, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { clsx } from 'clsx';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-const EDGE_FN_URL = `${SUPABASE_URL}/functions/v1/generate-infographic-image`;
+const EDGE_GENERATE_URL = `${SUPABASE_URL}/functions/v1/generate-infographic-image`;
+const EDGE_AUTOFILL_URL = `${SUPABASE_URL}/functions/v1/autofill-infographic`;
 
 const COLOR_THEMES = [
   { id: 'blue-white', label: 'Blue / White', primary: '#1d4ed8', bg: '#ffffff', header: '#1e40af' },
@@ -19,7 +20,6 @@ interface FormState {
   title: string;
   authors: string;
   organization: string;
-  year: string;
   motivation: string;
   method: string;
   results: string;
@@ -32,7 +32,6 @@ const INITIAL: FormState = {
   title: '',
   authors: '',
   organization: '',
-  year: new Date().getFullYear().toString(),
   motivation: '',
   method: '',
   results: '',
@@ -41,7 +40,7 @@ const INITIAL: FormState = {
   colorTheme: 'blue-white',
 };
 
-function buildPrompt(f: FormState): string {
+function buildPrompt(f: FormState, year: string): string {
   const theme = COLOR_THEMES.find((t) => t.id === f.colorTheme) ?? COLOR_THEMES[0];
   return `Generate a highly detailed, professional research paper infographic poster in landscape orientation (wide format). The design should match the visual complexity and information density of an academic AI/ML paper summary infographic.
 
@@ -49,7 +48,7 @@ Layout: Dense multi-column grid layout. Use a ${theme.id === 'dark-navy' ? 'dark
 
 Title: "${f.title}"
 Authors: "${f.authors}"
-Organization: "${f.organization}" · Year: "${f.year}"
+Organization: "${f.organization}" · Year: "${year}"
 
 The infographic must contain exactly these 6 labeled sections arranged in a grid:
 
@@ -87,11 +86,11 @@ Overall style: Matches the visual density and professionalism of an NLP/AI resea
 
 function validate(f: FormState): string | null {
   if (!f.title.trim()) return 'Title is required.';
-  if (!f.motivation.trim()) return 'Motivation & Key Idea is required.';
-  if (!f.method.trim()) return 'Method is required.';
-  if (!f.results.trim()) return 'Results is required.';
-  if (!f.analysis.trim()) return 'Analysis is required.';
-  if (!f.takeaways.trim()) return 'Takeaways is required.';
+  if (!f.motivation.trim()) return 'Motivation & Key Idea is required. Use AI Auto-Fill or enter manually.';
+  if (!f.method.trim()) return 'Method is required. Use AI Auto-Fill or enter manually.';
+  if (!f.results.trim()) return 'Results is required. Use AI Auto-Fill or enter manually.';
+  if (!f.analysis.trim()) return 'Analysis is required. Use AI Auto-Fill or enter manually.';
+  if (!f.takeaways.trim()) return 'Takeaways is required. Use AI Auto-Fill or enter manually.';
   return null;
 }
 
@@ -99,13 +98,15 @@ interface FieldProps {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  filled?: boolean;
 }
-function Field({ label, hint, children }: FieldProps) {
+function Field({ label, hint, children, filled }: FieldProps) {
   return (
     <div className="space-y-1">
-      <label className="block text-[11px] font-rajdhani font-semibold uppercase tracking-wider text-text-secondary">
+      <label className="flex items-center gap-1.5 text-[11px] font-rajdhani font-semibold uppercase tracking-wider text-text-secondary">
         {label}
-        {hint && <span className="ml-1 text-text-dim normal-case tracking-normal font-inter font-normal">{hint}</span>}
+        {filled && <span className="text-[9px] font-inter normal-case tracking-normal text-emerald-400 border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 rounded-full">AI filled</span>}
+        {hint && <span className="ml-0.5 text-text-dim normal-case tracking-normal font-inter font-normal">{hint}</span>}
       </label>
       {children}
     </div>
@@ -113,16 +114,60 @@ function Field({ label, hint, children }: FieldProps) {
 }
 
 const inputCls = 'w-full bg-bg-elevated border border-border rounded-btn px-3 py-2 text-sm text-text-primary placeholder-text-dim focus:outline-none focus:ring-1 focus:ring-accent-cyan focus:border-accent-cyan transition-colors';
+const filledCls = 'border-emerald-500/40 bg-emerald-500/5';
 
 export function InfographicPosterView() {
   const [form, setForm] = useState<FormState>(INITIAL);
+  const [filledFields, setFilledFields] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [autofilling, setAutofilling] = useState(false);
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showManual, setShowManual] = useState(false);
+
+  const currentYear = new Date().getFullYear().toString();
 
   const set = (field: keyof FormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  ) => {
+    setForm((f) => ({ ...f, [field]: e.target.value }));
+    setFilledFields((s) => { const n = new Set(s); n.delete(field); return n; });
+  };
+
+  const handleAutofill = async () => {
+    if (!form.title.trim()) { setError('Enter a title before auto-filling.'); return; }
+    setError(null);
+    setAutofilling(true);
+    try {
+      const res = await fetch(EDGE_AUTOFILL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ title: form.title }),
+      });
+      const data = await res.json() as {
+        motivation?: string; method?: string; results?: string;
+        analysis?: string; takeaways?: string; error?: string;
+      };
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setForm((f) => ({
+        ...f,
+        motivation: data.motivation ?? f.motivation,
+        method: data.method ?? f.method,
+        results: data.results ?? f.results,
+        analysis: data.analysis ?? f.analysis,
+        takeaways: data.takeaways ?? f.takeaways,
+      }));
+      setFilledFields(new Set(['motivation', 'method', 'results', 'analysis', 'takeaways']));
+      setShowManual(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Auto-fill failed.');
+    } finally {
+      setAutofilling(false);
+    }
+  };
 
   const handleGenerate = async () => {
     const err = validate(form);
@@ -131,8 +176,8 @@ export function InfographicPosterView() {
     setLoading(true);
     setImageB64(null);
     try {
-      const prompt = buildPrompt(form);
-      const res = await fetch(EDGE_FN_URL, {
+      const prompt = buildPrompt(form, currentYear);
+      const res = await fetch(EDGE_GENERATE_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -159,63 +204,154 @@ export function InfographicPosterView() {
     document.body.appendChild(a); a.click(); a.remove();
   };
 
+  const contentFieldsFilled = filledFields.size >= 5 || (
+    form.motivation.trim() && form.method.trim() && form.results.trim() &&
+    form.analysis.trim() && form.takeaways.trim()
+  );
+
   return (
     <div className="flex h-full overflow-hidden bg-bg-base">
-      {/* ── Left: form ───────────────────────────────────────────────────────── */}
+      {/* ── Left: form ─────────────────────────────────────────────────────── */}
       <div className="w-[40%] shrink-0 flex flex-col border-r border-border overflow-y-auto">
         {/* Header */}
         <div className="px-5 py-4 border-b border-border shrink-0">
           <h1 className="font-orbitron text-sm font-bold tracking-widest text-accent-cyan uppercase">
             Infographic Poster
           </h1>
-          <p className="text-xs text-text-dim mt-0.5">Fill in the fields to generate a research infographic.</p>
+          <p className="text-xs text-text-dim mt-0.5">Enter the basics — let AI do the rest.</p>
         </div>
 
-        <div className="flex-1 px-5 py-4 space-y-4">
-          {/* Metadata */}
+        <div className="flex-1 px-5 py-4 space-y-5">
+          {/* ── Core fields ── */}
           <div className="space-y-3">
             <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
               Paper Details
             </div>
             <Field label="Title">
-              <input className={inputCls} placeholder="e.g. Improving Language Understanding by Generative Pre-Training" value={form.title} onChange={set('title')} />
+              <input
+                className={inputCls}
+                placeholder="e.g. Attention Is All You Need"
+                value={form.title}
+                onChange={set('title')}
+              />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Authors">
-                <input className={inputCls} placeholder="Author 1, Author 2" value={form.authors} onChange={set('authors')} />
-              </Field>
-              <Field label="Year">
-                <input className={inputCls} placeholder="2024" value={form.year} onChange={set('year')} />
-              </Field>
-            </div>
+            <Field label="Your Name">
+              <input
+                className={inputCls}
+                placeholder="e.g. Jane Smith"
+                value={form.authors}
+                onChange={set('authors')}
+              />
+            </Field>
             <Field label="Organization">
-              <input className={inputCls} placeholder="e.g. OpenAI, DeepMind, MIT" value={form.organization} onChange={set('organization')} />
+              <input
+                className={inputCls}
+                placeholder="e.g. MIT, OpenAI, Stanford"
+                value={form.organization}
+                onChange={set('organization')}
+              />
             </Field>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-btn bg-bg-elevated border border-border text-xs text-text-dim">
+              <span className="font-mono">Year</span>
+              <span className="ml-auto font-semibold text-text-secondary">{currentYear}</span>
+              <span className="text-[10px]">auto</span>
+            </div>
           </div>
 
-          {/* Content sections */}
+          {/* ── AI Auto-fill ── */}
           <div className="space-y-3">
             <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
-              Content Sections
+              Content
             </div>
-            <Field label="1. Motivation & Key Idea">
-              <textarea className={clsx(inputCls, 'resize-y min-h-[72px]')} placeholder="What problem does this paper solve? What is the core insight?" value={form.motivation} onChange={set('motivation')} />
-            </Field>
-            <Field label="2. Method">
-              <textarea className={clsx(inputCls, 'resize-y min-h-[72px]')} placeholder="How does it work? Key architectural choices, training approach..." value={form.method} onChange={set('method')} />
-            </Field>
-            <Field label="3. Results / Benchmark Table" hint="(comma-separated rows)">
-              <textarea className={clsx(inputCls, 'resize-y min-h-[72px]')} placeholder="GLUE 89.4, 87.1, +2.3 | SQuAD 93.2, 91.8, +1.4 ..." value={form.results} onChange={set('results')} />
-            </Field>
-            <Field label="4. Analysis">
-              <textarea className={clsx(inputCls, 'resize-y min-h-[72px]')} placeholder="Ablation studies, layer transfer analysis, key findings..." value={form.analysis} onChange={set('analysis')} />
-            </Field>
-            <Field label="5. Takeaways">
-              <textarea className={clsx(inputCls, 'resize-y min-h-[72px]')} placeholder="4 key takeaways, separated by | e.g. Pre-training matters | Scale helps | ..." value={form.takeaways} onChange={set('takeaways')} />
-            </Field>
+
+            <button
+              onClick={handleAutofill}
+              disabled={autofilling || !form.title.trim()}
+              className={clsx(
+                'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-btn border font-rajdhani font-bold text-sm uppercase tracking-widest transition-all',
+                autofilling || !form.title.trim()
+                  ? 'border-border text-text-dim cursor-not-allowed opacity-60'
+                  : 'border-amber-400/60 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 hover:border-amber-400',
+              )}
+            >
+              {autofilling ? (
+                <><Loader2 size={14} className="animate-spin" /> Researching topic…</>
+              ) : (
+                <><Sparkles size={14} /> AI Auto-Fill Content</>
+              )}
+            </button>
+
+            {autofilling && (
+              <p className="text-[11px] text-text-dim text-center">
+                AI is researching your topic and populating all sections…
+              </p>
+            )}
+
+            {contentFieldsFilled && !autofilling && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-btn bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs">
+                <Sparkles size={12} />
+                <span>All content sections filled. You can edit below or generate the poster.</span>
+              </div>
+            )}
+
+            {/* Expandable manual edit section */}
+            <div className="rounded-btn border border-border overflow-hidden">
+              <button
+                onClick={() => setShowManual((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"
+              >
+                <span>Edit / Review Content Sections</span>
+                {showManual ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+
+              {showManual && (
+                <div className="px-3 pb-3 pt-1 space-y-3 border-t border-border bg-bg-elevated/30">
+                  <Field label="1. Motivation & Key Idea" filled={filledFields.has('motivation')}>
+                    <textarea
+                      className={clsx(inputCls, 'resize-y min-h-[72px]', filledFields.has('motivation') && filledCls)}
+                      placeholder="What problem does this paper solve? What is the core insight?"
+                      value={form.motivation}
+                      onChange={set('motivation')}
+                    />
+                  </Field>
+                  <Field label="2. Method" filled={filledFields.has('method')}>
+                    <textarea
+                      className={clsx(inputCls, 'resize-y min-h-[72px]', filledFields.has('method') && filledCls)}
+                      placeholder="How does it work? Key architectural choices, training approach…"
+                      value={form.method}
+                      onChange={set('method')}
+                    />
+                  </Field>
+                  <Field label="3. Results / Benchmark Table" hint="(rows separated by newline)" filled={filledFields.has('results')}>
+                    <textarea
+                      className={clsx(inputCls, 'resize-y min-h-[72px]', filledFields.has('results') && filledCls)}
+                      placeholder="GLUE, 89.4, 87.1, +2.3&#10;SQuAD, 93.2, 91.8, +1.4"
+                      value={form.results}
+                      onChange={set('results')}
+                    />
+                  </Field>
+                  <Field label="4. Analysis" filled={filledFields.has('analysis')}>
+                    <textarea
+                      className={clsx(inputCls, 'resize-y min-h-[72px]', filledFields.has('analysis') && filledCls)}
+                      placeholder="Ablation studies, layer transfer analysis, key findings…"
+                      value={form.analysis}
+                      onChange={set('analysis')}
+                    />
+                  </Field>
+                  <Field label="5. Takeaways" hint="(4 items separated by |)" filled={filledFields.has('takeaways')}>
+                    <textarea
+                      className={clsx(inputCls, 'resize-y min-h-[60px]', filledFields.has('takeaways') && filledCls)}
+                      placeholder="Pre-training matters | Scale helps | Fine-tuning transfers | ..."
+                      value={form.takeaways}
+                      onChange={set('takeaways')}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Color theme */}
+          {/* ── Colour theme ── */}
           <div className="space-y-2">
             <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
               Colour Theme
@@ -240,7 +376,7 @@ export function InfographicPosterView() {
           </div>
         </div>
 
-        {/* Generate button */}
+        {/* ── Generate button ── */}
         <div className="px-5 py-4 border-t border-border shrink-0 space-y-3">
           {error && (
             <div className="flex items-start gap-2 px-3 py-2 rounded-btn bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
@@ -251,7 +387,7 @@ export function InfographicPosterView() {
           )}
           <button
             onClick={handleGenerate}
-            disabled={loading}
+            disabled={loading || autofilling}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-sm uppercase tracking-widest hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {loading ? (
@@ -263,9 +399,8 @@ export function InfographicPosterView() {
         </div>
       </div>
 
-      {/* ── Right: preview ───────────────────────────────────────────────────── */}
+      {/* ── Right: preview ─────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden bg-bg-panel">
-        {/* Preview header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <span className="text-xs font-rajdhani font-semibold uppercase tracking-widest text-text-secondary">
             Preview
@@ -281,7 +416,6 @@ export function InfographicPosterView() {
           )}
         </div>
 
-        {/* Preview body */}
         <div className="flex-1 overflow-auto flex items-center justify-center p-6">
           {loading ? (
             <div className="flex flex-col items-center gap-4 text-text-dim">
@@ -306,12 +440,23 @@ export function InfographicPosterView() {
               </button>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-3 text-text-dim max-w-xs text-center">
+            <div className="flex flex-col items-center gap-4 text-text-dim max-w-sm text-center">
               <div className="w-16 h-16 rounded-full bg-bg-elevated border border-border flex items-center justify-center">
                 <ImagePlus size={24} className="text-text-dim" />
               </div>
-              <p className="text-sm font-rajdhani tracking-wide text-text-secondary">No infographic yet</p>
-              <p className="text-xs">Fill in the form on the left and click <strong className="text-text-primary">Generate Infographic</strong> to create your poster.</p>
+              <div>
+                <p className="text-sm font-rajdhani tracking-wide text-text-secondary mb-1">No infographic yet</p>
+                <p className="text-xs">Enter a title, your name, and organization — then click <strong className="text-amber-300">AI Auto-Fill Content</strong> to let AI populate the rest, or expand the sections to fill in manually.</p>
+              </div>
+              <div className="flex flex-col gap-1.5 text-[11px] text-left w-full bg-bg-elevated rounded-btn border border-border px-4 py-3">
+                <div className="flex items-center gap-2 text-text-secondary font-rajdhani font-semibold uppercase text-[10px] tracking-wider mb-1">
+                  <Sparkles size={10} className="text-amber-300" /> Quick Start
+                </div>
+                <div className="flex items-center gap-2 text-text-dim"><span className="text-accent-cyan font-bold">1.</span> Enter title, name, organization</div>
+                <div className="flex items-center gap-2 text-text-dim"><span className="text-amber-300 font-bold">2.</span> Click AI Auto-Fill</div>
+                <div className="flex items-center gap-2 text-text-dim"><span className="text-text-secondary font-bold">3.</span> Pick a colour theme</div>
+                <div className="flex items-center gap-2 text-text-dim"><span className="text-accent-cyan font-bold">4.</span> Generate Infographic</div>
+              </div>
             </div>
           )}
         </div>
