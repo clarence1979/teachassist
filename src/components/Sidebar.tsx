@@ -6,6 +6,7 @@ import {
   CheckSquare,
   Calendar,
   BookOpen,
+  LayoutTemplate,
   ChevronLeft,
   ChevronRight,
   FlaskConical,
@@ -35,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'todo', label: 'To-Do', path: '/todo', icon: CheckSquare },
   { id: 'timetable', label: 'Timetable', path: '/timetable', icon: Calendar },
   { id: 'library', label: 'Library', path: '/library', icon: BookOpen },
+  { id: 'infographic-poster', label: 'Poster', path: '/infographic-poster', icon: LayoutTemplate },
 ];
 
 const THEMES: Array<{ id: ThemeId; label: string; bg: string; accent: string; isDark: boolean }> = [

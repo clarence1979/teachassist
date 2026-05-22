@@ -12,6 +12,7 @@ import { TimetableView } from './views/TimetableView';
 import { LibraryView } from './views/LibraryView';
 import { SettingsView } from './views/SettingsView';
 import { LlmTestView } from './views/dev/LlmTestView';
+import { InfographicPosterView } from './views/InfographicPosterView';
 import { SharedBlockView } from './views/SharedBlockView';
 import { useAppStore } from './store/appStore';
 
@@ -62,6 +63,7 @@ function AppRoutes() {
         <Route path="/timetable" element={<TimetableView />} />
         <Route path="/library" element={<LibraryView />} />
         <Route path="/settings" element={<SettingsView />} />
+        <Route path="/infographic-poster" element={<InfographicPosterView />} />
         <Route path="/dev/llm-test" element={<LlmTestView />} />
         <Route path="*" element={<Navigate to="/chat" replace />} />
       </Route>

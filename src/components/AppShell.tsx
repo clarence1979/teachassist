@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
-  MessageSquare, Wand2, CheckSquare, Calendar, BookOpen,
+  MessageSquare, Wand2, CheckSquare, Calendar, BookOpen, LayoutTemplate,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Sidebar } from './Sidebar';
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { path: '/todo', icon: CheckSquare, label: 'To-Do' },
   { path: '/timetable', icon: Calendar, label: 'Timetable' },
   { path: '/library', icon: BookOpen, label: 'Library' },
+  { path: '/infographic-poster', icon: LayoutTemplate, label: 'Poster' },
 ];
 
 /** Compact side-rail used in mobile landscape — icons + tiny labels */
