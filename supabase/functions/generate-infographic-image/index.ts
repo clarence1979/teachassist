@@ -29,8 +29,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Use dall-e-3 which is faster and more reliable for complex poster layouts.
-    // gpt-image-1 with quality:high frequently times out in edge functions.
     const apiRes = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
@@ -38,11 +36,10 @@ Deno.serve(async (req: Request) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "dall-e-3",
+        model: "gpt-image-1",
         prompt: imagePrompt,
-        size: "1792x1024",
-        quality: "standard",
-        response_format: "b64_json",
+        size: "1536x1024",
+        quality: "low",
         n: 1,
       }),
     });
@@ -81,12 +78,7 @@ Deno.serve(async (req: Request) => {
         });
       }
       const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
-      // convert to base64 in chunks to avoid call stack overflow on large images
-      let b64 = "";
-      const chunkSize = 8192;
-      for (let i = 0; i < imgBytes.length; i += chunkSize) {
-        b64 += btoa(String.fromCharCode(...imgBytes.subarray(i, i + chunkSize)));
-      }
+      const b64 = btoa(String.fromCharCode(...imgBytes));
       return new Response(JSON.stringify({ b64, mediaType: "image/png" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
