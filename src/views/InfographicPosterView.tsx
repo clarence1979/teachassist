@@ -1,11 +1,15 @@
 import { useRef, useState } from 'react';
-import { Loader2, Download, ImagePlus, AlertCircle, X, Sparkles, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import {
+  Loader2, Download, ImagePlus, AlertCircle, X, Sparkles,
+  ChevronDown, ChevronUp, RefreshCw, Cpu, Wand2,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 import { renderPoster, posterToPng, POSTER_THEMES, type PosterData } from '../lib/studio/researchPosterRenderer';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const EDGE_AUTOFILL_URL = `${SUPABASE_URL}/functions/v1/autofill-infographic`;
+const EDGE_GENERATE_URL = `${SUPABASE_URL}/functions/v1/generate-infographic-image`;
 
 const COLOR_THEMES = Object.values(POSTER_THEMES).map(t => ({
   id: t.id,
@@ -15,6 +19,8 @@ const COLOR_THEMES = Object.values(POSTER_THEMES).map(t => ({
        : 'Purple',
   swatch: t.accent,
 }));
+
+type GenMode = 'svg' | 'ai';
 
 interface FormState {
   title: string;
@@ -80,10 +86,11 @@ const filledCls = 'border-emerald-500/40 bg-emerald-500/5';
 export function InfographicPosterView() {
   const [form, setForm] = useState<FormState>(INITIAL);
   const [filledFields, setFilledFields] = useState<Set<string>>(new Set());
+  const [genMode, setGenMode] = useState<GenMode>('svg');
   const [generating, setGenerating] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [svgPreview, setSvgPreview] = useState<string | null>(null);
-  const [pngB64, setPngB64] = useState<string | null>(null);
+  const [aiImageB64, setAiImageB64] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -95,6 +102,14 @@ export function InfographicPosterView() {
       setForm((f) => ({ ...f, [field]: e.target.value }));
       setFilledFields((s) => { const n = new Set(s); n.delete(field); return n; });
     };
+
+  // Clear preview when mode changes
+  const switchMode = (mode: GenMode) => {
+    setGenMode(mode);
+    setSvgPreview(null);
+    setAiImageB64(null);
+    setError(null);
+  };
 
   const handleAutofill = async () => {
     if (!form.title.trim()) { setError('Enter a title before auto-filling.'); return; }
@@ -128,13 +143,12 @@ export function InfographicPosterView() {
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerateSvg = async () => {
     const err = validate(form);
     if (err) { setError(err); return; }
     setError(null);
     setGenerating(true);
     setSvgPreview(null);
-    setPngB64(null);
 
     try {
       const data: PosterData = {
@@ -149,12 +163,8 @@ export function InfographicPosterView() {
         takeaways: form.takeaways,
         theme: POSTER_THEMES[form.colorTheme] ?? POSTER_THEMES['blue-white'],
       };
-
       const svg = renderPoster(data);
       setSvgPreview(svg);
-
-      const b64 = await posterToPng(svg);
-      setPngB64(b64);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Render failed.');
     } finally {
@@ -162,13 +172,63 @@ export function InfographicPosterView() {
     }
   };
 
-  const handleDownload = () => {
-    if (!pngB64) return;
-    const a = document.createElement('a');
-    a.href = `data:image/png;base64,${pngB64}`;
-    a.download = `${form.title.replace(/[^a-z0-9_-]/gi, '_') || 'infographic'}.png`;
-    document.body.appendChild(a); a.click(); a.remove();
+  const handleGenerateAi = async () => {
+    const err = validate(form);
+    if (err) { setError(err); return; }
+    setError(null);
+    setGenerating(true);
+    setAiImageB64(null);
+
+    try {
+      const res = await fetch(EDGE_GENERATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({
+          title: form.title,
+          authors: form.authors,
+          organization: form.organization,
+          year: currentYear,
+          motivation: form.motivation,
+          method: form.method,
+          results: form.results,
+          analysis: form.analysis,
+          takeaways: form.takeaways,
+          theme: form.colorTheme,
+        }),
+      });
+      const data = await res.json() as { b64?: string; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (!data.b64) throw new Error('No image data returned.');
+      setAiImageB64(data.b64);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI generation failed.');
+    } finally {
+      setGenerating(false);
+    }
   };
+
+  const handleGenerate = genMode === 'svg' ? handleGenerateSvg : handleGenerateAi;
+
+  const handleDownload = async () => {
+    if (genMode === 'svg' && svgPreview) {
+      try {
+        const b64 = await posterToPng(svgPreview);
+        const a = document.createElement('a');
+        a.href = `data:image/png;base64,${b64}`;
+        a.download = `${form.title.replace(/[^a-z0-9_-]/gi, '_') || 'infographic'}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch {
+        setError('PNG export failed.');
+      }
+    } else if (genMode === 'ai' && aiImageB64) {
+      const a = document.createElement('a');
+      a.href = `data:image/png;base64,${aiImageB64}`;
+      a.download = `${form.title.replace(/[^a-z0-9_-]/gi, '_') || 'infographic'}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+  };
+
+  const hasPreview = genMode === 'svg' ? !!svgPreview : !!aiImageB64;
 
   const contentFilled =
     filledFields.size >= 5 ||
@@ -187,7 +247,58 @@ export function InfographicPosterView() {
         </div>
 
         <div className="flex-1 px-5 py-4 space-y-5">
-          {/* Core fields */}
+          {/* ── Generation Mode Selector ── */}
+          <div className="space-y-2">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
+              Generation Method
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => switchMode('svg')}
+                className={clsx(
+                  'flex flex-col items-start gap-1 px-3 py-3 rounded-btn border text-left transition-all',
+                  genMode === 'svg'
+                    ? 'border-accent-cyan bg-accent-cyan/10'
+                    : 'border-border hover:border-text-dim',
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Cpu size={13} className={genMode === 'svg' ? 'text-accent-cyan' : 'text-text-dim'} />
+                  <span className={clsx('font-rajdhani font-bold text-xs uppercase tracking-wider', genMode === 'svg' ? 'text-accent-cyan' : 'text-text-secondary')}>
+                    SVG Renderer
+                  </span>
+                </div>
+                <p className="text-[10px] text-text-dim leading-tight">Instant, pixel-perfect text. Crisp at any scale.</p>
+              </button>
+
+              <button
+                onClick={() => switchMode('ai')}
+                className={clsx(
+                  'flex flex-col items-start gap-1 px-3 py-3 rounded-btn border text-left transition-all',
+                  genMode === 'ai'
+                    ? 'border-amber-400 bg-amber-400/10'
+                    : 'border-border hover:border-text-dim',
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Wand2 size={13} className={genMode === 'ai' ? 'text-amber-300' : 'text-text-dim'} />
+                  <span className={clsx('font-rajdhani font-bold text-xs uppercase tracking-wider', genMode === 'ai' ? 'text-amber-300' : 'text-text-secondary')}>
+                    gpt-image-1
+                  </span>
+                </div>
+                <p className="text-[10px] text-text-dim leading-tight">AI-rendered visuals. Richer diagrams & aesthetics.</p>
+              </button>
+            </div>
+
+            {genMode === 'ai' && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-btn bg-amber-400/8 border border-amber-400/25 text-amber-300/80 text-[11px]">
+                <Wand2 size={11} className="shrink-0 mt-0.5" />
+                <span>Uses OpenAI gpt-image-1 (medium quality, 1536×1024). Takes ~30–60s and incurs API cost (~$0.06/image).</span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Core fields ── */}
           <div className="space-y-3">
             <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
               Paper Details
@@ -223,7 +334,7 @@ export function InfographicPosterView() {
             </div>
           </div>
 
-          {/* AI Auto-fill */}
+          {/* ── AI Auto-fill ── */}
           <div className="space-y-3">
             <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
               Content
@@ -314,7 +425,7 @@ export function InfographicPosterView() {
             </div>
           </div>
 
-          {/* Colour theme */}
+          {/* ── Colour theme ── */}
           <div className="space-y-2">
             <div className="text-[10px] font-mono uppercase tracking-widest text-text-dim border-b border-border pb-1">
               Colour Theme
@@ -339,7 +450,7 @@ export function InfographicPosterView() {
           </div>
         </div>
 
-        {/* Generate button */}
+        {/* ── Generate button ── */}
         <div className="px-5 py-4 border-t border-border shrink-0 space-y-3">
           {error && (
             <div className="flex items-start gap-2 px-3 py-2 rounded-btn bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
@@ -351,13 +462,21 @@ export function InfographicPosterView() {
           <button
             onClick={handleGenerate}
             disabled={generating || autofilling}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-sm uppercase tracking-widest hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className={clsx(
+              'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-btn font-rajdhani font-bold text-sm uppercase tracking-widest transition-all disabled:opacity-60 disabled:cursor-not-allowed',
+              genMode === 'ai'
+                ? 'bg-amber-400 text-bg-base hover:brightness-110'
+                : 'bg-accent-cyan text-bg-base hover:brightness-110',
+            )}
           >
-            {generating
-              ? <><Loader2 size={15} className="animate-spin" /> Rendering…</>
-              : svgPreview
-              ? <><RefreshCw size={15} /> Regenerate</>
-              : <><ImagePlus size={15} /> Generate Infographic</>}
+            {generating ? (
+              <><Loader2 size={15} className="animate-spin" /> {genMode === 'ai' ? 'Generating with AI…' : 'Rendering…'}</>
+            ) : hasPreview ? (
+              <><RefreshCw size={15} /> Regenerate</>
+            ) : (
+              <>{genMode === 'ai' ? <Wand2 size={15} /> : <ImagePlus size={15} />}
+                {genMode === 'ai' ? 'Generate with gpt-image-1' : 'Generate Infographic'}</>
+            )}
           </button>
         </div>
       </div>
@@ -365,10 +484,22 @@ export function InfographicPosterView() {
       {/* ── Right: preview ──────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden bg-bg-panel">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <span className="text-xs font-rajdhani font-semibold uppercase tracking-widest text-text-secondary">
-            Preview
-          </span>
-          {pngB64 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-rajdhani font-semibold uppercase tracking-widest text-text-secondary">
+              Preview
+            </span>
+            {hasPreview && (
+              <span className={clsx(
+                'text-[10px] font-mono px-2 py-0.5 rounded-full border',
+                genMode === 'ai'
+                  ? 'text-amber-300 border-amber-400/30 bg-amber-400/10'
+                  : 'text-accent-cyan border-accent-cyan/30 bg-accent-cyan/10',
+              )}>
+                {genMode === 'ai' ? 'gpt-image-1' : 'SVG Renderer'}
+              </span>
+            )}
+          </div>
+          {hasPreview && (
             <button
               onClick={handleDownload}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-btn border border-accent-cyan text-accent-cyan text-xs font-rajdhani font-semibold uppercase tracking-wider hover:bg-accent-cyan/10 transition-colors"
@@ -383,14 +514,35 @@ export function InfographicPosterView() {
           {generating ? (
             <div className="flex flex-col items-center gap-4 text-text-dim mt-16">
               <Loader2 size={36} className="animate-spin text-accent-cyan" />
-              <p className="text-sm font-rajdhani tracking-wide">Rendering poster…</p>
+              <p className="text-sm font-rajdhani tracking-wide">
+                {genMode === 'ai' ? 'Generating with gpt-image-1…' : 'Rendering poster…'}
+              </p>
+              {genMode === 'ai' && (
+                <p className="text-xs text-text-dim">This can take 30–60 seconds</p>
+              )}
             </div>
-          ) : svgPreview ? (
+          ) : genMode === 'svg' && svgPreview ? (
             <div
               className="w-full rounded-lg overflow-hidden shadow-2xl border border-border"
               style={{ maxWidth: '100%' }}
               dangerouslySetInnerHTML={{ __html: svgPreview }}
             />
+          ) : genMode === 'ai' && aiImageB64 ? (
+            <div className="w-full flex flex-col items-center gap-4">
+              <img
+                src={`data:image/png;base64,${aiImageB64}`}
+                alt="AI-generated infographic"
+                className="w-full rounded-lg shadow-2xl border border-border object-contain"
+                style={{ maxHeight: 'calc(100vh - 160px)' }}
+              />
+              <button
+                onClick={handleDownload}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-sm uppercase tracking-widest hover:brightness-110 transition-all"
+              >
+                <Download size={14} />
+                Download PNG
+              </button>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-4 text-text-dim max-w-sm text-center mt-16">
               <div className="w-16 h-16 rounded-full bg-bg-elevated border border-border flex items-center justify-center">
@@ -406,7 +558,7 @@ export function InfographicPosterView() {
                 </div>
                 <div className="flex items-center gap-2 text-text-dim"><span className="text-accent-cyan font-bold">1.</span> Enter title, name, organization</div>
                 <div className="flex items-center gap-2 text-text-dim"><span className="text-amber-300 font-bold">2.</span> Click AI Auto-Fill</div>
-                <div className="flex items-center gap-2 text-text-dim"><span className="text-text-secondary font-bold">3.</span> Pick a colour theme</div>
+                <div className="flex items-center gap-2 text-text-dim"><span className="text-text-secondary font-bold">3.</span> Choose generation method</div>
                 <div className="flex items-center gap-2 text-text-dim"><span className="text-accent-cyan font-bold">4.</span> Generate Infographic</div>
               </div>
             </div>
