@@ -76,9 +76,18 @@ Render this as a data table with clear column headers and alternating row shadin
 ${resultsTable}
   (positive Δ values in green, negative in red)
 
-PANEL 6 — bottom-right — header: "PERFORMANCE CHART" (teal header, white text):
-  Draw a simple line chart with 2 curves showing increasing performance over depth/iterations.
-  Label axes: Y="Performance", X="Depth"
+PANEL 6 — bottom-right — header: "SKILL GROWTH OVER TIME" (teal header, white text):
+  Draw a clear line chart with exactly 2 labelled curves.
+  Title above chart (inside panel, bold): "How Skills Grow With Experience"
+  Y-axis label: "Proficiency Level (0–100%)"
+  X-axis label: "Years of Practice"
+  X-axis tick marks: 0, 2, 4, 6, 8, 10
+  Y-axis tick marks: 0%, 25%, 50%, 75%, 100%
+  Curve 1 (blue solid line, steeper): label directly on or beside the line: "With AI Tools"
+  Curve 2 (green dashed line, gentler slope): label directly on or beside the line: "Without AI Tools"
+  Both curves start near 0 at x=0 and rise to the right.
+  Add a small legend box in the bottom-right corner of the chart area.
+  The chart must clearly show that using AI tools leads to faster skill growth.
 
 FOOTER BAR (full width, ${palette.header} background):
   4 numbered boxes side by side: ${takeawayText}
