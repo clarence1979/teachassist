@@ -64,9 +64,12 @@ ${motText}
 PANEL 2 — top-center — header: "METHOD" (blue header, white text):
 ${methText}
 
-PANEL 3 — top-right — header: "TASK OVERVIEW" (teal header, white text):
-  Draw a simple pipeline: [Input] → [Process] → [Transform] → [Output]
-  Then list 4 short colored labels: Classification, Entailment, Similarity, Multi-Choice
+PANEL 3 — top-right — header: "WHAT THIS RESEARCH COVERS" (teal header, white text):
+  Do NOT draw a generic software pipeline. Instead, show 4 clear topic areas as a 2×2 grid of icon-label tiles.
+  Each tile has a simple icon and a short plain-English label taken from the research topic and method steps below.
+  Derive 4 meaningful topic tiles from this context: "${p.title}" — method steps: ${methBullets.slice(0, 4).map((b, i) => `(${i + 1}) ${b}`).join('; ')}
+  Each tile: rounded rectangle, teal/blue fill, white bold short label (2–4 words max), simple relevant icon above the label.
+  Make every label instantly understandable to a non-expert reader. No jargon, no acronyms.
 
 PANEL 4 — bottom-left — header: "ANALYSIS" (${palette.accent} header, white text):
 ${anaText}
