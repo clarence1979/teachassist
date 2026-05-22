@@ -118,10 +118,11 @@ Deno.serve(async (req: Request) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-image-2",
+        model: "gpt-image-2-2026-04-21",
         prompt,
         size: "1536x1024",
-        quality: "medium",
+        quality: "high",
+        response_format: "b64_json",
         n: 1,
       }),
     });
