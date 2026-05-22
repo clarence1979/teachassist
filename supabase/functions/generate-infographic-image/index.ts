@@ -38,7 +38,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         model: "gpt-image-1",
         prompt: imagePrompt,
-        size: "1792x1024",
+        size: "1536x1024",
         quality: "high",
         n: 1,
       }),
