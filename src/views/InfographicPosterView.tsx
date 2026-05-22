@@ -283,7 +283,7 @@ export function InfographicPosterView() {
                 <div className="flex items-center gap-1.5">
                   <Wand2 size={13} className={genMode === 'ai' ? 'text-amber-300' : 'text-text-dim'} />
                   <span className={clsx('font-rajdhani font-bold text-xs uppercase tracking-wider', genMode === 'ai' ? 'text-amber-300' : 'text-text-secondary')}>
-                    gpt-image-1
+                    gpt-image-2
                   </span>
                 </div>
                 <p className="text-[10px] text-text-dim leading-tight">AI-rendered visuals. Richer diagrams & aesthetics.</p>
@@ -293,7 +293,7 @@ export function InfographicPosterView() {
             {genMode === 'ai' && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-btn bg-amber-400/8 border border-amber-400/25 text-amber-300/80 text-[11px]">
                 <Wand2 size={11} className="shrink-0 mt-0.5" />
-                <span>Uses OpenAI gpt-image-1 (medium quality, 1536×1024). Takes ~30–60s and incurs API cost (~$0.06/image).</span>
+                <span>Uses OpenAI gpt-image-2 (medium quality, 1536×1024). Takes ~30–60s and incurs API cost (~$0.06/image).</span>
               </div>
             )}
           </div>
@@ -475,7 +475,7 @@ export function InfographicPosterView() {
               <><RefreshCw size={15} /> Regenerate</>
             ) : (
               <>{genMode === 'ai' ? <Wand2 size={15} /> : <ImagePlus size={15} />}
-                {genMode === 'ai' ? 'Generate with gpt-image-1' : 'Generate Infographic'}</>
+                {genMode === 'ai' ? 'Generate with gpt-image-2' : 'Generate Infographic'}</>
             )}
           </button>
         </div>
@@ -495,7 +495,7 @@ export function InfographicPosterView() {
                   ? 'text-amber-300 border-amber-400/30 bg-amber-400/10'
                   : 'text-accent-cyan border-accent-cyan/30 bg-accent-cyan/10',
               )}>
-                {genMode === 'ai' ? 'gpt-image-1' : 'SVG Renderer'}
+                {genMode === 'ai' ? 'gpt-image-2' : 'SVG Renderer'}
               </span>
             )}
           </div>
@@ -515,7 +515,7 @@ export function InfographicPosterView() {
             <div className="flex flex-col items-center gap-4 text-text-dim mt-16">
               <Loader2 size={36} className="animate-spin text-accent-cyan" />
               <p className="text-sm font-rajdhani tracking-wide">
-                {genMode === 'ai' ? 'Generating with gpt-image-1…' : 'Rendering poster…'}
+                {genMode === 'ai' ? 'Generating with gpt-image-2…' : 'Rendering poster…'}
               </p>
               {genMode === 'ai' && (
                 <p className="text-xs text-text-dim">This can take 30–60 seconds</p>
