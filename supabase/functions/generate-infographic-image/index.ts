@@ -63,14 +63,12 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // gpt-image-1 returns b64_json
     if (item.b64_json) {
       return new Response(JSON.stringify({ b64: item.b64_json, mediaType: "image/png" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fallback: URL-based response — fetch and encode
     if (item.url) {
       const imgRes = await fetch(item.url);
       if (!imgRes.ok) {
