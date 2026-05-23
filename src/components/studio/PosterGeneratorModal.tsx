@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   X, Sparkles, AlertCircle, CheckCircle2, Download,
-  Upload, Image as ImageIcon, Wand2, RotateCcw, Layers,
-  User, Trash2, Loader2, ChevronRight, ArrowLeft, Eye,
+  Upload, Wand2, RotateCcw, Layers,
+  User, Trash2, Loader2, ArrowLeft, Eye, ImagePlus,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useCredentials } from '../../contexts/CredentialsContext';
@@ -17,14 +17,12 @@ const POSTER_FN_URL = `${SUPABASE_URL}/functions/v1/generate-poster`;
 
 type Stage = 'gallery' | 'configure' | 'enhancing' | 'generating' | 'preview' | 'error';
 
-interface Props {
-  onClose: () => void;
-}
+interface Props { onClose: () => void }
 
 interface CustomField {
-  key: string;         // e.g. "brand_name"
-  label: string;       // e.g. "Brand Name"
-  placeholder: string; // e.g. "e.g. The North Face"
+  key: string;
+  label: string;
+  placeholder: string;
   value: string;
 }
 
@@ -35,7 +33,10 @@ interface PosterStyle {
   accentColor: string;
   gradientFrom: string;
   gradientTo: string;
+  /** Full OCR'd example prompt shown to user and used as generation base */
   examplePrompt: string;
+  /** Rich textual description of the example image's visual characteristics injected into every generation */
+  visualStyle: string;
   customFields: Omit<CustomField, 'value'>[];
   defaultSize: '1024x1024' | '1536x1024' | '1024x1536';
   promptPrefix: string;
@@ -51,6 +52,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#3b0a0a',
     defaultSize: '1024x1536',
     examplePrompt: `A hyper-detailed surreal advertising poster for The North Face. BACKGROUND: A large dark matte rounded rectangle in The North Face's signature black, white, and deep red palette fills the frame. Massive cropped THE NORTH FACE typography bleeds off-frame behind the subject, constructed from technical outdoor fabric textures, carbon fiber, snow textures, and expedition materials. Subtle cinematic grain overlays the entire composition.`,
+    visualStyle: `Dark matte rounded-rectangle background. Massive brand typography constructed from material textures bleeds off-frame behind a photorealistic subject. Cinematic grain overlay. Aurora borealis + mountain panorama visible in midground. Deep red accent colour against black and white palette. Mixed-media collage of fabric textures and environmental photography. Editorial compass motif bottom-left. Subject faces camera with dramatic low-angle tilt, wearing branded gear.`,
     customFields: [
       { key: 'brand', label: 'Brand / Product Name', placeholder: 'e.g. The North Face, Nike, Sony' },
       { key: 'tagline', label: 'Tagline or Message', placeholder: 'e.g. Built For Extreme, Just Do It' },
@@ -68,6 +70,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#052e0f',
     defaultSize: '1024x1536',
     examplePrompt: `Generate a perfectly graphic designed poster of Shoe advertisement. The character should be in the Air with a pose that shows the Big joggers with green strips same as the shirt color. The outfit should be modern baggie cool outfit and a Big text in beautiful font perfectly merged in the background and the some other texts about the shoes and the company.`,
+    visualStyle: `Subject airborne mid-leap, baggy modern streetwear. Giant brushstroke black text behind subject bleeds off-frame at top; neon green brushstroke typography at bottom overlapping subject's feet. White background with black paint-splash accents. Brand name top-left in small clean font. Script tagline mid-right. Company slogan bottom-left bold capitals. Shoes are the clear hero — prominently shown from below at foot-level.`,
     customFields: [
       { key: 'brand', label: 'Brand / Shoe Name', placeholder: 'e.g. Striders, Nike, Adidas' },
       { key: 'color', label: 'Primary Colour of Outfit & Shoes', placeholder: 'e.g. green, neon yellow, red' },
@@ -85,6 +88,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#051a3b',
     defaultSize: '1024x1536',
     examplePrompt: `URBAN GRAFFITI FASHION CAMPAIGN — ELSA & OLAF EDITION IMAGE TYPE Premium streetwear fashion poster, luxury editorial campaign, modern urban fashion advertisement featuring two hero subjects: Elsa and Olaf reimagined as high-fashion streetwear icons. CORE CONCEPT A bold fashion campaign built around TWO hero subjects: Elsa (ice queen-inspired fashion model) and Olaf (stylized streetwear companion character) blending luxury editorial photography, icy graffiti aesthetics, and winter-themed urban fashion culture.`,
+    visualStyle: `Dark background. Giant icy-blue graffiti lettering fills the top two-thirds; subject stands in front partially blocking letters. Companion character (smaller) beside subject at knee height. Bottom-left: vertical stacked typographic block — collection name, series name, drop number, season. Bottom-right: brand name + snowflake icon. Subject wears monochromatic winter streetwear. Dripping paint effect on graffiti letters. Photorealistic subjects against painted/illustrated background.`,
     customFields: [
       { key: 'brand', label: 'Brand or Collection Name', placeholder: 'e.g. Frost Street Luxe, Ice Reborn' },
       { key: 'subject', label: 'Hero Subject(s)', placeholder: 'e.g. Elsa & Olaf, two models in streetwear' },
@@ -102,6 +106,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#042033',
     defaultSize: '1024x1536',
     examplePrompt: `Fashion blueprint sheet of an elegant young woman posing beside a vintage bicycle, full-body low-angle view with detailed outfit annotations and fashion callout labels. Hair styled in a soft braided bun, geometric white statement earrings, fitted deep-red cropped top with long sleeves, flowing cream striped asymmetrical midi skirt, white minimalist slip-on shoes, relaxed artistic pose holding bicycle handlebars, modern European summer fashion aesthetic.`,
+    visualStyle: `Clean white/sky-blue background. Full-body editorial photo centred. Thin annotation lines with serif labels point to each garment and accessory. Top-left: collection title in large bold sans-serif + subtitle + brief description paragraph. Right side: "OUTFIT BREAKDOWN" column with garment thumbnail images and bullet-point feature lists. Bottom-left: fabric swatch thumbnails with material details. Bottom centre: movement sketches. Bottom strip: colour palette swatches. Precise architectural editorial typography throughout.`,
     customFields: [
       { key: 'subject', label: 'Subject Description', placeholder: 'e.g. elegant young woman beside a bicycle' },
       { key: 'outfit', label: 'Outfit Description', placeholder: 'e.g. deep-red crop top, cream midi skirt, slip-on shoes' },
@@ -119,11 +124,12 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#2e1a00',
     defaultSize: '1024x1536',
     examplePrompt: `A high-quality anime poster design in a modern Techwear style featuring Homelander from The Boys together with the uploaded person photo with hero name Adam integrated naturally into the artwork. The composition shows two characters side-by-side in a dynamic duo pose with strong chemistry and cinematic balance.`,
+    visualStyle: `Anime-style illustration. Two characters back-to-back or side-by-side. Fictional character on left fully rendered in anime art style; real person on right photorealistically rendered matching the anime art quality. White background with large orange and red brushstroke paint splashes. Upper portion: character stats in left column (affiliation, powers, height/weight), large kanji title top-left, character name in English bold right. Lower centre: large Japanese title text in brushstroke calligraphy + subtitle. Barcodes, dotted grids, organisational logos as graphic embellishments. Fictional character wears costume; real person wears tactical techwear.`,
     customFields: [
       { key: 'character1', label: 'Anime / Fictional Character', placeholder: 'e.g. Homelander, Goku, Naruto' },
       { key: 'character2', label: 'Real Person / Hero Name', placeholder: 'e.g. Adam — upload photo below' },
       { key: 'show', label: 'Show / Universe', placeholder: 'e.g. The Boys, Dragon Ball Z' },
-      { key: 'role', label: 'Role / Specialty', placeholder: 'e.g. Tech Architect, Systems Engineer' },
+      { key: 'role', label: 'Real Person\'s Role / Specialty', placeholder: 'e.g. Tech Architect, Systems Engineer' },
     ],
     promptPrefix: 'A high-quality anime poster design in modern Techwear style. Dynamic composition, cinematic balance.',
   },
@@ -136,6 +142,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#0a0a2e',
     defaultSize: '1024x1536',
     examplePrompt: `Ultra detailed anime manga character poster of Satoru Gojo, dramatic front-facing upper body close-up, centered symmetrical composition, direct eye contact with the viewer, overwhelming cinematic presence. White spiky hair, blue infinity eyes, wearing round glasses, with a smirking confident expression.`,
+    visualStyle: `Dark blue-black atmospheric background. Dramatic front-facing upper-body close-up, centred. Character fills 80% of frame with overwhelming presence. Background: collage mosaic of manga panel strips. Top-left: vertical Japanese kanji name + small English romanisation. Top-right: vertical Japanese text in blue. Bottom-left: single kanji character + small Japanese sentence. Bottom-right: short Japanese phrase. Circular symbol/crest top-left corner. Subtle blue particle light effects scattered across the frame. Premium theatrical key-visual quality.`,
     customFields: [
       { key: 'character', label: 'Character Name', placeholder: 'e.g. Satoru Gojo, Naruto, Luffy' },
       { key: 'hair', label: 'Hair Description', placeholder: 'e.g. white spiky hair, long dark hair' },
@@ -154,6 +161,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#2e0a1e',
     defaultSize: '1024x1024',
     examplePrompt: `Please create a highly saturated and trendy anime illustration based on upload image. Retain the basic recognition of the characters, including face shape, facial relationship, hairstyle foundation and overall temperament, but the overall character must be obviously anime and non-realistic. The style of painting refers to the funny popular anime illustrations: the lines are confident and powerful, with slight thickness changes; the coloring uses simple celluloid style, with large color areas and minimal gradients. Bright saturated pop background with stickers, speech bubbles, stars and playful typography.`,
+    visualStyle: `Highly saturated celluloid anime illustration. Three-quarter view, subject slightly forward toward camera. Pink-dominant colour palette: hot pink top, blue denim shorts, pearl bracelet. Subject holds colourful popsicle/item toward camera. Background: pastel pink/blue room crammed with cute props — vintage radio, record player, wall posters, checkerboard floor. Speech bubble top-left reading exclamation; second speech bubble bottom-right. Gold star stickers scattered. Sparkle effects on subject. Confident ink lines with slight thickness variation. Flat celluloid shading, minimal gradients.`,
     customFields: [
       { key: 'mood', label: 'Mood / Vibe', placeholder: 'e.g. sweet summer vibes, cool street energy' },
       { key: 'item', label: 'Item Subject Holds', placeholder: 'e.g. popsicle, coffee, flowers' },
@@ -170,7 +178,8 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientFrom: '#100800',
     gradientTo: '#1a0e00',
     defaultSize: '1536x1024',
-    examplePrompt: `Full-body fashion editorial shot taken from a slightly low angle, emphasizing dominance and presence. A confident young model sits casually on a sunlit concrete ledge, legs slightly apart, one arm resting on the knee, the other relaxed. The model looks to the sky on the left with a calm, commanding expression. Wearing a red parka jacket over a plain white t-shirt, cargo pants with many pocket and yellow strap waving, and modern sneakers. Behind and above towers the massive ZOIDS Liger Zero mech with Japanese brand annotations.`,
+    examplePrompt: `Full-body fashion editorial shot taken from a slightly low angle, emphasizing dominance and presence. A confident young model sits casually on a sunlit concrete ledge, legs slightly apart, one arm resting on the knee, the other relaxed. The model looks to the sky on the left with a calm, commanding expression. Wearing a red parka jacket over a plain white t-shirt, cargo pants with many pocket and yellow strap waving, and modern sneakers.`,
+    visualStyle: `Photorealistic real person sits on sunlit concrete ledge in foreground, lower-right third of frame. Behind and towering above: a massive, highly-detailed mechanical mech/robot beast fills the upper-left two-thirds. Clear blue sky with dramatic clouds as background. Manga sketch overlay lines and motion speed-lines around the mech. Top-left: brand name in bold brushstroke font + Japanese subtitle. Top-right: model designation number, scale label, brand boxes, spec callouts. Red "DANGER" splat sticker. Lower-right: official manufacturer logo box. Lower-left/centre: large graffiti-style word. Thin annotation lines on mech parts.`,
     customFields: [
       { key: 'mech', label: 'Mech / Robot Name', placeholder: 'e.g. ZOIDS Liger Zero, Gundam, Transformer' },
       { key: 'brand', label: 'Brand / Model Number', placeholder: 'e.g. Kotobukiya RZ-041, Bandai' },
@@ -188,6 +197,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#0f1520',
     defaultSize: '1024x1536',
     examplePrompt: `Create a full-page colored manga illustration based on the person in the reference photo. Use authentic manga page composition with 5–7 dynamic connected panels on a single page. Include cinematic storytelling, dramatic perspective, expressive emotions, dynamic poses, speed lines, impact frames, close-up shots, and intense visual flow. Add English comic-style sound effects, handwritten dialogue bubbles, ink splatter strokes, haftone textures, rough comic sketch lines, and graffiti-style elements.`,
+    visualStyle: `Full-page manga layout with 5-7 dynamic connected panels. White background. Largest panel: hero subject face close-up occupying top half, dark city skyline through window behind. Bold hand-lettered text stack top-left: FOCUS / PLAN / EXECUTE / REPEAT. Speech bubble top-right: motivational dialogue. Mid-page: horizontal strip with side-profile thinking pose + second speech bubble. Lower panels: action pose full-body + reaction close-up. Bottom: wide cinematic panel. Blue ink accent colour throughout. Ink splatter strokes between panels. Halftone dot textures in shadows. Orange crown graffiti tag. THWACK! sound effect in bold.`,
     customFields: [
       { key: 'theme', label: 'Story Theme / Setting', placeholder: 'e.g. tech entrepreneur, warrior, student' },
       { key: 'quote1', label: 'Main Dialogue Quote', placeholder: 'e.g. I don\'t chase opportunities. I build them.' },
@@ -205,6 +215,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#1a0028',
     defaultSize: '1024x1536',
     examplePrompt: `Create a highly detailed 8K portrait poster inspired by the iconic visual style of the modern Grand Theft Auto VI promotional artwork aesthetic, featuring a cinematic urban atmosphere with bold composition, vibrant lighting, layered graphic elements, and stylish contemporary street-luxury fashion energy. The overall design must strongly capture the signature mood of GTA VI posters, including dynamic neon color grading, tropical-modern city vibes, dramatic shadows, glossy finish.`,
+    visualStyle: `Vertical portrait. Subject fills centre-bottom two-thirds of frame, photographically real, wearing luxury streetwear — patterned jacket, gold chains, rings. Warm sunset gradient background: deep orange to magenta with silhouetted palm trees. Layered city skyline mid-background with neon signs. Large vertical text left edge of frame partially behind subject, fading. Top-right corner: small year box. Left-side text block: "THE NEXT CHAPTER BEGINS" in spaced caps. Neon sign callout boxes. Full-width bottom bar: iconic game logo in white/gold with matching typeface. Cinematic depth-of-field glow on subject edges.`,
     customFields: [
       { key: 'outfit', label: 'Subject\'s Outfit', placeholder: 'e.g. luxury patterned jacket, gold chain, white tee' },
       { key: 'city', label: 'City / Location Vibe', placeholder: 'e.g. Miami neon district, Tokyo, Vice City' },
@@ -222,6 +233,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#001933',
     defaultSize: '1024x1024',
     examplePrompt: `Create a premium square "reference-style architectural infographic" centered around a luxurious modern house, designed as a beautifully curated architecture handbook page rather than a real-estate advertisement. The composition should feel like a modern visual encyclopedia mixed with an elite architectural field guide and high-end editorial infographic system.`,
+    visualStyle: `Square format. Clean white background with navy blue accent system. Large photorealistic render of house occupies centre-left with annotation callout lines. Top-left: huge bold title "MODERN HOUSE" + subtitle + feature icon strip. Top-right: "KEY SPECIFICATIONS" table box. Mid-right: "PERFORMANCE & COMFORT" icon grid + "AREA BREAKDOWN" pie chart. Bottom row: five equal-width columns — DESIGN HIGHLIGHTS checklist, STRUCTURE & MATERIALS diagram, SMART HOME FEATURES list, SUSTAINABLE FEATURES list, SECTION VIEW diagram. Footer strip: DEVELOPMENT TIMELINE with milestone icons + COST ESTIMATE table + ADVANTAGES/CONSIDERATIONS columns. Precise sans-serif typography throughout.`,
     customFields: [
       { key: 'house_style', label: 'House Style', placeholder: 'e.g. Modern, Colonial, Mediterranean, Minimalist' },
       { key: 'floors', label: 'Number of Floors', placeholder: 'e.g. 2 storey, single level, duplex' },
@@ -239,6 +251,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#002e18',
     defaultSize: '1024x1536',
     examplePrompt: `Ultra-realistic premium mixed berry beverage advertisement poster design, luxury summer smoothie campaign style, clean white background with soft pink-purple gradient glow effects, subtle glossy reflections, floating berry particles and cinematic studio lighting, modern commercial Instagram ad aesthetic with trendy energetic composition. Showcase a crystal-clear tall glass filled with thick mixed berry smoothie in rich raspberry-purple tones.`,
+    visualStyle: `White background with soft radial pink glow gradient. Product (glass/can) occupies entire right half of frame — hero shot with dramatic studio lighting and glossy reflections. Fruit/ingredient splash burst behind and around product. Top-left: big bold brushstroke-style product name in two lines (different font weights). Below: script subtitle. Left column: three rounded-rectangle benefit badges with icon + label. Floating berry/ingredient particles scattered. Minimal brand wordmark bottom-right.`,
     customFields: [
       { key: 'product', label: 'Product Name', placeholder: 'e.g. Berry Blast Smoothie, Protein Bar, Energy Drink' },
       { key: 'headline', label: 'Headline Text', placeholder: 'e.g. BERRY BLAST, Fresh Berry Energy' },
@@ -256,6 +269,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#100028',
     defaultSize: '1024x1536',
     examplePrompt: `Create a high-impact Instagram-ready Sony Headphones campaign poster in a premium Gen Z tech-fashion editorial style, designed as an ultra-detailed 8K vertical 4:5 composition for a futuristic lifestyle and music-culture social media campaign. The artwork should blend cinematic fashion photography, handcrafted mixed-media collage aesthetics, futuristic tech branding, and modern urban editorial graphics into a visually explosive premium commercial design.`,
+    visualStyle: `Dark charcoal/black background. Subject centre-frame wearing product prominently. Giant torn/ripped paper collage effect reveals dark texture layer behind. Large bold mixed-weight typography stack on left: main word oversized, secondary word in bold blue, tertiary word oversized white. Brand logo top-left. Product name + spec callout top-right in tech blueprint style. Small illustrated icons (globe, crosshair, crown). Waveform graphic element. Script tagline mid-lower. Lower-right: handwritten logo treatment. Bottom strip: spec icons (battery, audio rating, technology). Vertical side text. Neon purple/blue light bloom behind subject.`,
     customFields: [
       { key: 'brand', label: 'Brand / Artist Name', placeholder: 'e.g. Sony, Bose, DJ Khaled' },
       { key: 'product', label: 'Product / Event', placeholder: 'e.g. WH-1000XM5 headphones, World Tour 2025' },
@@ -273,6 +287,7 @@ const POSTER_STYLES: PosterStyle[] = [
     gradientTo: '#141414',
     defaultSize: '1024x1536',
     examplePrompt: '',
+    visualStyle: '',
     customFields: [],
     promptPrefix: '',
   },
@@ -284,11 +299,18 @@ const SIZES = [
   { label: 'Landscape (16:9)', value: '1536x1024' as const, hint: 'Banner / display' },
 ];
 
-async function callPosterFunction(prompt: string, size: string, heroImageB64?: string, heroMediaType?: string): Promise<{ b64: string; mediaType: string }> {
+async function callPosterFunction(
+  prompt: string,
+  size: string,
+  heroImageB64?: string,
+  heroMediaType?: string,
+  referenceImageB64?: string,
+  referenceMediaType?: string,
+): Promise<{ b64: string; mediaType: string }> {
   const res = await fetch(POSTER_FN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-    body: JSON.stringify({ prompt, size, heroImageB64, heroMediaType }),
+    body: JSON.stringify({ prompt, size, heroImageB64, heroMediaType, referenceImageB64, referenceMediaType }),
   });
   if (!res.ok) {
     let msg = `Poster generation failed (HTTP ${res.status})`;
@@ -306,27 +328,22 @@ function fileToBase64(file: File): Promise<{ b64: string; mediaType: string }> {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      const b64 = result.slice(result.indexOf(',') + 1);
-      resolve({ b64, mediaType: file.type });
+      resolve({ b64: result.slice(result.indexOf(',') + 1), mediaType: file.type });
     };
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
 }
 
-/** Substitutes [FIELD_VALUE] placeholders with user values in the example prompt */
-function buildPromptFromFields(basePrompt: string, fields: CustomField[], stylePromptPrefix: string): string {
-  if (!basePrompt && stylePromptPrefix) return stylePromptPrefix;
-  let result = basePrompt || stylePromptPrefix;
+/** Substitute [PLACEHOLDER] / {placeholder} patterns with user field values */
+function buildPromptFromFields(base: string, fields: CustomField[], prefix: string): string {
+  let result = base || prefix;
   fields.forEach(f => {
-    if (f.value.trim()) {
-      // Replace any bracketed placeholder that semantically matches the field key
-      const patterns = [
-        new RegExp(`\\[${f.key.toUpperCase().replace(/_/g, '[_ ]?')}\\]`, 'gi'),
-        new RegExp(`\\{${f.key.toUpperCase().replace(/_/g, '[_ ]?')}\\}`, 'gi'),
-      ];
-      patterns.forEach(p => { result = result.replace(p, f.value.trim()); });
-    }
+    if (!f.value.trim()) return;
+    [
+      new RegExp(`\\[${f.key.toUpperCase().replace(/_/g, '[_ ]?')}\\]`, 'gi'),
+      new RegExp(`\\{${f.key.toUpperCase().replace(/_/g, '[_ ]?')}\\}`, 'gi'),
+    ].forEach(p => { result = result.replace(p, f.value.trim()); });
   });
   return result;
 }
@@ -336,29 +353,29 @@ export function PosterGeneratorModal({ onClose }: Props) {
   const { activeProvider, activeModel, notifyArtifactGenerated } = useAppStore();
   const db = useDb();
 
-  // Gallery / style selection
   const [stage, setStage] = useState<Stage>('gallery');
   const [selectedStyle, setSelectedStyle] = useState<PosterStyle | null>(null);
 
-  // Configure form
   const [fields, setFields] = useState<CustomField[]>([]);
   const [userIntent, setUserIntent] = useState('');
   const [enhancedPrompt, setEnhancedPrompt] = useState('');
   const [editingPrompt, setEditingPrompt] = useState(false);
   const [size, setSize] = useState<'1024x1024' | '1536x1024' | '1024x1536'>('1024x1536');
-  const [heroFile, setHeroFile] = useState<{ b64: string; mediaType: string; name: string } | null>(null);
-  const [analysing, setAnalysing] = useState(false);
 
-  // Output
+  /** User's subject/hero photo */
+  const [heroFile, setHeroFile] = useState<{ b64: string; mediaType: string; name: string } | null>(null);
+  /** User-provided style reference image */
+  const [refFile, setRefFile] = useState<{ b64: string; mediaType: string; name: string } | null>(null);
+
+  const [analysing, setAnalysing] = useState(false);
   const [error, setError] = useState('');
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [imageMediaType, setImageMediaType] = useState('image/png');
   const [saved, setSaved] = useState(false);
-
-  // Example preview overlay
   const [showExamplePrompt, setShowExamplePrompt] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const heroInputRef = useRef<HTMLInputElement>(null);
+  const refInputRef = useRef<HTMLInputElement>(null);
 
   const selectStyle = (s: PosterStyle) => {
     setSelectedStyle(s);
@@ -368,27 +385,29 @@ export function PosterGeneratorModal({ onClose }: Props) {
     setEnhancedPrompt('');
     setEditingPrompt(false);
     setHeroFile(null);
+    setRefFile(null);
     setShowExamplePrompt(false);
     setStage('configure');
   };
 
-  const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (v: { b64: string; mediaType: string; name: string } | null) => void,
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       const result = await fileToBase64(file);
-      setHeroFile({ ...result, name: file.name });
+      setter({ ...result, name: file.name });
     } catch { setError('Failed to load image.'); }
     e.target.value = '';
   };
 
-  const updateField = (key: string, value: string) => {
+  const updateField = (key: string, value: string) =>
     setFields(prev => prev.map(f => f.key === key ? { ...f, value } : f));
-  };
 
-  /** Use OpenAI to extract additional dynamic fields from the example prompt */
   const handleAnalyseFields = async () => {
-    if (!selectedStyle || !selectedStyle.examplePrompt) return;
+    if (!selectedStyle?.examplePrompt) return;
     const openaiKey = getKey('openai');
     const llmKey = getKey(activeProvider);
     const key = openaiKey || llmKey;
@@ -399,9 +418,7 @@ export function PosterGeneratorModal({ onClose }: Props) {
     setAnalysing(true);
     try {
       const { text } = await complete({
-        provider,
-        model,
-        apiKey: key,
+        provider, model, apiKey: key,
         system: `You are a prompt engineer. Given an image generation prompt, extract the key customisable variables a user would want to change to generate a similar but personalised poster.
 Return a JSON array of objects: [{key, label, placeholder}]
 - key: snake_case identifier
@@ -412,20 +429,14 @@ Return at most 6 items. Return ONLY valid JSON, no markdown.`,
         maxTokens: 600,
         temperature: 0.3,
       });
-
       const parsed = JSON.parse(text.trim()) as Omit<CustomField, 'value'>[];
       if (Array.isArray(parsed)) {
-        const merged = parsed.map(p => {
-          const existing = fields.find(f => f.key === p.key);
-          return { ...p, value: existing?.value ?? '' };
-        });
-        setFields(merged);
+        setFields(parsed.map(p => ({ ...p, value: fields.find(f => f.key === p.key)?.value ?? '' })));
       }
-    } catch { /* silently ignore — fields stay as defaults */ }
+    } catch { /* keep defaults */ }
     setAnalysing(false);
   };
 
-  // Auto-analyse when entering configure for a style that has a prompt but no AI-analysed fields yet
   useEffect(() => {
     if (stage === 'configure' && selectedStyle && selectedStyle.key !== 'custom' && selectedStyle.examplePrompt) {
       handleAnalyseFields();
@@ -433,39 +444,34 @@ Return at most 6 items. Return ONLY valid JSON, no markdown.`,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, selectedStyle?.key]);
 
-  const buildSystemPrompt = () =>
-    `You are a world-class creative director specializing in hyper-detailed AI image generation prompts for gpt-image-2.
-Expand the user's brief into a single rich prompt (200-400 words) that will produce a stunning, publication-ready poster.
-Include: composition details, lighting, typography style, color palette, mood, texture, camera angle, and relevant brand/cultural references.
-Output ONLY the prompt text — no headings, no explanation, no markdown.`;
-
   const handleEnhance = async () => {
     const llmKey = getKey(activeProvider);
     if (!llmKey) { setError(`No ${activeProvider} API key.`); setStage('error'); return; }
-    const intentText = userIntent.trim();
-    if (!intentText && fields.every(f => !f.value.trim())) {
+    if (!userIntent.trim() && fields.every(f => !f.value.trim())) {
       setError('Please fill in at least one field or describe your poster.'); setStage('error'); return;
     }
-
     setStage('enhancing');
     try {
       const style = selectedStyle!;
       const filledFields = fields.filter(f => f.value.trim()).map(f => `${f.label}: ${f.value}`).join('\n');
-      const fieldContext = filledFields ? `\nUser's customisation:\n${filledFields}` : '';
-      const styleCtx = style.key !== 'custom' ? `Style: ${style.label} — ${style.description}\nBase style prompt: ${style.promptPrefix}\n\n` : '';
-      const heroCtx = heroFile ? 'The user uploaded a hero photo of a real person — describe how to integrate their face naturally as the central subject.\n\n' : '';
-      const userCtx = intentText ? `Additional brief: "${intentText}"` : '';
+      const styleCtx = style.key !== 'custom'
+        ? `Style: ${style.label} — ${style.description}\nStyle prefix: ${style.promptPrefix}\nVisual characteristics: ${style.visualStyle}\n\n`
+        : '';
+      const heroCtx = heroFile ? 'The user has uploaded a hero/subject photo — this real person\'s face and appearance must be composited as the central subject. Describe exactly how to integrate them.\n\n' : '';
+      const refCtx = refFile ? 'The user has provided a style reference image — match its overall visual aesthetic, colour palette, and composition style.\n\n' : '';
+      const fieldCtx = filledFields ? `User's customisations:\n${filledFields}\n\n` : '';
+      const intentCtx = userIntent.trim() ? `Additional brief: "${userIntent.trim()}"` : '';
 
       const { text } = await complete({
-        provider: activeProvider,
-        model: activeModel,
-        apiKey: llmKey,
-        system: buildSystemPrompt(),
-        messages: [{ role: 'user', content: `${styleCtx}${heroCtx}${fieldContext}${userCtx}\n\nExpand this into a detailed image generation prompt.` }],
-        maxTokens: 1000,
+        provider: activeProvider, model: activeModel, apiKey: llmKey,
+        system: `You are a world-class creative director specializing in hyper-detailed AI image generation prompts for gpt-image-2 (OpenAI's April 2026 image model).
+Expand the brief into a single rich prompt (250-450 words) that will produce a stunning, publication-ready poster.
+Include ALL of: exact composition layout, lighting setup, typography style and content, colour palette, mood and atmosphere, texture details, camera angle, and specific visual element placement.
+Output ONLY the prompt — no headings, no explanation, no markdown.`,
+        messages: [{ role: 'user', content: `${styleCtx}${heroCtx}${refCtx}${fieldCtx}${intentCtx}\n\nExpand into a detailed gpt-image-2 generation prompt.` }],
+        maxTokens: 1200,
         temperature: 0.8,
       });
-
       setEnhancedPrompt(text.trim());
       setStage('configure');
     } catch (e) {
@@ -479,21 +485,35 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
     if (!openaiKey) { setError('Poster generation requires an OpenAI API key. Add one in Settings.'); setStage('error'); return; }
 
     const style = selectedStyle!;
+
+    // Build the final prompt: enhanced > field-substituted example > prefix + intent
     let finalPrompt = enhancedPrompt.trim();
     if (!finalPrompt) {
-      finalPrompt = buildPromptFromFields(style.examplePrompt, fields, style.promptPrefix);
-      // Append any free-form user intent
+      const fieldBase = buildPromptFromFields(style.examplePrompt, fields, style.promptPrefix);
+      const filledSummary = fields.filter(f => f.value.trim()).map(f => `${f.label}: ${f.value}`).join(', ');
+      finalPrompt = fieldBase;
+      if (filledSummary) finalPrompt += `\n\nCustomisations: ${filledSummary}`;
       if (userIntent.trim()) finalPrompt += `\n\n${userIntent.trim()}`;
     }
-    if (!finalPrompt) { setError('Please fill in at least one field or describe your poster.'); setStage('error'); return; }
+
+    // Always inject the visual style descriptor so gpt-image-2 knows the target aesthetic
+    if (style.visualStyle && !finalPrompt.includes(style.visualStyle.slice(0, 40))) {
+      finalPrompt += `\n\nVISUAL STYLE REFERENCE: ${style.visualStyle}`;
+    }
+
+    if (!finalPrompt.trim()) { setError('Please fill in at least one field or describe your poster.'); setStage('error'); return; }
 
     setStage('generating');
     try {
-      const { b64, mediaType } = await callPosterFunction(finalPrompt, size, heroFile?.b64, heroFile?.mediaType);
+      const { b64, mediaType } = await callPosterFunction(
+        finalPrompt, size,
+        heroFile?.b64, heroFile?.mediaType,
+        refFile?.b64, refFile?.mediaType,
+      );
       setImageB64(b64);
       setImageMediaType(mediaType);
 
-      const title = fields.find(f => f.key === 'brand' || f.key === 'product' || f.key === 'character')?.value
+      const title = fields.find(f => ['brand', 'product', 'character', 'character1'].includes(f.key))?.value
         || userIntent.slice(0, 60) || style.label;
 
       const savedArtifact = await artifactsRepo.create(db, {
@@ -501,7 +521,11 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
         title,
         data: b64,
         mediaType,
-        meta: { prompt: finalPrompt, style: style.key, size, hasHero: !!heroFile, generatedAt: Date.now(), provider: 'openai', model: 'gpt-image-2', category: 'poster' },
+        meta: {
+          prompt: finalPrompt, style: style.key, size,
+          hasHero: !!heroFile, hasReference: !!refFile,
+          generatedAt: Date.now(), provider: 'openai', model: 'gpt-image-2', category: 'poster',
+        },
       });
       notifyArtifactGenerated(savedArtifact.id);
       setSaved(true);
@@ -528,22 +552,15 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
 
   const promptReady = enhancedPrompt.trim() || userIntent.trim() || fields.some(f => f.value.trim());
 
-  // ─── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-5xl h-[92vh] bg-bg-panel border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="w-full max-w-5xl h-[92vh] bg-bg-panel border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+
         {/* Header */}
         <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-border bg-bg-elevated">
           <div className="flex items-center gap-3">
             {stage !== 'gallery' && stage !== 'error' && (
-              <button
-                onClick={() => { setStage('gallery'); setSelectedStyle(null); }}
-                className="p-1.5 rounded-btn text-text-dim hover:text-accent-amber transition-colors"
-              >
+              <button onClick={() => { setStage('gallery'); setSelectedStyle(null); }} className="p-1.5 rounded-btn text-text-dim hover:text-accent-amber transition-colors">
                 <ArrowLeft size={15} />
               </button>
             )}
@@ -552,10 +569,10 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
             </div>
             <div>
               <h2 className="font-orbitron font-bold text-text-primary text-sm tracking-wide uppercase">
-                {stage === 'gallery' ? 'Poster Generator' : selectedStyle?.label ?? 'Poster Generator'}
+                {stage === 'gallery' ? 'Poster Generator' : (selectedStyle?.label ?? 'Poster Generator')}
               </h2>
               <p className="font-mono text-[10px] text-text-dim tracking-wider">
-                {stage === 'gallery' ? 'SELECT A STYLE · GPT-IMAGE-2' : 'CONFIGURE · GPT-IMAGE-2 · HIGH QUALITY'}
+                {stage === 'gallery' ? `SELECT A STYLE · ${POSTER_STYLES.length - 1} TEMPLATES` : 'GPT-IMAGE-2 · HIGH QUALITY · APRIL 2026'}
               </p>
             </div>
           </div>
@@ -567,12 +584,10 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-y-auto">
 
-          {/* ── GALLERY STAGE ── */}
+          {/* ── GALLERY ── */}
           {stage === 'gallery' && (
             <div className="p-5">
-              <p className="text-xs text-text-dim mb-4 font-inter">
-                Choose a poster style. Click any card to see the example prompt and customise it.
-              </p>
+              <p className="text-xs text-text-dim mb-4">Choose a poster style. Each includes an example prompt and AI-detected customisation fields.</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {POSTER_STYLES.map(s => (
                   <button
@@ -580,42 +595,31 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
                     onClick={() => selectStyle(s)}
                     className="group relative rounded-lg overflow-hidden border border-border hover:border-accent-amber transition-all hover:-translate-y-0.5 hover:shadow-lg text-left"
                   >
-                    {/* Visual swatch */}
                     <div
                       className="h-28 w-full relative flex items-center justify-center overflow-hidden"
                       style={{ background: `linear-gradient(135deg, ${s.gradientFrom}, ${s.gradientTo})` }}
                     >
-                      {/* Decorative pattern */}
-                      <div className="absolute inset-0 opacity-20" style={{
-                        backgroundImage: `repeating-linear-gradient(45deg, ${s.accentColor}22 0px, ${s.accentColor}22 1px, transparent 1px, transparent 12px)`,
-                      }} />
-                      {/* Accent blob */}
-                      <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full opacity-30 blur-2xl" style={{ backgroundColor: s.accentColor }} />
-                      <div className="absolute top-2 left-2 right-2">
-                        <div className="font-orbitron font-bold text-[10px] tracking-widest uppercase opacity-60 text-white line-clamp-1">
-                          {s.label}
-                        </div>
+                      <div className="absolute inset-0 opacity-15" style={{ backgroundImage: `repeating-linear-gradient(45deg, ${s.accentColor}33 0, ${s.accentColor}33 1px, transparent 1px, transparent 12px)` }} />
+                      <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full opacity-25 blur-2xl" style={{ backgroundColor: s.accentColor }} />
+                      <div className="absolute top-2 left-2 right-8">
+                        <div className="font-orbitron font-bold text-[9px] tracking-widest uppercase text-white/50 line-clamp-1">{s.label}</div>
                       </div>
-                      {/* Center icon */}
                       <div
-                        className="w-10 h-10 rounded-lg border-2 flex items-center justify-center opacity-60 group-hover:opacity-90 transition-opacity"
+                        className="w-10 h-10 rounded-lg border-2 flex items-center justify-center opacity-50 group-hover:opacity-90 transition-opacity"
                         style={{ borderColor: s.accentColor, backgroundColor: `${s.accentColor}22` }}
                       >
                         <Layers size={18} style={{ color: s.accentColor }} />
                       </div>
-                      {/* Hover overlay */}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-white text-[10px] font-rajdhani font-bold uppercase tracking-wider">
                           <Eye size={12} /> Select
                         </div>
                       </div>
                     </div>
-                    {/* Label */}
                     <div className="p-2.5 bg-bg-elevated">
                       <div className="font-rajdhani font-bold text-xs text-text-primary leading-tight">{s.label}</div>
                       <div className="text-[9px] text-text-dim mt-0.5 leading-tight line-clamp-2">{s.description}</div>
                     </div>
-                    {/* Accent top rail */}
                     <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: s.accentColor }} />
                   </button>
                 ))}
@@ -623,24 +627,20 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
             </div>
           )}
 
-          {/* ── CONFIGURE STAGE ── */}
+          {/* ── CONFIGURE ── */}
           {stage === 'configure' && selectedStyle && (
             <div className="p-5 space-y-5 max-w-4xl mx-auto">
 
-              {/* Example prompt card */}
+              {/* Example output card */}
               {selectedStyle.examplePrompt && (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  {/* Gradient header with "Example" label */}
                   <div
                     className="px-4 py-3 flex items-center justify-between"
                     style={{ background: `linear-gradient(135deg, ${selectedStyle.gradientFrom}, ${selectedStyle.gradientTo})` }}
                   >
                     <div className="flex items-center gap-2">
-                      <div
-                        className="w-2 h-2 rounded-full"
-                        style={{ backgroundColor: selectedStyle.accentColor }}
-                      />
-                      <span className="font-rajdhani font-bold text-xs text-white uppercase tracking-wider">Example Output</span>
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedStyle.accentColor }} />
+                      <span className="font-rajdhani font-bold text-xs text-white uppercase tracking-wider">Example Poster Style</span>
                     </div>
                     <button
                       onClick={() => setShowExamplePrompt(p => !p)}
@@ -660,11 +660,10 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
                       </button>
                     </div>
                   )}
-                  {/* Style description */}
-                  <div className="px-4 py-2.5 bg-bg-elevated border-t border-border flex items-center gap-2">
-                    <div className="text-[10px] text-text-dim leading-relaxed flex-1">{selectedStyle.description}</div>
+                  <div className="px-4 py-2.5 bg-bg-elevated border-t border-border flex items-center justify-between gap-2">
+                    <div className="text-[10px] text-text-dim leading-relaxed">{selectedStyle.description}</div>
                     {analysing && (
-                      <div className="flex items-center gap-1 text-[10px] text-text-dim">
+                      <div className="flex items-center gap-1 text-[10px] text-text-dim shrink-0">
                         <Loader2 size={10} className="animate-spin" /> Detecting fields...
                       </div>
                     )}
@@ -676,35 +675,25 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
               {fields.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <label className="text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim">
-                      Customise Your Poster
-                    </label>
+                    <label className="text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim">Customise Your Poster</label>
                     <div className="h-px flex-1 bg-border" />
                     <span className="text-[9px] font-mono text-text-dim">AI-DETECTED FIELDS</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {fields.map(f => (
                       <div key={f.key}>
-                        <label className="block text-[10px] font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1">
-                          {f.label}
-                        </label>
-                        <input
-                          type="text"
-                          value={f.value}
-                          onChange={e => updateField(f.key, e.target.value)}
-                          placeholder={f.placeholder}
-                          className="input text-sm"
-                        />
+                        <label className="block text-[10px] font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1">{f.label}</label>
+                        <input type="text" value={f.value} onChange={e => updateField(f.key, e.target.value)} placeholder={f.placeholder} className="input text-sm" />
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Free-form brief */}
+              {/* Free-form intent */}
               <div>
                 <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1.5">
-                  Additional Description <span className="text-text-dim font-normal normal-case text-[10px]">(optional)</span>
+                  Additional Description <span className="text-[10px] text-text-dim font-normal normal-case">(optional)</span>
                 </label>
                 <textarea
                   value={userIntent}
@@ -721,7 +710,7 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
                   >
                     <Wand2 size={12} /> Enhance with AI
                   </button>
-                  <span className="text-[10px] text-text-dim">Weave your fields into a detailed prompt</span>
+                  <span className="text-[10px] text-text-dim">Weave your choices into a detailed prompt</span>
                 </div>
               </div>
 
@@ -740,57 +729,54 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
                       {editingPrompt ? 'Done' : 'Edit'}
                     </button>
                   </div>
-                  {editingPrompt ? (
-                    <textarea value={enhancedPrompt} onChange={e => setEnhancedPrompt(e.target.value)} rows={5} className="w-full p-3 bg-transparent text-xs font-mono text-text-primary resize-none focus:outline-none" />
-                  ) : (
-                    <p className="p-3 text-xs font-mono text-text-secondary leading-relaxed line-clamp-4">{enhancedPrompt}</p>
-                  )}
+                  {editingPrompt
+                    ? <textarea value={enhancedPrompt} onChange={e => setEnhancedPrompt(e.target.value)} rows={6} className="w-full p-3 bg-transparent text-xs font-mono text-text-primary resize-none focus:outline-none" />
+                    : <p className="p-3 text-xs font-mono text-text-secondary leading-relaxed line-clamp-4">{enhancedPrompt}</p>
+                  }
                 </div>
               )}
 
-              {/* Hero picture + size */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Images: hero + style reference + size */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Hero photo */}
                 <div>
-                  <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1.5">
-                    Hero Picture <span className="text-text-dim font-normal normal-case text-[10px]">(optional)</span>
+                  <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1">
+                    Hero Photo
                   </label>
-                  <p className="text-[10px] text-text-dim mb-2">Upload a photo of a real person to be composited into the poster.</p>
+                  <p className="text-[10px] text-text-dim mb-2">Real person to composite as the central subject.</p>
                   {heroFile ? (
-                    <div className="flex items-center gap-3 p-3 border border-border rounded-btn bg-bg-elevated">
-                      <div className="p-2 rounded-btn border border-border bg-bg-panel">
-                        <User size={16} className="text-accent-cyan" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-mono text-text-primary truncate">{heroFile.name}</div>
-                        <div className="text-[10px] text-text-dim">Hero photo loaded</div>
-                      </div>
-                      <button onClick={() => setHeroFile(null)} className="p-1.5 rounded-btn text-text-dim hover:text-red-400 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    <FileChip name={heroFile.name} onRemove={() => setHeroFile(null)} icon={<User size={14} className="text-accent-cyan" />} />
                   ) : (
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full flex flex-col items-center gap-2 p-4 rounded-btn border border-dashed border-border hover:border-accent-cyan hover:bg-accent-cyan/5 transition-all text-text-dim"
-                    >
-                      <Upload size={20} />
-                      <span className="text-[11px] font-rajdhani font-semibold uppercase tracking-wider">Upload photo</span>
-                      <span className="text-[10px]">JPG or PNG</span>
-                    </button>
+                    <UploadSlot onClick={() => heroInputRef.current?.click()} label="Upload hero" />
                   )}
-                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={handleHeroUpload} />
+                  <input ref={heroInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={e => handleFileUpload(e, setHeroFile)} />
                 </div>
 
+                {/* Style reference image */}
                 <div>
-                  <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1.5">Size</label>
+                  <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1">
+                    Style Reference
+                  </label>
+                  <p className="text-[10px] text-text-dim mb-2">Optional image to match the visual style of.</p>
+                  {refFile ? (
+                    <FileChip name={refFile.name} onRemove={() => setRefFile(null)} icon={<ImagePlus size={14} className="text-accent-amber" />} />
+                  ) : (
+                    <UploadSlot onClick={() => refInputRef.current?.click()} label="Upload reference" accent="amber" />
+                  )}
+                  <input ref={refInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={e => handleFileUpload(e, setRefFile)} />
+                </div>
+
+                {/* Size picker */}
+                <div>
+                  <label className="block text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-dim mb-1">Size</label>
                   <div className="space-y-2">
                     {SIZES.map(s => (
                       <button
                         key={s.value}
                         onClick={() => setSize(s.value)}
-                        className={clsx('w-full flex items-center justify-between px-3 py-2.5 rounded-btn border text-left transition-colors', s.value === size ? 'border-accent-amber bg-accent-amber/10' : 'border-border hover:border-text-dim')}
+                        className={clsx('w-full flex items-center justify-between px-3 py-2 rounded-btn border text-left transition-colors text-sm', s.value === size ? 'border-accent-amber bg-accent-amber/10' : 'border-border hover:border-text-dim')}
                       >
-                        <span className={clsx('font-rajdhani font-bold text-sm', s.value === size ? 'text-accent-amber' : 'text-text-primary')}>{s.label}</span>
+                        <span className={clsx('font-rajdhani font-bold', s.value === size ? 'text-accent-amber' : 'text-text-primary')}>{s.label}</span>
                         <span className="text-[10px] text-text-dim">{s.hint}</span>
                       </button>
                     ))}
@@ -805,7 +791,7 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
             <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center min-h-[400px]">
               <Loader2 size={40} className="text-accent-amber animate-spin" />
               <div className="font-rajdhani font-bold text-lg text-text-primary">Crafting your poster brief...</div>
-              <p className="text-xs text-text-dim font-mono">AI is weaving your choices into a detailed prompt</p>
+              <p className="text-xs text-text-dim font-mono">AI is weaving your choices into a detailed gpt-image-2 prompt</p>
             </div>
           )}
 
@@ -819,7 +805,7 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
               </div>
               <div className="font-rajdhani font-bold text-lg text-text-primary">Generating your poster...</div>
               <p className="text-xs text-text-dim font-mono max-w-sm">
-                {heroFile ? 'Compositing hero photo into the design...' : 'GPT Image 2 is rendering your design...'}
+                {heroFile && refFile ? 'Compositing hero photo with style reference...' : heroFile ? 'Compositing hero photo into the design...' : refFile ? 'Applying style reference to generation...' : 'GPT Image 2 is rendering your design...'}
               </p>
               <p className="text-[10px] text-text-dim font-mono">This may take 20–40 seconds</p>
             </div>
@@ -858,16 +844,14 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
         <div className="shrink-0 flex items-center justify-between px-5 py-3 border-t border-border bg-bg-elevated gap-3">
           <div className="font-mono text-[10px] text-text-dim tracking-wider">
             {stage === 'preview' && saved && <span className="flex items-center gap-1.5 text-accent-green"><CheckCircle2 size={11} /> SAVED TO LIBRARY</span>}
-            {stage === 'gallery' && <span className="flex items-center gap-1"><ImageIcon size={11} className="text-accent-amber" /><span className="ml-1">{POSTER_STYLES.length - 1} STYLES · GPT IMAGE 2</span></span>}
-            {stage === 'configure' && <span className="flex items-center gap-1"><ImageIcon size={11} className="text-accent-amber" /><span className="ml-1">CONFIGURE · GPT IMAGE 2</span></span>}
+            {stage === 'gallery' && 'GPT IMAGE 2 · PORTRAIT / SQUARE / LANDSCAPE'}
+            {stage === 'configure' && 'CONFIGURE · GPT IMAGE 2 · APRIL 2026'}
             {stage === 'generating' && 'GENERATING...'}
             {stage === 'enhancing' && 'ENHANCING PROMPT...'}
           </div>
           <div className="flex items-center gap-2">
             {stage === 'gallery' && (
-              <button onClick={onClose} className="px-4 py-2 rounded-btn border border-border text-text-secondary hover:text-text-primary text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors">
-                Cancel
-              </button>
+              <button onClick={onClose} className="px-4 py-2 rounded-btn border border-border text-text-secondary hover:text-text-primary text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors">Cancel</button>
             )}
             {stage === 'configure' && (
               <>
@@ -896,6 +880,37 @@ Output ONLY the prompt text — no headings, no explanation, no markdown.`;
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function UploadSlot({ onClick, label, accent = 'cyan' }: { onClick: () => void; label: string; accent?: 'cyan' | 'amber' }) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'w-full flex flex-col items-center gap-1.5 p-3 rounded-btn border border-dashed transition-all text-text-dim',
+        accent === 'amber' ? 'hover:border-accent-amber hover:bg-accent-amber/5' : 'hover:border-accent-cyan hover:bg-accent-cyan/5',
+      )}
+    >
+      <Upload size={18} />
+      <span className="text-[10px] font-rajdhani font-semibold uppercase tracking-wider">{label}</span>
+      <span className="text-[9px]">JPG or PNG</span>
+    </button>
+  );
+}
+
+function FileChip({ name, onRemove, icon }: { name: string; onRemove: () => void; icon: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 p-2.5 border border-border rounded-btn bg-bg-elevated">
+      <div className="p-1.5 rounded-btn border border-border bg-bg-panel">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-mono text-text-primary truncate">{name}</div>
+        <div className="text-[9px] text-text-dim">Loaded</div>
+      </div>
+      <button onClick={onRemove} className="p-1 rounded text-text-dim hover:text-red-400 transition-colors">
+        <Trash2 size={12} />
+      </button>
     </div>
   );
 }
