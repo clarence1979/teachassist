@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Sparkles, AlertCircle, CheckCircle2, Download,
   Upload, Wand2, RotateCcw, Layers,
@@ -420,6 +420,16 @@ export function PosterGeneratorModal({ onClose }: Props) {
     e.target.value = '';
   };
 
+  const handleFileUpload2 = useCallback(async (
+    file: File,
+    setter: (v: { b64: string; mediaType: string; name: string } | null) => void,
+  ) => {
+    try {
+      const result = await fileToBase64(file);
+      setter({ ...result, name: file.name });
+    } catch { setError('Failed to load image.'); }
+  }, []);
+
   const updateField = (key: string, value: string) =>
     setFields(prev => prev.map(f => f.key === key ? { ...f, value } : f));
 
@@ -818,9 +828,14 @@ Output ONLY the prompt — no headings, no explanation, no markdown.`,
                   </label>
                   <p className="text-[10px] text-text-dim mb-2">Real person to composite as the central subject.</p>
                   {heroFile ? (
-                    <FileChip name={heroFile.name} onRemove={() => setHeroFile(null)} icon={<User size={14} className="text-accent-cyan" />} />
+                    <FileChip name={heroFile.name} b64={heroFile.b64} mediaType={heroFile.mediaType} onRemove={() => setHeroFile(null)} icon={<User size={14} className="text-accent-cyan" />} />
                   ) : (
-                    <UploadSlot onClick={() => heroInputRef.current?.click()} label="Upload hero" />
+                    <DropZone
+                      inputRef={heroInputRef}
+                      onFile={f => handleFileUpload2(f, setHeroFile)}
+                      label="Hero Photo"
+                      accent="cyan"
+                    />
                   )}
                   <input ref={heroInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={e => handleFileUpload(e, setHeroFile)} />
                 </div>
@@ -832,9 +847,14 @@ Output ONLY the prompt — no headings, no explanation, no markdown.`,
                   </label>
                   <p className="text-[10px] text-text-dim mb-2">Optional image to match the visual style of.</p>
                   {refFile ? (
-                    <FileChip name={refFile.name} onRemove={() => setRefFile(null)} icon={<ImagePlus size={14} className="text-accent-amber" />} />
+                    <FileChip name={refFile.name} b64={refFile.b64} mediaType={refFile.mediaType} onRemove={() => setRefFile(null)} icon={<ImagePlus size={14} className="text-accent-amber" />} />
                   ) : (
-                    <UploadSlot onClick={() => refInputRef.current?.click()} label="Upload reference" accent="amber" />
+                    <DropZone
+                      inputRef={refInputRef}
+                      onFile={f => handleFileUpload2(f, setRefFile)}
+                      label="Style Reference"
+                      accent="amber"
+                    />
                   )}
                   <input ref={refInputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={e => handleFileUpload(e, setRefFile)} />
                 </div>
@@ -957,31 +977,79 @@ Output ONLY the prompt — no headings, no explanation, no markdown.`,
   );
 }
 
-function UploadSlot({ onClick, label, accent = 'cyan' }: { onClick: () => void; label: string; accent?: 'cyan' | 'amber' }) {
+function DropZone({
+  inputRef,
+  onFile,
+  label,
+  accent = 'cyan',
+}: {
+  inputRef: React.RefObject<HTMLInputElement>;
+  onFile: (file: File) => void;
+  label: string;
+  accent?: 'cyan' | 'amber';
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  const accentBorder = accent === 'amber' ? 'border-accent-amber bg-accent-amber/8' : 'border-accent-cyan bg-accent-cyan/8';
+  const hoverClass = accent === 'amber' ? 'hover:border-accent-amber hover:bg-accent-amber/5' : 'hover:border-accent-cyan hover:bg-accent-cyan/5';
+  const iconColor = accent === 'amber' ? 'text-accent-amber' : 'text-accent-cyan';
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('image/'));
+    if (file) onFile(file);
+  };
+
   return (
-    <button
-      onClick={onClick}
+    <div
+      onClick={() => inputRef.current?.click()}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={clsx(
-        'w-full flex flex-col items-center gap-1.5 p-3 rounded-btn border border-dashed transition-all text-text-dim',
-        accent === 'amber' ? 'hover:border-accent-amber hover:bg-accent-amber/5' : 'hover:border-accent-cyan hover:bg-accent-cyan/5',
+        'w-full flex flex-col items-center justify-center gap-2 p-4 rounded-btn border border-dashed cursor-pointer transition-all select-none',
+        dragging ? accentBorder : `border-border text-text-dim ${hoverClass}`,
       )}
     >
-      <Upload size={18} />
-      <span className="text-[10px] font-rajdhani font-semibold uppercase tracking-wider">{label}</span>
-      <span className="text-[9px]">JPG or PNG</span>
-    </button>
+      <Upload size={20} className={dragging ? iconColor : 'text-text-dim'} />
+      <div className="text-center">
+        <div className={clsx('text-[10px] font-rajdhani font-bold uppercase tracking-wider', dragging ? iconColor : 'text-text-secondary')}>
+          {dragging ? 'Drop to upload' : label}
+        </div>
+        <div className="text-[9px] text-text-dim mt-0.5">Drag & drop or click · JPG or PNG</div>
+      </div>
+    </div>
   );
 }
 
-function FileChip({ name, onRemove, icon }: { name: string; onRemove: () => void; icon: React.ReactNode }) {
+function FileChip({
+  name, b64, mediaType, onRemove, icon,
+}: {
+  name: string;
+  b64: string;
+  mediaType: string;
+  onRemove: () => void;
+  icon: React.ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-2 p-2.5 border border-border rounded-btn bg-bg-elevated">
-      <div className="p-1.5 rounded-btn border border-border bg-bg-panel">{icon}</div>
+    <div className="flex items-center gap-2 p-2 border border-border rounded-btn bg-bg-elevated">
+      {/* Thumbnail preview */}
+      <div className="w-10 h-10 rounded shrink-0 overflow-hidden border border-border bg-bg-panel">
+        <img src={`data:${mediaType};base64,${b64}`} alt={name} className="w-full h-full object-cover" />
+      </div>
       <div className="flex-1 min-w-0">
         <div className="text-[11px] font-mono text-text-primary truncate">{name}</div>
-        <div className="text-[9px] text-text-dim">Loaded</div>
+        <div className="flex items-center gap-1 mt-0.5">{icon}<span className="text-[9px] text-text-dim">Loaded</span></div>
       </div>
-      <button onClick={onRemove} className="p-1 rounded text-text-dim hover:text-red-400 transition-colors">
+      <button onClick={onRemove} className="p-1 rounded text-text-dim hover:text-red-400 transition-colors shrink-0">
         <Trash2 size={12} />
       </button>
     </div>
