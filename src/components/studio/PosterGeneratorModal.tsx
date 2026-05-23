@@ -33,6 +33,8 @@ interface PosterStyle {
   accentColor: string;
   gradientFrom: string;
   gradientTo: string;
+  /** Path to thumbnail image in /public */
+  thumbnail: string;
   /** Full OCR'd example prompt shown to user and used as generation base */
   examplePrompt: string;
   /** Rich textual description of the example image's visual characteristics injected into every generation */
@@ -50,6 +52,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#ef4444',
     gradientFrom: '#1a0505',
     gradientTo: '#3b0a0a',
+    thumbnail: '/poster-advertising.webp',
     defaultSize: '1024x1536',
     examplePrompt: `A hyper-detailed surreal advertising poster for The North Face. BACKGROUND: A large dark matte rounded rectangle in The North Face's signature black, white, and deep red palette fills the frame. Massive cropped THE NORTH FACE typography bleeds off-frame behind the subject, constructed from technical outdoor fabric textures, carbon fiber, snow textures, and expedition materials. Subtle cinematic grain overlays the entire composition.`,
     visualStyle: `Dark matte rounded-rectangle background. Massive brand typography constructed from material textures bleeds off-frame behind a photorealistic subject. Cinematic grain overlay. Aurora borealis + mountain panorama visible in midground. Deep red accent colour against black and white palette. Mixed-media collage of fabric textures and environmental photography. Editorial compass motif bottom-left. Subject faces camera with dramatic low-angle tilt, wearing branded gear.`,
@@ -68,6 +71,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#22c55e',
     gradientFrom: '#021a08',
     gradientTo: '#052e0f',
+    thumbnail: '/poster-streetwear.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Generate a perfectly graphic designed poster of Shoe advertisement. The character should be in the Air with a pose that shows the Big joggers with green strips same as the shirt color. The outfit should be modern baggie cool outfit and a Big text in beautiful font perfectly merged in the background and the some other texts about the shoes and the company.`,
     visualStyle: `Subject airborne mid-leap, baggy modern streetwear. Giant brushstroke black text behind subject bleeds off-frame at top; neon green brushstroke typography at bottom overlapping subject's feet. White background with black paint-splash accents. Brand name top-left in small clean font. Script tagline mid-right. Company slogan bottom-left bold capitals. Shoes are the clear hero — prominently shown from below at foot-level.`,
@@ -86,6 +90,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#3b82f6',
     gradientFrom: '#020b1a',
     gradientTo: '#051a3b',
+    thumbnail: '/poster-fashion.webp',
     defaultSize: '1024x1536',
     examplePrompt: `URBAN GRAFFITI FASHION CAMPAIGN — ELSA & OLAF EDITION IMAGE TYPE Premium streetwear fashion poster, luxury editorial campaign, modern urban fashion advertisement featuring two hero subjects: Elsa and Olaf reimagined as high-fashion streetwear icons. CORE CONCEPT A bold fashion campaign built around TWO hero subjects: Elsa (ice queen-inspired fashion model) and Olaf (stylized streetwear companion character) blending luxury editorial photography, icy graffiti aesthetics, and winter-themed urban fashion culture.`,
     visualStyle: `Dark background. Giant icy-blue graffiti lettering fills the top two-thirds; subject stands in front partially blocking letters. Companion character (smaller) beside subject at knee height. Bottom-left: vertical stacked typographic block — collection name, series name, drop number, season. Bottom-right: brand name + snowflake icon. Subject wears monochromatic winter streetwear. Dripping paint effect on graffiti letters. Photorealistic subjects against painted/illustrated background.`,
@@ -104,6 +109,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#0ea5e9',
     gradientFrom: '#021018',
     gradientTo: '#042033',
+    thumbnail: '/poster-fashion-blueprint.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Fashion blueprint sheet of an elegant young woman posing beside a vintage bicycle, full-body low-angle view with detailed outfit annotations and fashion callout labels. Hair styled in a soft braided bun, geometric white statement earrings, fitted deep-red cropped top with long sleeves, flowing cream striped asymmetrical midi skirt, white minimalist slip-on shoes, relaxed artistic pose holding bicycle handlebars, modern European summer fashion aesthetic.`,
     visualStyle: `Clean white/sky-blue background. Full-body editorial photo centred. Thin annotation lines with serif labels point to each garment and accessory. Top-left: collection title in large bold sans-serif + subtitle + brief description paragraph. Right side: "OUTFIT BREAKDOWN" column with garment thumbnail images and bullet-point feature lists. Bottom-left: fabric swatch thumbnails with material details. Bottom centre: movement sketches. Bottom strip: colour palette swatches. Precise architectural editorial typography throughout.`,
@@ -122,6 +128,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#f59e0b',
     gradientFrom: '#1a0f00',
     gradientTo: '#2e1a00',
+    thumbnail: '/poster-anime.webp',
     defaultSize: '1024x1536',
     examplePrompt: `A high-quality anime poster design in a modern Techwear style featuring Homelander from The Boys together with the uploaded person photo with hero name Adam integrated naturally into the artwork. The composition shows two characters side-by-side in a dynamic duo pose with strong chemistry and cinematic balance.`,
     visualStyle: `Anime-style illustration. Two characters back-to-back or side-by-side. Fictional character on left fully rendered in anime art style; real person on right photorealistically rendered matching the anime art quality. White background with large orange and red brushstroke paint splashes. Upper portion: character stats in left column (affiliation, powers, height/weight), large kanji title top-left, character name in English bold right. Lower centre: large Japanese title text in brushstroke calligraphy + subtitle. Barcodes, dotted grids, organisational logos as graphic embellishments. Fictional character wears costume; real person wears tactical techwear.`,
@@ -140,6 +147,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#818cf8',
     gradientFrom: '#050510',
     gradientTo: '#0a0a2e',
+    thumbnail: '/poster-anime-portrait.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Ultra detailed anime manga character poster of Satoru Gojo, dramatic front-facing upper body close-up, centered symmetrical composition, direct eye contact with the viewer, overwhelming cinematic presence. White spiky hair, blue infinity eyes, wearing round glasses, with a smirking confident expression.`,
     visualStyle: `Dark blue-black atmospheric background. Dramatic front-facing upper-body close-up, centred. Character fills 80% of frame with overwhelming presence. Background: collage mosaic of manga panel strips. Top-left: vertical Japanese kanji name + small English romanisation. Top-right: vertical Japanese text in blue. Bottom-left: single kanji character + small Japanese sentence. Bottom-right: short Japanese phrase. Circular symbol/crest top-left corner. Subtle blue particle light effects scattered across the frame. Premium theatrical key-visual quality.`,
@@ -159,6 +167,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#ec4899',
     gradientFrom: '#1a0510',
     gradientTo: '#2e0a1e',
+    thumbnail: '/poster-anime-illustration.webp',
     defaultSize: '1024x1024',
     examplePrompt: `Please create a highly saturated and trendy anime illustration based on upload image. Retain the basic recognition of the characters, including face shape, facial relationship, hairstyle foundation and overall temperament, but the overall character must be obviously anime and non-realistic. The style of painting refers to the funny popular anime illustrations: the lines are confident and powerful, with slight thickness changes; the coloring uses simple celluloid style, with large color areas and minimal gradients. Bright saturated pop background with stickers, speech bubbles, stars and playful typography.`,
     visualStyle: `Highly saturated celluloid anime illustration. Three-quarter view, subject slightly forward toward camera. Pink-dominant colour palette: hot pink top, blue denim shorts, pearl bracelet. Subject holds colourful popsicle/item toward camera. Background: pastel pink/blue room crammed with cute props — vintage radio, record player, wall posters, checkerboard floor. Speech bubble top-left reading exclamation; second speech bubble bottom-right. Gold star stickers scattered. Sparkle effects on subject. Confident ink lines with slight thickness variation. Flat celluloid shading, minimal gradients.`,
@@ -177,6 +186,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#f97316',
     gradientFrom: '#100800',
     gradientTo: '#1a0e00',
+    thumbnail: '/poster-mecha.webp',
     defaultSize: '1536x1024',
     examplePrompt: `Full-body fashion editorial shot taken from a slightly low angle, emphasizing dominance and presence. A confident young model sits casually on a sunlit concrete ledge, legs slightly apart, one arm resting on the knee, the other relaxed. The model looks to the sky on the left with a calm, commanding expression. Wearing a red parka jacket over a plain white t-shirt, cargo pants with many pocket and yellow strap waving, and modern sneakers.`,
     visualStyle: `Photorealistic real person sits on sunlit concrete ledge in foreground, lower-right third of frame. Behind and towering above: a massive, highly-detailed mechanical mech/robot beast fills the upper-left two-thirds. Clear blue sky with dramatic clouds as background. Manga sketch overlay lines and motion speed-lines around the mech. Top-left: brand name in bold brushstroke font + Japanese subtitle. Top-right: model designation number, scale label, brand boxes, spec callouts. Red "DANGER" splat sticker. Lower-right: official manufacturer logo box. Lower-left/centre: large graffiti-style word. Thin annotation lines on mech parts.`,
@@ -195,6 +205,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#64748b',
     gradientFrom: '#080c10',
     gradientTo: '#0f1520',
+    thumbnail: '/poster-manga-comic.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Create a full-page colored manga illustration based on the person in the reference photo. Use authentic manga page composition with 5–7 dynamic connected panels on a single page. Include cinematic storytelling, dramatic perspective, expressive emotions, dynamic poses, speed lines, impact frames, close-up shots, and intense visual flow. Add English comic-style sound effects, handwritten dialogue bubbles, ink splatter strokes, haftone textures, rough comic sketch lines, and graffiti-style elements.`,
     visualStyle: `Full-page manga layout with 5-7 dynamic connected panels. White background. Largest panel: hero subject face close-up occupying top half, dark city skyline through window behind. Bold hand-lettered text stack top-left: FOCUS / PLAN / EXECUTE / REPEAT. Speech bubble top-right: motivational dialogue. Mid-page: horizontal strip with side-profile thinking pose + second speech bubble. Lower panels: action pose full-body + reaction close-up. Bottom: wide cinematic panel. Blue ink accent colour throughout. Ink splatter strokes between panels. Halftone dot textures in shadows. Orange crown graffiti tag. THWACK! sound effect in bold.`,
@@ -213,6 +224,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#a855f7',
     gradientFrom: '#0d0014',
     gradientTo: '#1a0028',
+    thumbnail: '/poster-gta.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Create a highly detailed 8K portrait poster inspired by the iconic visual style of the modern Grand Theft Auto VI promotional artwork aesthetic, featuring a cinematic urban atmosphere with bold composition, vibrant lighting, layered graphic elements, and stylish contemporary street-luxury fashion energy. The overall design must strongly capture the signature mood of GTA VI posters, including dynamic neon color grading, tropical-modern city vibes, dramatic shadows, glossy finish.`,
     visualStyle: `Vertical portrait. Subject fills centre-bottom two-thirds of frame, photographically real, wearing luxury streetwear — patterned jacket, gold chains, rings. Warm sunset gradient background: deep orange to magenta with silhouetted palm trees. Layered city skyline mid-background with neon signs. Large vertical text left edge of frame partially behind subject, fading. Top-right corner: small year box. Left-side text block: "THE NEXT CHAPTER BEGINS" in spaced caps. Neon sign callout boxes. Full-width bottom bar: iconic game logo in white/gold with matching typeface. Cinematic depth-of-field glow on subject edges.`,
@@ -231,6 +243,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#0369a1',
     gradientFrom: '#000d1a',
     gradientTo: '#001933',
+    thumbnail: '/poster-architectural.webp',
     defaultSize: '1024x1024',
     examplePrompt: `Create a premium square "reference-style architectural infographic" centered around a luxurious modern house, designed as a beautifully curated architecture handbook page rather than a real-estate advertisement. The composition should feel like a modern visual encyclopedia mixed with an elite architectural field guide and high-end editorial infographic system.`,
     visualStyle: `Square format. Clean white background with navy blue accent system. Large photorealistic render of house occupies centre-left with annotation callout lines. Top-left: huge bold title "MODERN HOUSE" + subtitle + feature icon strip. Top-right: "KEY SPECIFICATIONS" table box. Mid-right: "PERFORMANCE & COMFORT" icon grid + "AREA BREAKDOWN" pie chart. Bottom row: five equal-width columns — DESIGN HIGHLIGHTS checklist, STRUCTURE & MATERIALS diagram, SMART HOME FEATURES list, SUSTAINABLE FEATURES list, SECTION VIEW diagram. Footer strip: DEVELOPMENT TIMELINE with milestone icons + COST ESTIMATE table + ADVANTAGES/CONSIDERATIONS columns. Precise sans-serif typography throughout.`,
@@ -249,6 +262,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#10b981',
     gradientFrom: '#001a0d',
     gradientTo: '#002e18',
+    thumbnail: '/poster-product.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Ultra-realistic premium mixed berry beverage advertisement poster design, luxury summer smoothie campaign style, clean white background with soft pink-purple gradient glow effects, subtle glossy reflections, floating berry particles and cinematic studio lighting, modern commercial Instagram ad aesthetic with trendy energetic composition. Showcase a crystal-clear tall glass filled with thick mixed berry smoothie in rich raspberry-purple tones.`,
     visualStyle: `White background with soft radial pink glow gradient. Product (glass/can) occupies entire right half of frame — hero shot with dramatic studio lighting and glossy reflections. Fruit/ingredient splash burst behind and around product. Top-left: big bold brushstroke-style product name in two lines (different font weights). Below: script subtitle. Left column: three rounded-rectangle benefit badges with icon + label. Floating berry/ingredient particles scattered. Minimal brand wordmark bottom-right.`,
@@ -267,6 +281,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#8b5cf6',
     gradientFrom: '#08001a',
     gradientTo: '#100028',
+    thumbnail: '/poster-music.webp',
     defaultSize: '1024x1536',
     examplePrompt: `Create a high-impact Instagram-ready Sony Headphones campaign poster in a premium Gen Z tech-fashion editorial style, designed as an ultra-detailed 8K vertical 4:5 composition for a futuristic lifestyle and music-culture social media campaign. The artwork should blend cinematic fashion photography, handcrafted mixed-media collage aesthetics, futuristic tech branding, and modern urban editorial graphics into a visually explosive premium commercial design.`,
     visualStyle: `Dark charcoal/black background. Subject centre-frame wearing product prominently. Giant torn/ripped paper collage effect reveals dark texture layer behind. Large bold mixed-weight typography stack on left: main word oversized, secondary word in bold blue, tertiary word oversized white. Brand logo top-left. Product name + spec callout top-right in tech blueprint style. Small illustrated icons (globe, crosshair, crown). Waveform graphic element. Script tagline mid-lower. Lower-right: handwritten logo treatment. Bottom strip: spec icons (battery, audio rating, technology). Vertical side text. Neon purple/blue light bloom behind subject.`,
@@ -285,6 +300,7 @@ const POSTER_STYLES: PosterStyle[] = [
     accentColor: '#64748b',
     gradientFrom: '#0a0a0a',
     gradientTo: '#141414',
+    thumbnail: '',
     defaultSize: '1024x1536',
     examplePrompt: '',
     visualStyle: '',
@@ -373,6 +389,7 @@ export function PosterGeneratorModal({ onClose }: Props) {
   const [imageMediaType, setImageMediaType] = useState('image/png');
   const [saved, setSaved] = useState(false);
   const [showExamplePrompt, setShowExamplePrompt] = useState(false);
+  const [lightboxStyle, setLightboxStyle] = useState<PosterStyle | null>(null);
 
   const heroInputRef = useRef<HTMLInputElement>(null);
   const refInputRef = useRef<HTMLInputElement>(null);
@@ -587,42 +604,98 @@ Output ONLY the prompt — no headings, no explanation, no markdown.`,
           {/* ── GALLERY ── */}
           {stage === 'gallery' && (
             <div className="p-5">
-              <p className="text-xs text-text-dim mb-4">Choose a poster style. Each includes an example prompt and AI-detected customisation fields.</p>
+              <p className="text-xs text-text-dim mb-4">Choose a poster style. Click a card to configure it, or click the preview image to enlarge.</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 {POSTER_STYLES.map(s => (
-                  <button
+                  <div
                     key={s.key}
-                    onClick={() => selectStyle(s)}
-                    className="group relative rounded-lg overflow-hidden border border-border hover:border-accent-amber transition-all hover:-translate-y-0.5 hover:shadow-lg text-left"
+                    className="group relative rounded-lg overflow-hidden border border-border hover:border-accent-amber transition-all hover:-translate-y-0.5 hover:shadow-lg"
                   >
-                    <div
-                      className="h-28 w-full relative flex items-center justify-center overflow-hidden"
-                      style={{ background: `linear-gradient(135deg, ${s.gradientFrom}, ${s.gradientTo})` }}
-                    >
-                      <div className="absolute inset-0 opacity-15" style={{ backgroundImage: `repeating-linear-gradient(45deg, ${s.accentColor}33 0, ${s.accentColor}33 1px, transparent 1px, transparent 12px)` }} />
-                      <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full opacity-25 blur-2xl" style={{ backgroundColor: s.accentColor }} />
-                      <div className="absolute top-2 left-2 right-8">
-                        <div className="font-orbitron font-bold text-[9px] tracking-widest uppercase text-white/50 line-clamp-1">{s.label}</div>
-                      </div>
-                      <div
-                        className="w-10 h-10 rounded-lg border-2 flex items-center justify-center opacity-50 group-hover:opacity-90 transition-opacity"
-                        style={{ borderColor: s.accentColor, backgroundColor: `${s.accentColor}22` }}
-                      >
-                        <Layers size={18} style={{ color: s.accentColor }} />
-                      </div>
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-white text-[10px] font-rajdhani font-bold uppercase tracking-wider">
-                          <Eye size={12} /> Select
+                    {/* Thumbnail image area */}
+                    <div className="relative h-36 overflow-hidden bg-bg-base cursor-pointer" onClick={() => s.thumbnail ? setLightboxStyle(s) : selectStyle(s)}>
+                      {s.thumbnail ? (
+                        <>
+                          <img
+                            src={s.thumbnail}
+                            alt={s.label}
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                          {/* Dark overlay on hover with zoom icon */}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2">
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 bg-black/70 text-white text-[10px] font-rajdhani font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-btn backdrop-blur-sm">
+                              <Eye size={11} /> Enlarge
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        /* Custom style — no thumbnail */
+                        <div
+                          className="w-full h-full flex items-center justify-center"
+                          style={{ background: `linear-gradient(135deg, ${s.gradientFrom}, ${s.gradientTo})` }}
+                        >
+                          <div className="w-10 h-10 rounded-lg border-2 flex items-center justify-center opacity-60" style={{ borderColor: s.accentColor, backgroundColor: `${s.accentColor}22` }}>
+                            <Layers size={18} style={{ color: s.accentColor }} />
+                          </div>
                         </div>
+                      )}
+                      {/* Accent rail */}
+                      <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: s.accentColor }} />
+                    </div>
+
+                    {/* Label + select button */}
+                    <div className="p-2.5 bg-bg-elevated flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-rajdhani font-bold text-xs text-text-primary leading-tight">{s.label}</div>
+                        <div className="text-[9px] text-text-dim mt-0.5 leading-tight line-clamp-2">{s.description}</div>
                       </div>
+                      <button
+                        onClick={() => selectStyle(s)}
+                        className="shrink-0 mt-0.5 px-2 py-1 rounded-btn text-[9px] font-rajdhani font-bold uppercase tracking-wider transition-colors border"
+                        style={{ borderColor: s.accentColor, color: s.accentColor }}
+                      >
+                        Use
+                      </button>
                     </div>
-                    <div className="p-2.5 bg-bg-elevated">
-                      <div className="font-rajdhani font-bold text-xs text-text-primary leading-tight">{s.label}</div>
-                      <div className="text-[9px] text-text-dim mt-0.5 leading-tight line-clamp-2">{s.description}</div>
-                    </div>
-                    <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: s.accentColor }} />
-                  </button>
+                  </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── LIGHTBOX ── */}
+          {lightboxStyle && (
+            <div
+              className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-6"
+              onClick={() => setLightboxStyle(null)}
+            >
+              <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
+                {/* Close */}
+                <button
+                  onClick={() => setLightboxStyle(null)}
+                  className="absolute -top-3 -right-3 z-10 w-7 h-7 rounded-full bg-bg-elevated border border-border flex items-center justify-center text-text-dim hover:text-text-primary transition-colors"
+                >
+                  <X size={14} />
+                </button>
+                {/* Image */}
+                <img
+                  src={lightboxStyle.thumbnail}
+                  alt={lightboxStyle.label}
+                  className="w-full rounded-lg shadow-2xl border border-border"
+                />
+                {/* Caption + action */}
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-rajdhani font-bold text-sm text-text-primary">{lightboxStyle.label}</div>
+                    <div className="text-[11px] text-text-dim mt-0.5">{lightboxStyle.description}</div>
+                  </div>
+                  <button
+                    onClick={() => { setLightboxStyle(null); selectStyle(lightboxStyle); }}
+                    className="shrink-0 px-4 py-2 rounded-btn font-rajdhani font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 text-bg-base hover:brightness-110"
+                    style={{ backgroundColor: lightboxStyle.accentColor }}
+                  >
+                    <Sparkles size={12} /> Use This Style
+                  </button>
+                </div>
               </div>
             </div>
           )}
