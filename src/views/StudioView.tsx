@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Presentation, FileText, ClipboardList, NotebookPen,
   HelpCircle, Target, Image as ImageIcon, Wand2,
-  ArrowRight, Lock, GraduationCap, LayoutGrid,
+  ArrowRight, Lock, GraduationCap, LayoutGrid, Layers,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -14,10 +14,11 @@ import { QuizGeneratorModal } from '../components/studio/QuizGeneratorModal';
 import { RubricGeneratorModal } from '../components/studio/RubricGeneratorModal';
 import { ImageGeneratorModal } from '../components/studio/ImageGeneratorModal';
 import { InfographicGeneratorModal } from '../components/studio/InfographicGeneratorModal';
+import { PosterGeneratorModal } from '../components/studio/PosterGeneratorModal';
 import type { DocumentType, StructuredDocument } from '../lib/studio/documentSchema';
 
 type ArtifactKey =
-  | 'slides' | 'pdf' | 'worksheet' | 'notes' | 'quiz' | 'rubric' | 'image' | 'lesson_plan' | 'infographic';
+  | 'slides' | 'pdf' | 'worksheet' | 'notes' | 'quiz' | 'rubric' | 'image' | 'lesson_plan' | 'infographic' | 'poster';
 
 interface ArtifactCard {
   key: ArtifactKey;
@@ -94,6 +95,14 @@ const ARTIFACTS: ArtifactCard[] = [
     description: 'NotebookLM-style single-page infographic. Portrait, landscape or square. Brief, standard or detailed.',
     accent: 'green', active: true,
     badge: 'NEW',
+  },
+  {
+    key: 'poster',
+    icon: Layers,
+    title: 'Poster',
+    description: 'Campaign-quality advertising and creative posters. Upload a hero photo to be placed in the scene.',
+    accent: 'amber', active: true,
+    badge: 'GPT-2',
   },
 ];
 
@@ -237,6 +246,9 @@ export function StudioView() {
       )}
       {open === 'image' && (
         <ImageGeneratorModal onClose={close} />
+      )}
+      {open === 'poster' && (
+        <PosterGeneratorModal onClose={close} />
       )}
       {open === 'infographic' && (
         <InfographicGeneratorModal
