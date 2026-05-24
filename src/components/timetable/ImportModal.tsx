@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   X, Upload, Image as ImageIcon, FileText, Loader2, AlertTriangle,
   Check, ArrowLeft, ArrowRight, Clock, CalendarDays, Plus, Trash2,
-  Sparkles,
+  Sparkles, Calendar,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useDb } from '../../db/DbContext';
@@ -14,7 +14,9 @@ import {
   type CycleConfig,
 } from '../../lib/timetable/importImage';
 import { isoDate } from '../../lib/timetable/dates';
+import { parseICSToBlocks } from '../../lib/timetable/icsParser';
 
+type Mode = 'image' | 'ics';
 type Step = 'upload' | 'review' | 'cycle' | 'done';
 
 interface Props {
@@ -26,12 +28,19 @@ const DEFAULT_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 export function TimetableImportModal({ onClose }: Props) {
   const db = useDb();
   const { getKey } = useCredentials();
+  const [mode, setMode] = useState<Mode>('image');
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<ExtractedTimetable | null>(null);
+
+  // ── ICS-mode state ──
+  const [icsFile, setIcsFile] = useState<File | null>(null);
+  const [icsPreview, setIcsPreview] = useState<{ count: number; skipped: number; sample: string[] } | null>(null);
+  const [icsConflictMode, setIcsConflictMode] = useState<'replace' | 'merge'>('merge');
+  const icsRef = useRef<HTMLInputElement>(null);
   const [fallbackStart, setFallbackStart] = useState('09:00');
   const [fallbackDuration, setFallbackDuration] = useState(60);
   const [fallbackBreak, setFallbackBreak] = useState(5);
@@ -143,6 +152,51 @@ export function TimetableImportModal({ onClose }: Props) {
     setStep('cycle');
   };
 
+  // ── ICS handlers ──────────────────────────────────────────────────────────
+
+  const handleIcsFile = useCallback(async (f: File) => {
+    setIcsFile(f);
+    setIcsPreview(null);
+    setError(null);
+    try {
+      const text = await f.text();
+      const { blocks, skipped } = parseICSToBlocks(text);
+      setIcsPreview({
+        count: blocks.length,
+        skipped,
+        sample: blocks.slice(0, 5).map((b) => b.title),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  const applyIcsImport = useCallback(async () => {
+    if (!icsFile) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const text = await icsFile.text();
+      const { blocks } = parseICSToBlocks(text);
+      const now = Date.now();
+      const withTs = blocks.map((b) => ({ ...b, createdAt: now }));
+
+      let removed = 0;
+      if (icsConflictMode === 'replace') {
+        const toRemove = await db.timetableBlocks.filter((b) => b.source === 'imported').toArray();
+        removed = toRemove.length;
+        await db.timetableBlocks.bulkDelete(toRemove.map((b) => b.id));
+      }
+      await db.timetableBlocks.bulkAdd(withTs);
+      setResult({ added: withTs.length, removed });
+      setStep('done');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [icsFile, icsConflictMode, db]);
+
   const applyImport = useCallback(async () => {
     if (!extracted) return;
     setBusy(true);
@@ -213,12 +267,43 @@ export function TimetableImportModal({ onClose }: Props) {
         className="w-full max-w-5xl max-h-[92vh] bg-bg-panel border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="shrink-0 px-5 py-3 border-b border-border bg-bg-elevated flex items-center gap-3">
-          <div className="p-1.5 rounded bg-accent-cyan/10 border border-accent-cyan/30">
-            <ImageIcon size={14} className="text-accent-cyan" />
+        <div className="shrink-0 px-5 py-3 border-b border-border bg-bg-elevated">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={clsx('p-1.5 rounded border', mode === 'ics' ? 'bg-accent-amber/10 border-accent-amber/30' : 'bg-accent-cyan/10 border-accent-cyan/30')}>
+              {mode === 'ics' ? <Calendar size={14} className="text-accent-amber" /> : <ImageIcon size={14} className="text-accent-cyan" />}
+            </div>
+            <h2 className="font-orbitron text-sm font-bold text-text-primary tracking-wider flex-1">
+              {mode === 'ics' ? 'IMPORT FROM .ICS CALENDAR FILE' : 'IMPORT TIMETABLE FROM IMAGE / PDF'}
+            </h2>
+            <button onClick={onClose} className="p-1 text-text-dim hover:text-text-primary transition-colors"><X size={16} /></button>
           </div>
-          <div className="flex-1">
-            <h2 className="font-orbitron text-sm font-bold text-text-primary tracking-wider">IMPORT TIMETABLE FROM IMAGE</h2>
+
+          {/* Mode tabs — only visible on upload step */}
+          {step === 'upload' && (
+            <div className="flex gap-1 mb-1">
+              <button
+                onClick={() => { setMode('image'); setError(null); }}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-[10px] font-rajdhani font-bold uppercase tracking-wider transition-all border',
+                  mode === 'image' ? 'bg-accent-cyan/10 border-accent-cyan text-accent-cyan' : 'border-border text-text-dim hover:text-text-secondary',
+                )}
+              >
+                <ImageIcon size={10} /> Image / PDF
+              </button>
+              <button
+                onClick={() => { setMode('ics'); setError(null); }}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-[10px] font-rajdhani font-bold uppercase tracking-wider transition-all border',
+                  mode === 'ics' ? 'bg-accent-amber/10 border-accent-amber text-accent-amber' : 'border-border text-text-dim hover:text-text-secondary',
+                )}
+              >
+                <Calendar size={10} /> .ics File
+              </button>
+            </div>
+          )}
+
+          {/* Step breadcrumb — image mode only */}
+          {mode === 'image' && (
             <div className="flex items-center gap-2 mt-1">
               {(['upload', 'review', 'cycle', 'done'] as const).map((s, i) => (
                 <div key={s} className="flex items-center gap-1">
@@ -235,12 +320,93 @@ export function TimetableImportModal({ onClose }: Props) {
                 </div>
               ))}
             </div>
-          </div>
-          <button onClick={onClose} className="p-1 text-text-dim hover:text-text-primary transition-colors"><X size={16} /></button>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-5">
-          {step === 'upload' && (
+          {step === 'upload' && mode === 'ics' && (
+            <div className="flex flex-col items-center justify-center gap-4 py-8">
+              <div
+                className={clsx(
+                  'w-full max-w-xl border-2 border-dashed rounded-lg p-10 text-center transition-all cursor-pointer',
+                  icsFile ? 'border-accent-amber/60 bg-accent-amber/5' : 'border-border hover:border-accent-amber/50 hover:bg-accent-amber/5',
+                )}
+                onClick={() => icsRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleIcsFile(f); }}
+              >
+                <input
+                  ref={icsRef}
+                  type="file"
+                  accept=".ics,text/calendar"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleIcsFile(f); e.target.value = ''; }}
+                />
+                {!icsFile ? (
+                  <>
+                    <Calendar size={32} className="mx-auto text-text-dim mb-3" />
+                    <p className="text-sm text-text-primary font-rajdhani font-semibold mb-1">Drop your .ics calendar file here</p>
+                    <p className="text-[11px] font-mono text-text-dim mb-1">Exported from Apple iCloud, Google Calendar, Outlook, or any iCalendar app</p>
+                    <p className="text-[10px] font-mono text-text-dim opacity-60">Drag & drop or click to browse</p>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <Calendar size={32} className="mx-auto text-accent-amber" />
+                    <p className="text-xs font-mono text-text-secondary">{icsFile.name} · {(icsFile.size / 1024).toFixed(0)} KB</p>
+                    {icsPreview && (
+                      <div className="mt-3 p-3 rounded-btn border border-border bg-bg-base text-left space-y-1">
+                        <p className="text-[11px] text-accent-amber font-bold">{icsPreview.count} events found{icsPreview.skipped > 0 ? ` · ${icsPreview.skipped} skipped` : ''}</p>
+                        {icsPreview.sample.map((t, i) => (
+                          <p key={i} className="text-[10px] font-mono text-text-dim truncate">· {t}</p>
+                        ))}
+                        {icsPreview.count > 5 && <p className="text-[10px] text-text-dim">…and {icsPreview.count - 5} more</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* How to export instructions */}
+              <div className="w-full max-w-xl grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3 rounded-btn border border-border bg-bg-elevated space-y-1">
+                  <div className="text-[10px] font-rajdhani font-bold uppercase tracking-wider text-text-dim flex items-center gap-1.5"><Calendar size={10} /> From Apple iCloud</div>
+                  <ol className="text-[10px] text-text-dim space-y-0.5 list-decimal list-inside">
+                    <li>Open <span className="text-text-secondary">Calendar.app</span> on Mac</li>
+                    <li>File → Export → Export…</li>
+                    <li>Save as <span className="font-mono">.ics</span> and upload here</li>
+                  </ol>
+                </div>
+                <div className="p-3 rounded-btn border border-border bg-bg-elevated space-y-1">
+                  <div className="text-[10px] font-rajdhani font-bold uppercase tracking-wider text-text-dim flex items-center gap-1.5"><Calendar size={10} /> From Google Calendar</div>
+                  <ol className="text-[10px] text-text-dim space-y-0.5 list-decimal list-inside">
+                    <li>Open <span className="text-text-secondary">Google Calendar</span> settings</li>
+                    <li>Import &amp; export → Export</li>
+                    <li>Unzip, pick a <span className="font-mono">.ics</span> and upload here</li>
+                  </ol>
+                </div>
+              </div>
+
+              {error && (
+                <div className="flex items-start gap-2 p-3 rounded-btn border border-red-500/40 bg-red-500/10 max-w-xl w-full">
+                  <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-400">{error}</p>
+                </div>
+              )}
+
+              {/* Conflict mode */}
+              {icsPreview && icsPreview.count > 0 && (
+                <div className="w-full max-w-xl p-3 rounded-btn border border-border bg-bg-elevated space-y-2">
+                  <p className="text-[10px] font-mono text-text-dim uppercase tracking-wider">Conflict with existing imports</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setIcsConflictMode('merge')} className={clsx('flex-1 px-3 py-1.5 rounded-btn border text-[11px] font-rajdhani font-semibold uppercase tracking-wider', icsConflictMode === 'merge' ? 'border-accent-amber bg-accent-amber/10 text-accent-amber' : 'border-border text-text-secondary')}>Merge</button>
+                    <button onClick={() => setIcsConflictMode('replace')} className={clsx('flex-1 px-3 py-1.5 rounded-btn border text-[11px] font-rajdhani font-semibold uppercase tracking-wider', icsConflictMode === 'replace' ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-border text-text-secondary')}>Replace existing imports</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 'upload' && mode === 'image' && (
             <div
               className="flex flex-col items-center justify-center gap-4 py-8"
               onDragOver={(e) => e.preventDefault()}
@@ -497,18 +663,34 @@ export function TimetableImportModal({ onClose }: Props) {
             {step === 'done' ? 'Close' : 'Cancel'}
           </button>
           <div className="flex-1" />
-          {step === 'review' && (
+
+          {/* ICS mode footer */}
+          {mode === 'ics' && step === 'upload' && icsPreview && icsPreview.count > 0 && (
+            <button
+              onClick={applyIcsImport}
+              disabled={busy}
+              className={clsx(
+                'px-4 py-2 rounded-btn font-rajdhani font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1',
+                busy ? 'bg-bg-elevated border border-border text-text-dim cursor-not-allowed' : 'bg-accent-amber text-bg-base hover:brightness-110',
+              )}
+            >
+              {busy ? <><Loader2 size={11} className="animate-spin" />Importing…</> : <><Check size={11} />Import {icsPreview.count} events</>}
+            </button>
+          )}
+
+          {/* Image mode footer */}
+          {mode === 'image' && step === 'review' && (
             <button onClick={() => setStep('upload')} className="px-3 py-2 rounded-btn border border-border text-text-secondary hover:text-text-primary text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors flex items-center gap-1"><ArrowLeft size={11} />Back</button>
           )}
-          {step === 'cycle' && (
+          {mode === 'image' && step === 'cycle' && (
             <button onClick={() => setStep('review')} className="px-3 py-2 rounded-btn border border-border text-text-secondary hover:text-text-primary text-xs font-rajdhani font-semibold uppercase tracking-wider transition-colors flex items-center gap-1"><ArrowLeft size={11} />Back</button>
           )}
-          {step === 'review' && extracted && extracted.blocks.length > 0 && (
+          {mode === 'image' && step === 'review' && extracted && extracted.blocks.length > 0 && (
             <button onClick={goToCycle} className="px-4 py-2 rounded-btn bg-accent-cyan text-bg-base font-rajdhani font-bold text-xs uppercase tracking-wider hover:brightness-110 transition-all flex items-center gap-1">
               Configure cycle<ArrowRight size={11} />
             </button>
           )}
-          {step === 'cycle' && (
+          {mode === 'image' && step === 'cycle' && (
             <button
               onClick={applyImport}
               disabled={busy || preview12.length === 0}

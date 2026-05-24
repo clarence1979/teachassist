@@ -10,21 +10,73 @@ function toDateArray(iso: string): DateArray {
   return [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()];
 }
 
-/** Build an iCal (.ics) string from occurrences. */
+/** Build an iCal (.ics) string from occurrences.
+ *  Compatible with Apple iCloud Calendar and Google Calendar. */
 export function buildICS(occurrences: BlockOccurrence[]): string {
-  const events: EventAttributes[] = occurrences.map((o) => ({
-    start: toDateArray(o.startISO),
-    end: toDateArray(o.endISO),
-    title: o.block.title,
-    description: o.block.notes ?? '',
-    location: o.block.location ?? '',
-    calName: 'Pedagogy Timetable',
-    categories: [o.block.type],
-    status: o.block.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED',
-  }));
+  const events: EventAttributes[] = occurrences.map((o) => {
+    const ev: EventAttributes = {
+      uid: `${o.block.id}-${o.startISO}@pedagogy`,
+      start: toDateArray(o.startISO),
+      end: toDateArray(o.endISO),
+      title: o.block.title,
+      description: o.block.notes ?? '',
+      location: o.block.location ?? '',
+      calName: 'Pedagogy Timetable',
+      categories: [o.block.type],
+      status: o.block.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED',
+    };
+    return ev;
+  });
   const { error, value } = createEvents(events);
   if (error) throw error;
   return value ?? '';
+}
+
+/**
+ * Build a per-block ICS (with RRULE lines) so recurring events import as
+ * recurring series into Apple/Google Calendar instead of individual instances.
+ */
+export function buildICSWithRRules(blocks: import('../../db/schema').TimetableBlock[]): string {
+  const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const escape = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+
+  const vevents = blocks.map((b) => {
+    const dtstart = toDateArray(b.startISO);
+    const dtend = toDateArray(b.endISO);
+    const fmt = (a: number[]) => `${String(a[0])}${String(a[1]).padStart(2, '0')}${String(a[2]).padStart(2, '0')}T${String(a[3] ?? 0).padStart(2, '0')}${String(a[4] ?? 0).padStart(2, '0')}00`;
+
+    const lines = [
+      'BEGIN:VEVENT',
+      `UID:${b.id}@pedagogy`,
+      `DTSTAMP:${now}Z`,
+      `DTSTART:${fmt(dtstart)}`,
+      `DTEND:${fmt(dtend)}`,
+      `SUMMARY:${escape(b.title)}`,
+    ];
+    if (b.notes) lines.push(`DESCRIPTION:${escape(b.notes)}`);
+    if (b.location) lines.push(`LOCATION:${escape(b.location)}`);
+    if (b.recurrence) lines.push(`RRULE:${b.recurrence}`);
+    if (b.exdates?.length) {
+      for (const ex of b.exdates) {
+        lines.push(`EXDATE:${ex.replace(/-/g, '')}T000000`);
+      }
+    }
+    lines.push(`CATEGORIES:${b.type}`);
+    lines.push(`STATUS:${b.status === 'cancelled' ? 'CANCELLED' : 'CONFIRMED'}`);
+    lines.push('END:VEVENT');
+    return lines.join('\r\n');
+  });
+
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Pedagogy//Timetable//EN',
+    'CALSCALE:GREGORIAN',
+    'X-WR-CALNAME:Pedagogy Timetable',
+    'X-APPLE-CALENDAR-COLOR:#F59E0B',
+    ...vevents,
+    'END:VCALENDAR',
+  ].join('\r\n');
 }
 
 export function downloadBlob(data: string | Blob, filename: string, mime = 'text/plain'): void {

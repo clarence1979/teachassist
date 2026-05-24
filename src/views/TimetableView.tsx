@@ -25,7 +25,7 @@ import { expandOccurrences, type BlockOccurrence } from '../lib/timetable/recurr
 import { detectConflicts } from '../lib/timetable/conflicts';
 import { defaultCalendarFor, termFor } from '../lib/timetable/schoolCalendar';
 import { rescheduleReminders, ensureNotificationPermission } from '../lib/timetable/reminders';
-import { buildICS, buildCSV, buildPDF, downloadBlob } from '../lib/timetable/export';
+import { buildICSWithRRules, buildCSV, buildPDF, downloadBlob } from '../lib/timetable/export';
 import {
   populateWeekWithAI, deriveLearnedPreference, buildRecentPattern,
   DEFAULT_PREFS,
@@ -470,13 +470,18 @@ export function TimetableView() {
 
   // ─── Export ───
   const doExport = async (kind: 'ics' | 'csv' | 'pdf') => {
-    // Export one-year horizon from today
     const s = new Date(); s.setHours(0, 0, 0, 0);
     const e = new Date(s); e.setFullYear(e.getFullYear() + 1);
-    const occ = expandOccurrences(blocks, s, e);
-    if (kind === 'ics') downloadBlob(buildICS(occ), 'timetable.ics', 'text/calendar');
-    else if (kind === 'csv') downloadBlob(buildCSV(occ), 'timetable.csv', 'text/csv');
-    else downloadBlob(await buildPDF(occ, 'Timetable — One Year'), 'timetable.pdf', 'application/pdf');
+    if (kind === 'ics') {
+      // Export per-block with RRULE lines so Apple/Google Calendar imports recurring series
+      downloadBlob(buildICSWithRRules(blocks), 'timetable.ics', 'text/calendar');
+    } else if (kind === 'csv') {
+      const occ = expandOccurrences(blocks, s, e);
+      downloadBlob(buildCSV(occ), 'timetable.csv', 'text/csv');
+    } else {
+      const occ = expandOccurrences(blocks, s, e);
+      downloadBlob(await buildPDF(occ, 'Timetable — One Year'), 'timetable.pdf', 'application/pdf');
+    }
     setExportOpen(false);
   };
 
@@ -594,8 +599,14 @@ export function TimetableView() {
                     <Download size={10} />Export
                   </button>
                   {exportOpen && (
-                    <div className="absolute left-0 top-full mt-1 w-40 bg-bg-panel border border-border rounded-lg shadow-2xl py-1 z-50">
-                      <button onClick={() => doExport('ics')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:bg-bg-elevated transition-colors"><CalendarDays size={12} />iCal (.ics)</button>
+                    <div className="absolute left-0 top-full mt-1 w-52 bg-bg-panel border border-border rounded-lg shadow-2xl py-1 z-50">
+                      <div className="px-3 pt-1 pb-0.5">
+                        <p className="text-[9px] font-mono text-text-dim uppercase tracking-wider">Export</p>
+                      </div>
+                      <button onClick={() => doExport('ics')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:bg-bg-elevated transition-colors">
+                        <CalendarDays size={12} />iCal (.ics)
+                        <span className="ml-auto text-[9px] text-text-dim">Apple / Google</span>
+                      </button>
                       <button onClick={() => doExport('pdf')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:bg-bg-elevated transition-colors"><FileText size={12} />PDF</button>
                       <button onClick={() => doExport('csv')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:bg-bg-elevated transition-colors"><FileSpreadsheet size={12} />CSV</button>
                     </div>
@@ -722,10 +733,21 @@ export function TimetableView() {
               <Download size={13} />Export
             </button>
             {exportOpen && (
-              <div className="absolute right-0 top-full mt-1 w-44 bg-bg-panel border border-border rounded-lg shadow-2xl py-1 z-50">
-                <button onClick={() => doExport('ics')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"><CalendarDays size={12} />iCal (.ics)</button>
+              <div className="absolute right-0 top-full mt-1 w-56 bg-bg-panel border border-border rounded-lg shadow-2xl py-1 z-50">
+                <div className="px-3 pt-1.5 pb-0.5">
+                  <p className="text-[9px] font-mono text-text-dim uppercase tracking-wider">Export timetable</p>
+                </div>
+                <button onClick={() => doExport('ics')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors">
+                  <CalendarDays size={12} />iCal (.ics)
+                  <span className="ml-auto text-[9px] text-text-dim font-normal normal-case">Apple · Google</span>
+                </button>
                 <button onClick={() => doExport('pdf')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"><FileText size={12} />PDF agenda</button>
                 <button onClick={() => doExport('csv')} className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-rajdhani font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary hover:bg-bg-elevated transition-colors"><FileSpreadsheet size={12} />CSV</button>
+                <div className="border-t border-border mt-1 mx-2 pt-1.5 pb-1">
+                  <p className="text-[9px] text-text-dim leading-relaxed">
+                    The .ics file works with <span className="text-text-secondary">Apple Calendar</span> (File → Import) and <span className="text-text-secondary">Google Calendar</span> (Settings → Import &amp; export).
+                  </p>
+                </div>
               </div>
             )}
           </div>
