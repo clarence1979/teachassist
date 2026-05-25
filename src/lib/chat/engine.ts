@@ -274,10 +274,16 @@ export async function sendMessage(opts: SendOptions): Promise<void> {
       // a practical workaround that still grounds the model in what was found.
       const toolTranscript = executed
         .map((t) => {
-          const r = t.result as { summary?: string; details?: unknown; error?: string } | undefined;
-          const payload = r?.error
-            ? `Error: ${r.error}`
-            : JSON.stringify({ summary: r?.summary, details: r?.details }, null, 2);
+          const r = t.result as { summary?: string; details?: Record<string, unknown>; error?: string } | undefined;
+          let payload: string;
+          if (r?.error) {
+            payload = `Error: ${r.error}`;
+          } else if (t.name === 'fetch_webpage' && r?.details && typeof (r.details as Record<string, unknown>).pageContent === 'string') {
+            // Surface page text directly so the model can read it without JSON parsing
+            payload = `${r.summary}\n\n${(r.details as Record<string, unknown>).pageContent as string}`;
+          } else {
+            payload = JSON.stringify({ summary: r?.summary, details: r?.details }, null, 2);
+          }
           return `<tool_result name="${t.name}">\n${payload}\n</tool_result>`;
         })
         .join('\n');

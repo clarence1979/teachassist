@@ -823,14 +823,18 @@ async function execFetchWebpage(_ctx: ToolExecContext, args: Args): Promise<Tool
     throw new Error(data.error ?? `HTTP ${res.status}`);
   }
 
+  const truncatedNote = data.truncated ? '\n\n[Content was truncated at 50,000 characters — the page may have more]' : '';
+  const displaySummary = `Fetched ${data.url ?? url} (${data.charCount ?? 0} chars${data.truncated ? ', truncated' : ''})`;
+
   return {
     ok: true,
-    summary: `Fetched ${data.url ?? url} (${data.charCount ?? 0} chars${data.truncated ? ', truncated' : ''})`,
+    summary: displaySummary,
     details: {
       url: data.url,
-      text: data.text,
-      truncated: data.truncated,
       charCount: data.charCount,
+      truncated: data.truncated,
+      // Full page content for LLM consumption — kept in details so engine can surface it
+      pageContent: `URL: ${data.url ?? url}\n\n${data.text ?? ''}${truncatedNote}`,
     },
   };
 }

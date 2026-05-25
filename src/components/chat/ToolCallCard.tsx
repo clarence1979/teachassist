@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   ChevronDown, ChevronRight, Wrench, Loader2, CheckCircle2, AlertCircle,
   FileText, Presentation as PresentationIcon, BookOpen, ClipboardList, ImageIcon,
-  ListChecks, Calendar, ListTodo, Search, Paperclip, Download, X, ZoomIn,
+  ListChecks, Calendar, ListTodo, Search, Paperclip, Download, X, ZoomIn, Globe,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { ToolInvocation } from '../../db/schema';
@@ -25,6 +25,7 @@ const TOOL_META: Record<string, { label: string; Icon: typeof Wrench }> = {
   parse_timetable_image: { label: 'Parse timetable', Icon: Calendar },
   search_library: { label: 'Search library', Icon: Search },
   attach_resource_to_block: { label: 'Attach resource', Icon: Paperclip },
+  fetch_webpage: { label: 'Read webpage', Icon: Globe },
 };
 
 function summarise(tc: ToolInvocation): string {
