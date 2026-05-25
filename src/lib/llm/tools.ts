@@ -483,6 +483,22 @@ export const PEDAGOGY_TOOLS: ToolDefinition[] = [
       required: ['blockId', 'artifactId'],
     },
   },
+
+  {
+    name: 'fetch_webpage',
+    description:
+      'Fetch and extract the readable text content from a public webpage URL. Use this when the user shares a URL and wants you to read it, summarise it, or use its content to generate teaching resources. Returns plain text extracted from the page.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'The full URL to fetch (must be http or https)',
+        },
+      },
+      required: ['url'],
+    },
+  },
 ];
 
 /** Look up a tool definition by name */

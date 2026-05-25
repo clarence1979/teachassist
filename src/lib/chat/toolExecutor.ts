@@ -799,6 +799,42 @@ async function execAttachResource(ctx: ToolExecContext, args: Args): Promise<Too
   return { ok: true, summary: `Attached artifact to ${block.title}` };
 }
 
+async function execFetchWebpage(_ctx: ToolExecContext, args: Args): Promise<ToolExecResult> {
+  const url = s(args.url);
+  if (!url) throw new Error('url is required');
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+  const endpoint = `${supabaseUrl}/functions/v1/fetch-webpage`;
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${anonKey}`,
+      'Apikey': anonKey,
+    },
+    body: JSON.stringify({ url }),
+  });
+
+  const data = await res.json() as { text?: string; error?: string; truncated?: boolean; charCount?: number; url?: string };
+
+  if (!res.ok || data.error) {
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+
+  return {
+    ok: true,
+    summary: `Fetched ${data.url ?? url} (${data.charCount ?? 0} chars${data.truncated ? ', truncated' : ''})`,
+    details: {
+      url: data.url,
+      text: data.text,
+      truncated: data.truncated,
+      charCount: data.charCount,
+    },
+  };
+}
+
 // ─── Dispatch ────────────────────────────────────────────────────────────────
 
 export async function executeTool(
@@ -827,6 +863,7 @@ export async function executeTool(
     case 'parse_timetable_image': return execParseTimetableImage(ctx);
     case 'search_library': return execSearchLibrary(ctx, args);
     case 'attach_resource_to_block': return execAttachResource(ctx, args);
+    case 'fetch_webpage': return execFetchWebpage(ctx, args);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
