@@ -23,6 +23,11 @@ Rules:
 - If the request is for a visual artifact (infographic, slides, worksheet, quiz), add explicit instructions
   about structure, number of sections, difficulty progression, reading level, and tone appropriate to the target year.
 - Keep the enhanced prompt in first-person, as if the teacher were writing it themselves.
+- CRITICAL: All subject-specific terminology, proper nouns, and technical terms must be spelled correctly.
+  Double-check any scientific, mathematical, or discipline-specific vocabulary before including it.
+- Think one level deeper: what will the teacher need beyond what they literally asked? Include instructions
+  for accuracy checks, correct terminology, and appropriate scaffolding that would prevent the output from
+  needing corrections before classroom use.
 - Output the enhanced prompt ONLY — no preamble, no quotes, no commentary.
 - Aim for 3-10x the original length but stay tightly focused; do not pad.`;
 
