@@ -180,7 +180,9 @@ ${scaffoldForType(req.documentType)}
 RULES:
 1. Use plain text inside strings — no markdown syntax, no asterisks for bold.
 2. Keep paragraph strings tight (2–4 sentences each).
-3. Return the following shape exactly:
+3. ALL spelling must be correct — double-check subject-specific terminology, proper nouns, and technical terms.
+4. Content must be factually accurate and age-appropriate for the specified year level.
+5. Return the following shape exactly:
 
 {
   "title": string,

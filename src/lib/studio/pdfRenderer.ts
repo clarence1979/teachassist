@@ -428,11 +428,14 @@ function renderQuestion(ctx: Ctx, q: Question, num: number, showAnswer: boolean)
   ensureSpace(ctx, 26);
   const marks = q.marks ? `  [${q.marks} mark${q.marks === 1 ? '' : 's'}]` : '';
   const tag = q.bloom ? `  (${q.bloom})` : '';
-  // Question number and prompt
+  // Question number and prompt — for fill_blank, replace {{n}} markers with underlines
+  const displayPrompt = q.type === 'fill_blank'
+    ? q.prompt.replace(/\{\{\d+\}\}/g, '__________')
+    : q.prompt;
   ctx.page.drawText(`${num}.`, {
     x: MARGIN, y: ctx.y - 11, size: 11, font: ctx.bold, color: ACCENT,
   });
-  drawText(ctx, `${q.prompt}${marks}${tag}`, { indent: 20, size: 10.5 });
+  drawText(ctx, `${displayPrompt}${marks}${tag}`, { indent: 20, size: 10.5 });
 
   switch (q.type) {
     case 'multiple_choice':
@@ -443,12 +446,10 @@ function renderQuestion(ctx: Ctx, q: Question, num: number, showAnswer: boolean)
     case 'true_false':
       drawText(ctx, '(  ) True        (  ) False', { indent: 30, size: 10 });
       break;
-    case 'fill_blank': {
-      // Replace {{n}} markers with underlines
-      const filled = q.prompt.replace(/\{\{\d+\}\}/g, '__________');
-      drawText(ctx, filled, { indent: 30, size: 10, color: MUTED });
+    case 'fill_blank':
+      // Prompt already rendered with blanks above; just add answer lines
+      drawAnswerLines(ctx, 1);
       break;
-    }
     case 'matching':
       if (q.pairs) {
         const rows = q.pairs.map((p, i) => [`${i + 1}. ${p.left}`, '____', String.fromCharCode(65 + i) + '. ' + p.right]);

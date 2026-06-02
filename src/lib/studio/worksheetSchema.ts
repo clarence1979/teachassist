@@ -144,9 +144,11 @@ RULES:
 3. Questions are numbered within each tier.
 4. Each question MUST include an accurate answer / model response.
 5. Use plain text — no markdown, no LaTeX (unless essential, then use plain ascii).
-6. For "fill_blank" prompts, use {{1}}, {{2}}, etc. as blank markers in the prompt text.
+6. For "fill_blank" prompts ONLY, use {{1}}, {{2}}, etc. as blank markers in the prompt text. NEVER use {{n}} markers in any other question type.
 7. Tag each question with a "bloom" value when appropriate.
 8. Keep language age-appropriate for ${req.yearLevel}.
+9. ALL spelling must be correct. Double-check scientific/technical terms before including them.
+10. Ensure questions are factually accurate — verify the correct answer IS correct before including it.
 
 OUTPUT (single JSON object, no code fences):
 
