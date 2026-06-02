@@ -359,6 +359,50 @@ function renderBlock(ctx: Ctx, b: DocBlock) {
   ctx.y -= 4;
 }
 
+function drawFillBlankPrompt(ctx: Ctx, prompt: string, marks: string, tag: string) {
+  const size = 10.5;
+  const indent = 20;
+  const lineGap = size * 0.45;
+  const blankW = 80;
+  const maxW = CONTENT_W - indent;
+
+  // Split prompt around {{n}} markers
+  const segments = prompt.split(/\{\{\d+\}\}/);
+  const fullText = segments.join('') + marks + tag;
+
+  // If prompt fits on one line with blanks, render inline
+  const totalTextW = ctx.font.widthOfTextAtSize(sanitize(fullText), size);
+  const blankCount = segments.length - 1;
+  const totalW = totalTextW + blankCount * blankW;
+
+  if (totalW <= maxW) {
+    ensureSpace(ctx, size + lineGap);
+    let x = MARGIN + indent;
+    const baseY = ctx.y - size;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = sanitize(segments[i] + (i === segments.length - 1 ? marks + tag : ''));
+      if (seg) {
+        ctx.page.drawText(seg, { x, y: baseY, size, font: ctx.font, color: INK });
+        x += ctx.font.widthOfTextAtSize(seg, size);
+      }
+      if (i < segments.length - 1) {
+        // Draw a proper line for the blank
+        ctx.page.drawLine({
+          start: { x: x + 4, y: baseY - 1 },
+          end: { x: x + blankW - 4, y: baseY - 1 },
+          thickness: 0.8, color: INK,
+        });
+        x += blankW;
+      }
+    }
+    ctx.y -= size + lineGap;
+  } else {
+    // Falls back to multi-line: render with a visible placeholder that looks clean
+    const display = prompt.replace(/\{\{\d+\}\}/g, ' ____________ ') + marks + tag;
+    drawText(ctx, display, { indent, size });
+  }
+}
+
 // ─── Worksheet renderer ─────────────────────────────────────────────────────
 
 export async function buildWorksheetPdf(
@@ -428,14 +472,17 @@ function renderQuestion(ctx: Ctx, q: Question, num: number, showAnswer: boolean)
   ensureSpace(ctx, 26);
   const marks = q.marks ? `  [${q.marks} mark${q.marks === 1 ? '' : 's'}]` : '';
   const tag = q.bloom ? `  (${q.bloom})` : '';
-  // Question number and prompt — for fill_blank, replace {{n}} markers with underlines
-  const displayPrompt = q.type === 'fill_blank'
-    ? q.prompt.replace(/\{\{\d+\}\}/g, '__________')
-    : q.prompt;
+  // Question number
   ctx.page.drawText(`${num}.`, {
     x: MARGIN, y: ctx.y - 11, size: 11, font: ctx.bold, color: ACCENT,
   });
-  drawText(ctx, `${displayPrompt}${marks}${tag}`, { indent: 20, size: 10.5 });
+
+  if (q.type === 'fill_blank') {
+    // Render fill-blank with proper drawn lines for blanks
+    drawFillBlankPrompt(ctx, q.prompt, marks, tag);
+  } else {
+    drawText(ctx, `${q.prompt}${marks}${tag}`, { indent: 20, size: 10.5 });
+  }
 
   switch (q.type) {
     case 'multiple_choice':
@@ -447,8 +494,6 @@ function renderQuestion(ctx: Ctx, q: Question, num: number, showAnswer: boolean)
       drawText(ctx, '(  ) True        (  ) False', { indent: 30, size: 10 });
       break;
     case 'fill_blank':
-      // Prompt already rendered with blanks above; just add answer lines
-      drawAnswerLines(ctx, 1);
       break;
     case 'matching':
       if (q.pairs) {
