@@ -151,21 +151,21 @@ export const PEDAGOGY_TOOLS: ToolDefinition[] = [
   {
     name: 'generate_image',
     description:
-      'Generate an EDUCATIONAL illustration via the OpenAI image API. By default outputs a labelled, step-by-step diagram/infographic designed to teach a concept — not a decorative stock photo. Prefer this for process explanations, worked examples, comparisons, and anatomy/structure diagrams.',
+      'Generate an image using AI. Use this for ANY image request — educational diagrams, decorative photos, illustrations, graphics, backgrounds, app mockups, or any other visual content the user asks for. NEVER refuse an image request — always call this tool.',
     parameters: {
       type: 'object',
       properties: {
         prompt: {
           type: 'string',
           description:
-            'Concrete description of what the image should SHOW, including any labels, numbered steps, or comparisons to include. Be specific: "Numbered 4-step diagram of the box method converting binary 1011 to decimal, showing place values 8,4,2,1 above each bit, with running decimal sum on the right." — not vague phrases like "a picture of binary".',
+            'Detailed description of what the image should show. Include: subject, composition, style, colours, lighting, mood, and any specific requirements the user mentioned. Be as specific as possible for best results.',
         },
-        topic: { type: 'string', description: 'Lesson topic, used to contextualise labels.' },
-        yearLevel: { type: 'string', description: 'Year level, used to pitch vocabulary on labels.' },
+        topic: { type: 'string', description: 'Optional context topic.' },
+        yearLevel: { type: 'string', description: 'Optional year level for educational context.' },
         style: {
           type: 'string',
-          enum: ['educational', 'decorative'],
-          description: 'Use "educational" (default) for labelled teaching diagrams; "decorative" only when the user explicitly asks for a stylised artwork.',
+          enum: ['educational', 'decorative', 'photo', 'illustration', 'abstract'],
+          description: 'Image style. Use "educational" for labelled diagrams, "photo" for realistic photos, "illustration" for artistic illustrations, "decorative" for design elements, "abstract" for abstract compositions.',
         },
         aspectRatio: {
           type: 'string',

@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { encodeBase64 } from "jsr:@std/encoding/base64";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,21 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const REPLICATE_API_KEY = Deno.env.get("REPLICATE_API_KEY") ?? "";
-
-async function pollUntilDone(pollUrl: string, deadline: number): Promise<string[] | null> {
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 1500));
-    const res = await fetch(pollUrl, {
-      headers: { Authorization: `Bearer ${REPLICATE_API_KEY}` },
-    });
-    if (!res.ok) return null;
-    const body = await res.json() as { status: string; output?: string[]; error?: string };
-    if (body.status === "succeeded") return body.output ?? null;
-    if (body.status === "failed" || body.status === "canceled") return null;
-  }
-  return null;
-}
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -29,8 +14,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    if (!REPLICATE_API_KEY) {
-      return new Response(JSON.stringify({ error: "Image generation is not configured." }), {
+    if (!OPENAI_API_KEY) {
+      return new Response(JSON.stringify({ error: "Image generation is not configured (missing OPENAI_API_KEY)." }), {
         status: 503,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -44,66 +29,47 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Use "jpeg" — valid Replicate output_format value (not "jpg")
-    const createRes = await fetch(
-      "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${REPLICATE_API_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "wait",
-        },
-        body: JSON.stringify({
-          input: {
-            prompt,
-            go_fast: true,
-            megapixels: "1",
-            num_outputs: 1,
-            aspect_ratio,
-            output_format: "jpg",
-            output_quality: 90,
-            num_inference_steps: 4,
-          },
-        }),
-      }
-    );
+    // Map aspect ratios to OpenAI's supported sizes for gpt-image-1
+    const sizeMap: Record<string, string> = {
+      "1:1": "1024x1024",
+      "16:9": "1536x1024",
+      "9:16": "1024x1536",
+      "4:3": "1536x1024",
+      "3:4": "1024x1536",
+    };
+    const size = sizeMap[aspect_ratio] ?? "1536x1024";
+
+    const createRes = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt,
+        n: 1,
+        size,
+        quality: "high",
+      }),
+    });
 
     if (!createRes.ok) {
-      const err = await createRes.json().catch(() => ({}));
-      const msg = (err as { detail?: string })?.detail ?? `Replicate error ${createRes.status}`;
-      return new Response(JSON.stringify({ error: msg }), {
+      const err = await createRes.json().catch(() => ({})) as Record<string, unknown>;
+      const errMsg = (err?.error as Record<string, unknown>)?.message ?? `OpenAI error ${createRes.status}`;
+      return new Response(JSON.stringify({ error: errMsg }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const prediction = await createRes.json() as {
-      id: string;
-      status: string;
-      output?: string[];
-      urls?: { get: string };
-      error?: string;
+    const result = await createRes.json() as {
+      data?: Array<{ b64_json?: string; url?: string }>;
     };
 
-    if (prediction.error) {
-      return new Response(JSON.stringify({ error: prediction.error }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    let output: string[] | undefined = prediction.output;
-
-    // If not done yet, poll
-    if (!output && prediction.urls?.get) {
-      const polled = await pollUntilDone(prediction.urls.get, Date.now() + 90_000);
-      if (polled) output = polled;
-    }
-
-    const imageOutput = output?.[0];
-    if (!imageOutput) {
-      return new Response(JSON.stringify({ error: "No image returned from Replicate." }), {
+    const imageData = result.data?.[0];
+    if (!imageData) {
+      return new Response(JSON.stringify({ error: "No image returned from OpenAI." }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -111,24 +77,32 @@ Deno.serve(async (req: Request) => {
 
     let b64: string;
 
-    // Replicate flux-schnell sometimes returns base64 data URIs directly
-    if (imageOutput.startsWith("data:")) {
-      const commaIdx = imageOutput.indexOf(",");
-      b64 = commaIdx !== -1 ? imageOutput.slice(commaIdx + 1) : imageOutput;
-    } else {
-      // It's a URL — fetch and encode with Deno's standard library (no stack overflow)
-      const imgRes = await fetch(imageOutput);
+    if (imageData.b64_json) {
+      b64 = imageData.b64_json;
+    } else if (imageData.url) {
+      const imgRes = await fetch(imageData.url);
       if (!imgRes.ok) {
-        return new Response(JSON.stringify({ error: "Failed to fetch generated image." }), {
+        return new Response(JSON.stringify({ error: "Failed to fetch generated image from URL." }), {
           status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const imgBytes = new Uint8Array(await imgRes.arrayBuffer());
-      b64 = encodeBase64(imgBytes);
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < imgBytes.length; i += CHUNK) {
+        const slice = imgBytes.subarray(i, i + CHUNK);
+        binary += String.fromCharCode(...slice);
+      }
+      b64 = btoa(binary);
+    } else {
+      return new Response(JSON.stringify({ error: "Unexpected response format from OpenAI." }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    return new Response(JSON.stringify({ b64, mediaType: "image/jpeg" }), {
+    return new Response(JSON.stringify({ b64, mediaType: "image/png" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
