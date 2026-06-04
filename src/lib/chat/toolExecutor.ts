@@ -314,30 +314,14 @@ async function execGenerateInfographic(ctx: ToolExecContext, args: Args): Promis
   return { ok: true, summary: `${detail} ${orientation} infographic on ${topic}`, artifactIds: [art.id] };
 }
 
-function buildEducationalImagePrompt(rawPrompt: string, topic: string, yearLevel: string): string {
-  return [
-    `Create an educational illustration for a ${yearLevel} lesson on "${topic}".`,
-    `Subject: ${rawPrompt}`,
-    'Rendering rules — this MUST be a didactic learning visual, NOT a decorative stock photo:',
-    '• Flat vector / infographic style with generous white space.',
-    '• Clearly labelled parts with short plain-English captions next to each element.',
-    '• If the concept is a process or algorithm, show numbered steps (1, 2, 3, 4 …) laid out left-to-right or top-to-bottom with arrows connecting them.',
-    '• If it is a comparison, use a side-by-side split or a two-column diagram.',
-    '• If it is a worked example (maths / computing), show the calculation or transformation stepwise with intermediate values visible.',
-    '• Use a limited high-contrast palette (2–3 colours + neutral grey). No photorealism, no faces, no cluttered backgrounds.',
-    '• Spelling MUST be correct. Numbers MUST be legible. Avoid fake or garbled text — only include labels I can read at a glance from the back of a classroom.',
-    '• Absolutely no watermarks, no logos, no copyrighted characters. Classroom-safe.',
-  ].join('\n');
-}
-
 async function execGenerateImage(_ctx: ToolExecContext, args: Args): Promise<ToolExecResult> {
   const prompt = s(args.prompt);
   if (!prompt) throw new Error('prompt is required');
-  const rawAr = s(args.aspectRatio, '16:9');
+  const rawAr = s(args.aspectRatio, '1:1');
   const aspect_ratio: '1:1' | '16:9' | '9:16' =
-    rawAr === '1:1' ? '1:1'
+    rawAr === '16:9' ? '16:9'
     : rawAr === '9:16' || rawAr === '3:4' ? '9:16'
-    : '16:9';
+    : '1:1';
   const { b64, mediaType } = await generateImage({ prompt, aspect_ratio });
   const art = await artifactsRepo.create(_ctx.db, {
     type: 'image',

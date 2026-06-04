@@ -9,10 +9,10 @@ export interface ImageGenRequest {
 
 export interface ImageGenResult {
   b64: string;
-  mediaType: 'image/png' | 'image/jpeg';
+  mediaType: 'image/webp' | 'image/png' | 'image/jpeg';
 }
 
-/** Returns base64-encoded image data. */
+/** Returns base64-encoded image data from Replicate flux-dev. */
 export async function generateImage(req: ImageGenRequest): Promise<ImageGenResult> {
   const res = await fetch(EDGE_FN_URL, {
     method: 'POST',
@@ -22,7 +22,7 @@ export async function generateImage(req: ImageGenRequest): Promise<ImageGenResul
     },
     body: JSON.stringify({
       prompt: req.prompt,
-      aspect_ratio: req.aspect_ratio ?? '16:9',
+      aspect_ratio: req.aspect_ratio ?? '1:1',
     }),
   });
 
@@ -38,5 +38,5 @@ export async function generateImage(req: ImageGenRequest): Promise<ImageGenResul
   const data = await res.json() as { b64?: string; mediaType?: string; error?: string };
   if (data.error) throw new Error(data.error);
   if (!data.b64) throw new Error('No image returned.');
-  return { b64: data.b64, mediaType: (data.mediaType as 'image/png' | 'image/jpeg') || 'image/png' };
+  return { b64: data.b64, mediaType: (data.mediaType as 'image/webp') || 'image/webp' };
 }
