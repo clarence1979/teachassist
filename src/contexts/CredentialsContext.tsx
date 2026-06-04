@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { isInIframe, attemptAutoLogin } from '../utils/auto-login';
 import type { ProviderCredential } from '../types/credentials';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, setSupabaseUsername } from '../lib/supabaseClient';
 
 export type AuthStage = 'loading' | 'login' | 'ready';
 
@@ -77,6 +77,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
           const claudeKey = localStorage.getItem('VITE_CLAUDE_API_KEY') ?? undefined;
           applyKeys(openaiKey, claudeKey);
           setUsername(result.username ?? '');
+          setSupabaseUsername(result.username ?? '');
           setIsAdmin(result.isAdmin ?? false);
           setAuthStage('ready');
         } else {
@@ -88,6 +89,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
       const saved = localStorage.getItem(LS_AUTH);
       if (saved) {
         setUsername(saved);
+        setSupabaseUsername(saved);
         setIsAdmin(localStorage.getItem(LS_IS_ADMIN) === 'true');
         await fetchSecretsAndReady();
       } else {
@@ -119,6 +121,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
       localStorage.setItem(LS_AUTH, trimUser);
       localStorage.setItem(LS_IS_ADMIN, adminFlag ? 'true' : 'false');
       setUsername(trimUser);
+      setSupabaseUsername(trimUser);
       setIsAdmin(adminFlag);
       await fetchSecretsAndReady();
       return {};
@@ -133,6 +136,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
     localStorage.removeItem('VITE_CLAUDE_API_KEY');
     setProviders([]);
     setUsername('');
+    setSupabaseUsername('');
     setIsAdmin(false);
     setAuthStage('login');
   }, []);
