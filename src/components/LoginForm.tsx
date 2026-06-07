@@ -1,19 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { clsx } from 'clsx';
 import { TeachAssistIcon } from './TeachAssistLogo';
 import { useCredentials } from '../contexts/CredentialsContext';
 
 export function LoginForm() {
-  const { login, isIframe } = useCredentials();
-
-  // Non-iframe visitors land here only when not authenticated. Redirect them
-  // to the marketing site rather than showing a login form they can't use.
-  useEffect(() => {
-    if (!isIframe) {
-      window.location.replace('https://www.teachingtools.dev');
-    }
-  }, [isIframe]);
+  const { login } = useCredentials();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
