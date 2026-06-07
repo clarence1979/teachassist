@@ -4,7 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const PEXELS_KEY = Deno.env.get("PEXELS_API_KEY") ?? "XHyIpHGG88PResHuh8lWpD0q4bMBzS1MShsrYy27Tl6SrJiieDBzZZdL";
+const PEXELS_KEY = Deno.env.get("PEXELS_API_KEY") ?? "";
 
 interface PexelsPhoto {
   id: number;
