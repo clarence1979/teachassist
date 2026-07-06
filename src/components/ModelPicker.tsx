@@ -6,7 +6,7 @@ import { useAppStore } from '../store/appStore';
 import type { Provider } from '../types/credentials';
 import { DEFAULT_ANTHROPIC_MODELS, DEFAULT_OPENAI_MODELS } from '../types/credentials';
 import { fetchOpenAIModelCatalog, invalidateOpenAIModelCache } from '../lib/llm/openaiModels';
-import { fetchAnthropicModelCatalog, invalidateAnthropicModelCache } from '../lib/llm/anthropicModels';
+import { fetchAnthropicModelCatalog, invalidateAnthropicModelCache, clearAnthropicModelCache, getLatestOpus } from '../lib/llm/anthropicModels';
 import { OFFLINE_MODELS as WEBLLM_MODELS, isModelCached, loadOfflineEngine, hasWebGPU } from '../lib/llm/webllm';
 
 type Tab = Provider | 'offline';
@@ -66,12 +66,22 @@ export function ModelPicker({ compact = false }: { compact?: boolean }) {
     return () => { cancelled = true; };
   }, [openaiKey]);
 
-  // Fetch live Anthropic models whenever we have a key
+  // Fetch live Anthropic models whenever we have a key — clear cache on first mount
+  const anthropicFetchedRef = useRef(false);
   useEffect(() => {
     if (!anthropicKey) { setLiveAnthropicModels(null); return; }
     let cancelled = false;
+    if (!anthropicFetchedRef.current) {
+      clearAnthropicModelCache();
+      anthropicFetchedRef.current = true;
+    }
     fetchAnthropicModelCatalog(anthropicKey).then((catalog) => {
-      if (!cancelled) setLiveAnthropicModels(catalog.chatModels);
+      if (cancelled) return;
+      setLiveAnthropicModels(catalog.chatModels);
+      // Auto-select latest Opus if the current model is not in the live list
+      if (activeProvider === 'anthropic' && !catalog.chatModels.includes(activeModel)) {
+        setActiveModel(getLatestOpus(catalog.chatModels));
+      }
     }).catch(() => { /* silently fall back to defaults */ });
     return () => { cancelled = true; };
   }, [anthropicKey]);

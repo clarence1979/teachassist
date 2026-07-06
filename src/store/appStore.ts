@@ -107,7 +107,7 @@ export const useAppStore = create<AppState>()(
         pushPref('offlineModelId', null);
       },
 
-      activeModel: 'claude-sonnet-4-5',
+      activeModel: 'claude-opus-4-7',
       setActiveModel: (model) => {
         set({ activeModel: model });
         pushPref('activeModel', model);

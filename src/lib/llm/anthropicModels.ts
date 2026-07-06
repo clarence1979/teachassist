@@ -32,19 +32,25 @@ function isNonChatModel(id: string): boolean {
   );
 }
 
-// Sort comparator: newer models first.
-// Anthropic model IDs follow "claude-{family}-{version}" patterns — sort
-// newest (highest version number) first, then alphabetically within same version.
+// Sort comparator: newer models first, Opus before Sonnet at same version.
 function sortModels(ids: string[]): string[] {
   return [...ids].sort((a, b) => {
-    // Extract trailing version numbers like "4-7", "4-5", "3-5" for numeric comparison
     const ver = (id: string) => {
       const m = id.match(/(\d+)-(\d+)/);
       return m ? parseInt(m[1]) * 100 + parseInt(m[2]) : 0;
     };
     const vDiff = ver(b) - ver(a);
     if (vDiff !== 0) return vDiff;
-    return b.localeCompare(a);
+    // At same version: opus > sonnet > haiku
+    const familyRank = (id: string) => {
+      if (id.includes('opus')) return 3;
+      if (id.includes('sonnet')) return 2;
+      if (id.includes('haiku')) return 1;
+      return 0;
+    };
+    const fDiff = familyRank(b) - familyRank(a);
+    if (fDiff !== 0) return fDiff;
+    return a.localeCompare(b);
   });
 }
 
@@ -79,4 +85,15 @@ export async function fetchAnthropicModelCatalog(apiKey: string): Promise<Anthro
 
 export function invalidateAnthropicModelCache(apiKey: string) {
   cache.delete(apiKey);
+}
+
+/** Clear ALL cached catalogs — used on app boot to ensure fresh models. */
+export function clearAnthropicModelCache() {
+  cache.clear();
+}
+
+/** Return the latest Opus model from a model list, or the first model if none found. */
+export function getLatestOpus(models: string[]): string {
+  const opus = models.find((m) => m.includes('opus'));
+  return opus ?? models[0] ?? FALLBACK_MODELS[0];
 }
