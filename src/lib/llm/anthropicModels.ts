@@ -14,10 +14,11 @@ const cache = new Map<string, AnthropicModelCatalog>();
 
 // Models we know are chat-capable — used only as fallback when the API call fails
 const FALLBACK_MODELS = [
+  'claude-fable-5',
+  'claude-opus-4-8',
   'claude-opus-4-7',
-  'claude-opus-4-5',
+  'claude-sonnet-5',
   'claude-sonnet-4-7',
-  'claude-sonnet-4-5',
   'claude-haiku-4-5',
 ];
 
@@ -32,17 +33,23 @@ function isNonChatModel(id: string): boolean {
   );
 }
 
-// Sort comparator: newer models first, Opus before Sonnet at same version.
+// Sort comparator: newer models first, higher-tier families first.
 function sortModels(ids: string[]): string[] {
   return [...ids].sort((a, b) => {
     const ver = (id: string) => {
-      const m = id.match(/(\d+)-(\d+)/);
-      return m ? parseInt(m[1]) * 100 + parseInt(m[2]) : 0;
+      // Handle both "X-Y" (e.g. opus-4-8) and single version (e.g. sonnet-5, fable-5)
+      const m2 = id.match(/(\d+)-(\d+)/);
+      if (m2) return parseInt(m2[1]) * 100 + parseInt(m2[2]);
+      const m1 = id.match(/-(\d+)$/);
+      if (m1) return parseInt(m1[1]) * 100;
+      return 0;
     };
     const vDiff = ver(b) - ver(a);
     if (vDiff !== 0) return vDiff;
-    // At same version: opus > sonnet > haiku
+    // Family rank: fable/mythos > opus > sonnet > haiku
     const familyRank = (id: string) => {
+      if (id.includes('mythos')) return 5;
+      if (id.includes('fable')) return 4;
       if (id.includes('opus')) return 3;
       if (id.includes('sonnet')) return 2;
       if (id.includes('haiku')) return 1;
@@ -59,21 +66,40 @@ export async function fetchAnthropicModelCatalog(apiKey: string): Promise<Anthro
 
   let allIds: string[] = [];
   try {
-    const res = await fetch('https://api.anthropic.com/v1/models', {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2025-04-15',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-    });
-    if (res.ok) {
+    const baseHeaders = {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    };
+
+    let hasMore = true;
+    let afterId: string | undefined;
+    const maxPages = 5;
+    let page = 0;
+
+    while (hasMore && page < maxPages) {
+      const url = new URL('https://api.anthropic.com/v1/models');
+      url.searchParams.set('limit', '100');
+      if (afterId) url.searchParams.set('after_id', afterId);
+
+      const res = await fetch(url.toString(), { headers: baseHeaders });
+      if (!res.ok) {
+        console.warn(`[ModelFetch] Anthropic /v1/models returned ${res.status}`);
+        break;
+      }
       const data = await res.json();
-      allIds = (data.data as { id: string }[])
-        .map((m) => m.id)
-        .filter((id) => !isNonChatModel(id));
+      const models = (data.data as { id: string }[]) ?? [];
+      for (const m of models) {
+        if (!isNonChatModel(m.id)) allIds.push(m.id);
+      }
+      hasMore = data.has_more === true;
+      if (hasMore && models.length > 0) {
+        afterId = models[models.length - 1].id;
+      }
+      page++;
     }
-  } catch {
-    // Network failure — fall through to static defaults
+  } catch (err) {
+    console.warn('[ModelFetch] Failed to fetch Anthropic models:', err);
   }
 
   const chatModels = allIds.length > 0 ? sortModels(allIds) : FALLBACK_MODELS;

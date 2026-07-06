@@ -64,14 +64,23 @@ function buildMessages(
 }
 
 function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
+  const model = req.model;
+  const adaptive = usesAdaptiveThinking(model);
+  const legacyThinking = usesLegacyThinking(model);
+
   const body: Record<string, unknown> = {
-    model: req.model,
+    model,
     max_tokens: req.maxTokens ?? 16384,
     messages: buildMessages(req.messages, req.image),
     stream,
   };
   if (req.system) body.system = req.system;
-  if (req.temperature !== undefined) body.temperature = req.temperature;
+
+  // Opus 4.7+, Sonnet 5, Fable 5 reject non-default temperature/top_p/top_k
+  if (!adaptive && req.temperature !== undefined) {
+    body.temperature = req.temperature;
+  }
+
   if (req.tools?.length) {
     body.tools = req.tools.map((t) => ({
       name: t.name,
@@ -79,11 +88,16 @@ function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
       input_schema: t.parameters,
     }));
   }
-  // Enable extended thinking for capable models (Opus, Sonnet 4.5+)
-  if (supportsExtendedThinking(req.model) && !req.tools?.length) {
+
+  // Adaptive thinking for Opus 4.7+, Sonnet 5, Fable 5
+  if (adaptive) {
+    body.thinking = { type: 'adaptive' };
+  } else if (legacyThinking && !req.tools?.length) {
+    // Legacy extended thinking for Opus 4.5/4.6, Sonnet 4.5/4.6
     body.thinking = { type: 'enabled', budget_tokens: Math.min(10000, (req.maxTokens ?? 16384) - 1000) };
     delete body.temperature;
   }
+
   return body;
 }
 
@@ -91,15 +105,33 @@ function headers(apiKey: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     'x-api-key': apiKey,
-    'anthropic-version': '2025-04-15',
+    'anthropic-version': '2023-06-01',
     'anthropic-dangerous-direct-browser-access': 'true',
   };
 }
 
-function supportsExtendedThinking(model: string): boolean {
+// Opus 4.7+, Sonnet 5, Fable 5 use adaptive thinking (rejects budget_tokens)
+function usesAdaptiveThinking(model: string): boolean {
+  if (model.includes('fable')) return true;
+  if (model.includes('opus-4-7') || model.includes('opus-4-8') || model.includes('opus-4-9')) return true;
+  if (model.includes('sonnet-5')) return true;
+  // Future opus versions
+  const opusMatch = model.match(/opus-(\d+)-(\d+)/);
+  if (opusMatch) {
+    const major = parseInt(opusMatch[1]);
+    const minor = parseInt(opusMatch[2]);
+    if (major > 4 || (major === 4 && minor >= 7)) return true;
+  }
+  return false;
+}
+
+// Older models that still support legacy extended thinking (budget_tokens)
+function usesLegacyThinking(model: string): boolean {
   return (
-    model.includes('opus') ||
-    model.includes('sonnet-4') // sonnet-4-5 and above support thinking
+    model.includes('opus-4-5') ||
+    model.includes('opus-4-6') ||
+    model.includes('sonnet-4-5') ||
+    model.includes('sonnet-4-6')
   );
 }
 
