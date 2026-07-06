@@ -66,7 +66,7 @@ function buildMessages(
 function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: req.model,
-    max_tokens: req.maxTokens ?? 4096,
+    max_tokens: req.maxTokens ?? 16384,
     messages: buildMessages(req.messages, req.image),
     stream,
   };
@@ -79,6 +79,11 @@ function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
       input_schema: t.parameters,
     }));
   }
+  // Enable extended thinking for capable models (Opus, Sonnet 4.5+)
+  if (supportsExtendedThinking(req.model) && !req.tools?.length) {
+    body.thinking = { type: 'enabled', budget_tokens: Math.min(10000, (req.maxTokens ?? 16384) - 1000) };
+    delete body.temperature;
+  }
   return body;
 }
 
@@ -86,9 +91,16 @@ function headers(apiKey: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
+    'anthropic-version': '2025-04-15',
     'anthropic-dangerous-direct-browser-access': 'true',
   };
+}
+
+function supportsExtendedThinking(model: string): boolean {
+  return (
+    model.includes('opus') ||
+    model.includes('sonnet-4') // sonnet-4-5 and above support thinking
+  );
 }
 
 // ─── Error handling ───────────────────────────────────────────────────────────
@@ -129,6 +141,7 @@ export async function anthropicStream(
 
   let fullText = '';
   const toolCallsMap = new Map<number, { id: string; name: string; inputJson: string }>();
+  const thinkingBlocks = new Set<number>();
   let inputTokens = 0;
   let outputTokens = 0;
 
@@ -159,11 +172,15 @@ export async function anthropicStream(
             name: block.name as string,
             inputJson: '',
           });
+        } else if (block?.type === 'thinking') {
+          thinkingBlocks.add(idx);
         }
       } else if (type === 'content_block_delta') {
         const delta = event.delta as Record<string, unknown>;
         const idx = event.index as number;
-        if (delta?.type === 'text_delta') {
+        if (thinkingBlocks.has(idx)) {
+          // Skip thinking block deltas — internal reasoning, not shown to user
+        } else if (delta?.type === 'text_delta') {
           const text = delta.text as string;
           fullText += text;
           onChunk({ type: 'text', delta: text });
@@ -182,6 +199,7 @@ export async function anthropicStream(
           onChunk({ type: 'tool_call', toolCall });
           toolCallsMap.delete(idx);
         }
+        thinkingBlocks.delete(idx);
       } else if (type === 'message_delta') {
         const usage = (event.usage as Record<string, unknown>) ?? {};
         outputTokens = (usage.output_tokens as number) ?? outputTokens;

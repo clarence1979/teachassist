@@ -251,7 +251,7 @@ export async function sendMessage(opts: SendOptions): Promise<void> {
           messages: workingHistory,
           system: systemPrompt,
           tools,
-          maxTokens: 4096,
+          maxTokens: 16384,
           signal: opts.signal,
         },
         onChunk,

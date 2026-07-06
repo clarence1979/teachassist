@@ -56,7 +56,7 @@ export async function fetchAnthropicModelCatalog(apiKey: string): Promise<Anthro
     const res = await fetch('https://api.anthropic.com/v1/models', {
       headers: {
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': '2025-04-15',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
     });
