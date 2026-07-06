@@ -73,6 +73,10 @@ export interface SendOptions {
   signal?: AbortSignal;
   /** When true, mix in summaries of prior conversations as additional system context. */
   memoryEnabled?: boolean;
+  /** Current logged-in username — used for memory context. */
+  username?: string;
+  /** Whether the current user is an admin — admins see all users' memory. */
+  isAdmin?: boolean;
 }
 
 // ─── Pre-flight clarification ────────────────────────────────────────────────
@@ -180,7 +184,12 @@ export async function sendMessage(opts: SendOptions): Promise<void> {
   let systemPrompt = `${MAIN_SYSTEM_PROMPT}\n\n${dateBlock}`;
   if (opts.memoryEnabled) {
     try {
-      const memoryBlock = await buildMemoryContext(db, conversationId);
+      const memoryBlock = await buildMemoryContext({
+        db,
+        currentConversationId: conversationId,
+        username: opts.username || '',
+        isAdmin: opts.isAdmin || false,
+      });
       if (memoryBlock) {
         systemPrompt = `${MAIN_SYSTEM_PROMPT}\n\n${dateBlock}\n\n---\n${memoryBlock}`;
       }

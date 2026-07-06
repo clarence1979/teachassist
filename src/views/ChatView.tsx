@@ -28,7 +28,7 @@ function attachmentsFromPending(pending: PendingAttachment[]): MessageAttachment
 
 export function ChatView() {
   const db = useDb();
-  const { getKey, providers, isIframe } = useCredentials();
+  const { getKey, providers, isIframe, username, isAdmin } = useCredentials();
   const { activeProvider, activeModel, offlineModelId, addUsage, lastGeneratedArtifactId, clearGeneratedArtifact, memoryEnabled } = useAppStore();
 
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
@@ -211,6 +211,8 @@ export function ChatView() {
           onUpdate: () => { /* live query handles re-render */ },
           onUsage: (i, o) => addUsage(activeProvider, i, o),
           memoryEnabled,
+          username,
+          isAdmin,
           signal: controller.signal,
         });
       } catch (err) {
@@ -219,7 +221,7 @@ export function ChatView() {
         setConvIdle(conversationId);
       }
     },
-    [db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, setConvBusy, setConvIdle, setSendError],
+    [db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, username, isAdmin, setConvBusy, setConvIdle, setSendError],
   );
 
   const handleSend = useCallback(
@@ -285,6 +287,8 @@ export function ChatView() {
           onUpdate: () => { /* live */ },
           onUsage: (i, o) => addUsage(activeProvider, i, o),
           memoryEnabled,
+          username,
+          isAdmin,
           signal: controller.signal,
         });
       } catch (err) {
@@ -293,7 +297,7 @@ export function ChatView() {
         setConvIdle(activeConvId);
       }
     },
-    [activeConvId, allMessages, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, setConvBusy, setConvIdle, setSendError],
+    [activeConvId, allMessages, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, username, isAdmin, setConvBusy, setConvIdle, setSendError],
   );
 
   const handleEdit = useCallback(
@@ -348,6 +352,8 @@ export function ChatView() {
           onUpdate: () => { /* live */ },
           onUsage: (i, o) => addUsage(activeProvider, i, o),
           memoryEnabled,
+          username,
+          isAdmin,
           signal: controller.signal,
         });
       } catch (err) {
@@ -356,7 +362,7 @@ export function ChatView() {
         setConvIdle(activeConvId);
       }
     },
-    [activeConvId, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, setConvBusy, setConvIdle, setSendError],
+    [activeConvId, db, getKey, activeProvider, activeModel, offlineModelId, addUsage, memoryEnabled, username, isAdmin, setConvBusy, setConvIdle, setSendError],
   );
 
   const handleSwitchBranch = useCallback(

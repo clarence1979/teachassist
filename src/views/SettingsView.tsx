@@ -2,7 +2,7 @@ import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, BarChart3, Download, Upload, AlertTriangle,
-  CheckCircle, Accessibility, LogOut, Palette, Type,
+  CheckCircle, Accessibility, LogOut, Palette, Type, Brain,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useCredentials } from '../contexts/CredentialsContext';
@@ -175,8 +175,8 @@ const FONT_SIZES: Array<{ id: FontSize; label: string; px: string }> = [
 
 export function SettingsView() {
   const navigate = useNavigate();
-  const { isIframe, username, logout } = useCredentials();
-  const { timezone, setTimezone, reducedMotion, setReducedMotion, theme, setTheme, fontSize, setFontSize } = useAppStore();
+  const { isIframe, username, isAdmin, logout } = useCredentials();
+  const { timezone, setTimezone, reducedMotion, setReducedMotion, memoryEnabled, setMemoryEnabled, theme, setTheme, fontSize, setFontSize } = useAppStore();
 
   return (
     <div className="flex-1 overflow-y-auto grid-bg">
@@ -344,6 +344,26 @@ export function SettingsView() {
                 </span>
               </label>
               <p className="text-xs text-text-dim mt-1">Disable glow pulses, text-shadow effects, and long transitions.</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 pt-2">
+            <Brain size={14} className="text-text-dim mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={memoryEnabled}
+                  onChange={(e) => setMemoryEnabled(e.target.checked)}
+                  className="w-4 h-4 rounded border-border bg-bg-elevated accent-accent-cyan cursor-pointer"
+                />
+                <span className="text-xs font-rajdhani font-semibold text-text-secondary uppercase tracking-wider group-hover:text-text-primary transition-colors">
+                  Conversation memory
+                </span>
+              </label>
+              <p className="text-xs text-text-dim mt-1">
+                Remember past interactions to provide better contextual responses. {isAdmin ? 'As admin, memory includes all users\' interactions.' : 'Your chat history is used as context for future conversations.'}
+              </p>
             </div>
           </div>
         </section>
