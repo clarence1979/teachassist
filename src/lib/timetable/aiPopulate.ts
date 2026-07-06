@@ -267,7 +267,7 @@ export async function populateWeekWithAI(params: {
   const apiKey = anthropicKey ?? openaiKey;
   if (!apiKey) throw new Error('No AI API key configured. Add an Anthropic or OpenAI key in Settings.');
 
-  const model = provider === 'anthropic' ? 'claude-sonnet-4-5' : 'gpt-4o';
+  const model = provider === 'anthropic' ? 'claude-sonnet-5' : 'gpt-4o';
 
   const systemPrompt = buildSystemPrompt(prefs);
   const userPrompt = buildUserPrompt(weekStart, fixedOccurrences, pendingTasks, calendar, prefs, recentPatterns);

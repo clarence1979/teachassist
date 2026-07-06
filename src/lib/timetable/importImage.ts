@@ -138,7 +138,7 @@ export async function callVisionImport(params: ImportCallParams): Promise<Extrac
   const apiKey = useAnthropic ? anthropicKey! : openaiKey!;
   if (!apiKey) throw new Error('No vision API key available. Add Anthropic or OpenAI key in Settings.');
 
-  const model = useAnthropic ? 'claude-opus-4-5' : 'gpt-4o';
+  const model = useAnthropic ? 'claude-opus-4-8' : 'gpt-4o';
 
   const res = await complete({
     provider,

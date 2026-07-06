@@ -57,7 +57,7 @@ async function callLlmForJson(ctx: ToolExecContext, prompt: string, maxTokens = 
   const key = ctx.openaiKey ?? ctx.anthropicKey;
   if (!key) throw new Error('No API key configured for content generation.');
   const provider: Provider = ctx.openaiKey ? 'openai' : 'anthropic';
-  const model = provider === 'openai' ? 'gpt-4o' : 'claude-opus-4-7';
+  const model = provider === 'openai' ? 'gpt-4o' : 'claude-sonnet-5';
   const res = await complete({
     provider,
     model,

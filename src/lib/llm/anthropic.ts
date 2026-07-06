@@ -110,11 +110,12 @@ function headers(apiKey: string): Record<string, string> {
   };
 }
 
-// Opus 4.7+, Sonnet 5, Fable 5 use adaptive thinking (rejects budget_tokens)
+// Opus 4.7+, Sonnet 5, Fable 5, Mythos use adaptive thinking (rejects budget_tokens)
 function usesAdaptiveThinking(model: string): boolean {
   if (model.includes('fable')) return true;
-  if (model.includes('opus-4-7') || model.includes('opus-4-8') || model.includes('opus-4-9')) return true;
+  if (model.includes('mythos')) return true;
   if (model.includes('sonnet-5')) return true;
+  if (model.includes('opus-4-7') || model.includes('opus-4-8') || model.includes('opus-4-9')) return true;
   // Future opus versions
   const opusMatch = model.match(/opus-(\d+)-(\d+)/);
   if (opusMatch) {
@@ -122,6 +123,9 @@ function usesAdaptiveThinking(model: string): boolean {
     const minor = parseInt(opusMatch[2]);
     if (major > 4 || (major === 4 && minor >= 7)) return true;
   }
+  // Future sonnet major versions (sonnet-6, etc.)
+  const sonnetMatch = model.match(/sonnet-(\d+)/);
+  if (sonnetMatch && parseInt(sonnetMatch[1]) >= 5) return true;
   return false;
 }
 
@@ -211,7 +215,7 @@ export async function anthropicStream(
         const delta = event.delta as Record<string, unknown>;
         const idx = event.index as number;
         if (thinkingBlocks.has(idx)) {
-          // Skip thinking block deltas — internal reasoning, not shown to user
+          // Skip thinking/signature deltas — internal reasoning
         } else if (delta?.type === 'text_delta') {
           const text = delta.text as string;
           fullText += text;
@@ -221,6 +225,7 @@ export async function anthropicStream(
           const tc = toolCallsMap.get(idx);
           if (tc) tc.inputJson += partial;
         }
+        // thinking_delta and signature_delta are silently ignored
       } else if (type === 'content_block_stop') {
         const idx = event.index as number;
         const tc = toolCallsMap.get(idx);
