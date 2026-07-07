@@ -56,8 +56,14 @@ export function isoDateTime(d: Date): string {
 }
 
 export function parseLocal(iso: string): Date {
-  // Parse local-naive ISO. Treats strings without Z as local.
-  return new Date(iso);
+  // Force local interpretation by parsing components manually.
+  // new Date('YYYY-MM-DDTHH:mm:ss') is treated as UTC in some browsers
+  // when there's no timezone suffix, causing offset bugs.
+  const [datePart, timePart] = iso.split('T');
+  const [y, m, d] = datePart.split('-').map(Number);
+  if (!timePart) return new Date(y, m - 1, d);
+  const [hh, mm, ss] = timePart.replace('Z', '').split(':').map(Number);
+  return new Date(y, m - 1, d, hh || 0, mm || 0, ss || 0);
 }
 
 export function sameDay(a: Date, b: Date): boolean {

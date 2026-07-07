@@ -618,15 +618,12 @@ export function TimetableView() {
         </div>
       ) : (
       /* ── Desktop toolbar ───────────────────────────────────── */
-      <div className="shrink-0 px-6 pt-5 pb-3 border-b border-border bg-bg-elevated">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="p-2.5 rounded-btn bg-bg-panel border border-border">
-            <Calendar size={20} className="text-accent-amber" />
+      <div className="shrink-0 px-4 py-2 border-b border-border bg-bg-elevated">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="p-1.5 rounded-btn bg-bg-panel border border-border">
+            <Calendar size={16} className="text-accent-amber" />
           </div>
-          <div>
-            <h1 className="font-orbitron text-xl font-bold text-text-primary tracking-wide">TIMETABLE</h1>
-            <p className="text-text-dim text-xs font-mono">Drag to move · resize from the edge · right-click for options</p>
-          </div>
+          <h1 className="font-orbitron text-base font-bold text-text-primary tracking-wide">TIMETABLE</h1>
           <div className="flex-1" />
 
           <div className="flex items-center gap-0 border border-border rounded-btn overflow-hidden">
@@ -635,7 +632,7 @@ export function TimetableView() {
                 key={v}
                 onClick={() => setViewMode(v)}
                 className={clsx(
-                  'px-3 py-1.5 text-[11px] font-rajdhani font-semibold uppercase tracking-wider transition-colors',
+                  'px-2.5 py-1 text-[11px] font-rajdhani font-semibold uppercase tracking-wider transition-colors',
                   viewMode === v ? 'bg-accent-amber/10 text-accent-amber' : 'text-text-dim hover:text-text-primary',
                 )}
               >

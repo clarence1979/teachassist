@@ -63,18 +63,17 @@ export function DayWeekGrid(props: DayWeekGridProps) {
   const pxPerMin = BASE_PX_PER_MIN * zoomLevel;
   const fullHeight = MINUTES_PER_DAY * pxPerMin;
 
-  // Auto-scroll to current time (or 07:00 on other days) on mount and zoom change
+  // Auto-scroll to the earliest block or 8 AM (school day default)
   useEffect(() => {
     if (!containerRef.current) return;
-    const now = new Date();
-    const currentMin = now.getHours() * 60 + now.getMinutes();
-    // Show current time centred with ~2 hours of context above
-    const targetMin = Math.max(0, currentMin - 60);
+    let targetMin = 8 * 60; // default: 8:00 AM
+    if (occurrences.length > 0) {
+      const earliest = Math.min(...occurrences.map((o) => minutesFromMidnight(o.startISO)));
+      targetMin = Math.max(0, earliest - 30); // 30 min before first block
+    }
     containerRef.current.scrollTop = targetMin * pxPerMin;
-  // Only run on mount and when zoom changes (intentionally omit pxPerMin from stable closure —
-  // using it directly ensures correct scroll position after zoom)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoomLevel]);
+  }, [zoomLevel, occurrences.length]);
 
   const currentMin = (() => {
     const now = new Date();
@@ -96,7 +95,7 @@ export function DayWeekGrid(props: DayWeekGridProps) {
       <div className="flex" style={{ minHeight: fullHeight + 40 }}>
         {/* Hour rail */}
         <div className="shrink-0 w-14 border-r border-border sticky left-0 bg-bg-base z-20">
-          <div className="h-10 border-b border-border bg-bg-elevated" />
+          <div className="h-8 border-b border-border bg-bg-elevated" />
           <div className="relative" style={{ height: fullHeight }}>
             {Array.from({ length: 24 }, (_, h) => (
               <div
@@ -211,7 +210,7 @@ function DayColumn({
     <div className="flex-1 min-w-0 flex flex-col border-r border-border last:border-r-0">
       {/* Header */}
       <div className={clsx(
-        'shrink-0 h-10 flex items-center justify-center gap-2 border-b border-border text-xs font-rajdhani font-bold uppercase tracking-wider sticky top-0 z-10',
+        'shrink-0 h-8 flex items-center justify-center gap-1.5 border-b border-border text-[11px] font-rajdhani font-bold uppercase tracking-wider sticky top-0 z-10',
         isToday(day) ? 'bg-accent-amber/10 text-accent-amber' : 'bg-bg-elevated text-text-secondary',
       )}>
         {isSingle ? (
