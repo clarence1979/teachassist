@@ -858,6 +858,9 @@ export async function executeTool(
 }
 
 const TOOL_TIMEOUT_MS = 30_000;
+const SLOW_TOOL_TIMEOUT_MS = 120_000;
+
+const SLOW_TOOLS = new Set(['generate_image', 'generate_slides', 'generate_infographic']);
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((res, rej) => {
@@ -878,7 +881,8 @@ export async function executeToolInvocations(
     next[i] = { ...inv, status: 'pending' };
     onUpdate?.(next);
     try {
-      const result = await withTimeout(executeTool(inv.name, inv.arguments, ctx), TOOL_TIMEOUT_MS, inv.name);
+      const timeout = SLOW_TOOLS.has(inv.name) ? SLOW_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS;
+      const result = await withTimeout(executeTool(inv.name, inv.arguments, ctx), timeout, inv.name);
       next[i] = { ...inv, status: result.ok ? 'success' : 'error', result, error: result.error };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
