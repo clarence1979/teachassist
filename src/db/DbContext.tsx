@@ -3,6 +3,7 @@ import { getDb, type PedagogyDB } from './schema';
 import { useCredentials } from '../contexts/CredentialsContext';
 import { supabase } from '../lib/supabaseClient';
 import { configureSync, pullFromSupabase, pushLocalOnly, reconcileLocalWithRemote, subscribeRemoteChanges, setSyncPollInterval } from './sync';
+import { setSupabaseUsername } from '../lib/supabaseClient';
 import { loadUserPrefs } from '../lib/userPrefs';
 import { setPrefsUsername, useAppStore } from '../store/appStore';
 import type { Provider } from '../types/credentials';
@@ -101,6 +102,7 @@ export function DbProvider({ children }: { children: React.ReactNode }) {
   // already have (so a stale local copy can never overwrite a newer remote edit).
   useEffect(() => {
     if (!viewedAsUser || viewedAsUser === 'default') return;
+    setSupabaseUsername(viewedAsUser);
     configureSync(db, viewedAsUser);
     let cancelled = false;
     let cleanup: (() => void) | undefined;

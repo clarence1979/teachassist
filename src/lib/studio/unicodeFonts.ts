@@ -13,6 +13,7 @@
  */
 
 import type { PDFDocument, PDFFont } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 
 export interface UnicodeFonts {
   regular: PDFFont;
@@ -28,9 +29,6 @@ const FONT_URLS = {
   italic: `${DEJAVU_BASE}/DejaVuSans-Oblique.ttf`,
   mono: `${DEJAVU_BASE}/DejaVuSansMono.ttf`,
 };
-// esm.sh rewrites bare specifiers (like `pako`) into relative URLs, which is
-// required because @pdf-lib/fontkit's ES build imports `pako` by bare name.
-const FONTKIT_URL = 'https://esm.sh/@pdf-lib/fontkit@1.1.1';
 
 const byteCache = new Map<string, Promise<ArrayBuffer>>();
 
@@ -46,18 +44,7 @@ function fetchFont(url: string): Promise<ArrayBuffer> {
   return p;
 }
 
-let fontkitPromise: Promise<unknown> | null = null;
-async function loadFontkit(): Promise<unknown> {
-  if (!fontkitPromise) {
-    fontkitPromise = import(/* @vite-ignore */ FONTKIT_URL).then(
-      (m) => (m as { default?: unknown }).default ?? m,
-    );
-  }
-  return fontkitPromise;
-}
-
 export async function embedUnicodeFonts(pdf: PDFDocument): Promise<UnicodeFonts> {
-  const fontkit = await loadFontkit();
   (pdf as unknown as { registerFontkit: (fk: unknown) => void }).registerFontkit(fontkit);
   const [reg, bold, italic, mono] = await Promise.all([
     fetchFont(FONT_URLS.regular),
