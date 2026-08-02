@@ -233,6 +233,8 @@ export async function pushLocalOnly(db: PedagogyDB, username: string): Promise<v
       .from('user_records')
       .select('table_name, record_id')
       .eq('username', username)
+      .order('table_name', { ascending: true })
+      .order('record_id', { ascending: true })
       .range(idOffset, idOffset + PAGE_SIZE - 1);
     if (error) {
       console.warn('[sync] pushLocalOnly: remote index fetch failed:', error.message);
@@ -301,6 +303,8 @@ export async function reconcileLocalWithRemote(db: PedagogyDB, username: string)
       .select('table_name, record_id')
       .eq('username', username)
       .eq('deleted', false)
+      .order('table_name', { ascending: true })
+      .order('record_id', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error) {
       console.warn('[sync] reconcile: remote index fetch failed:', error.message);
@@ -313,6 +317,16 @@ export async function reconcileLocalWithRemote(db: PedagogyDB, username: string)
     }
     if (!data || data.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
+  }
+
+  // Safety: if the remote returned zero IDs across ALL tables, the query likely
+  // failed silently (e.g. RLS header mismatch, network issue). Never wipe local
+  // data based on an empty remote snapshot.
+  let totalRemote = 0;
+  for (const ids of remoteIds.values()) totalRemote += ids.size;
+  if (totalRemote === 0) {
+    console.info('[sync] reconcile: remote returned 0 IDs — skipping deletion to protect local data');
+    return;
   }
 
   const state = hookState.get(db);
