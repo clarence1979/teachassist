@@ -1,178 +1,122 @@
 import type { PedagogyDB, Message, Conversation } from '../../db/schema';
 import { supabase } from '../supabaseClient';
 
-const MAX_CONVERSATIONS = 8;
-const MAX_SNIPPET_CHARS = 320;
-const MAX_TOTAL_CHARS = 3500;
+const MAX_CONVERSATIONS = 12;
+const MAX_USER_ASKS = 3;
+const MAX_SNIPPET_CHARS = 280;
+const MAX_TOTAL_CHARS = 7000;
 
 interface MemoryOptions {
   db: PedagogyDB;
   currentConversationId: string;
   username: string;
-  isAdmin: boolean;
 }
 
+type MemoryMessage = Pick<Message, 'conversationId' | 'role' | 'content' | 'createdAt' | 'isActive'> & {
+  toolNames?: string[];
+};
+
 /**
- * Build a compact "memory" block from prior conversations, so the AI can
- * reference things the teacher has been working on across sessions.
- * Returns an empty string if there is nothing useful to include.
- *
- * When isAdmin is true, memory includes conversations from ALL users (fetched
- * from Supabase). Otherwise, it reads the current user's own conversations
- * from Supabase so memory works across devices.
+ * Build a compact summary of the user's prior conversations so the AI can
+ * reference earlier work. Reads the local mirror first (kept in sync with
+ * Supabase); falls back to a lightweight remote query when the local copy
+ * has not been populated yet (e.g. first load on a new device).
  */
-export async function buildMemoryContext(opts: MemoryOptions): Promise<string>;
-/**
- * @deprecated Use the options-object overload.
- */
-export async function buildMemoryContext(
-  db: PedagogyDB,
-  currentConversationId: string,
-): Promise<string>;
-export async function buildMemoryContext(
-  dbOrOpts: PedagogyDB | MemoryOptions,
-  maybeConvId?: string,
-): Promise<string> {
-  if ('db' in dbOrOpts && 'currentConversationId' in dbOrOpts && 'username' in dbOrOpts) {
-    return buildMemoryContextImpl(dbOrOpts);
+export async function buildMemoryContext({ db, currentConversationId, username }: MemoryOptions): Promise<string> {
+  let entries = await buildEntriesLocal(db, currentConversationId);
+  if (!entries.length && username && username !== 'default') {
+    try {
+      entries = await buildEntriesRemote(username, currentConversationId);
+    } catch (err) {
+      console.warn('[memory] remote fetch failed:', err);
+    }
   }
-  // Legacy call — local only, no admin cross-user
-  return buildMemoryContextLocal(dbOrOpts as PedagogyDB, maybeConvId!);
-}
-
-async function buildMemoryContextLocal(
-  db: PedagogyDB,
-  currentConversationId: string,
-): Promise<string> {
-  const allConvs = await db.conversations.orderBy('updatedAt').reverse().toArray();
-  const others = allConvs
-    .filter((c) => c.id !== currentConversationId)
-    .slice(0, MAX_CONVERSATIONS);
-
-  if (!others.length) return '';
-
-  const entries: string[] = [];
-  for (const conv of others) {
-    const msgs = await db.messages
-      .where('conversationId')
-      .equals(conv.id)
-      .toArray();
-    if (!msgs.length) continue;
-
-    const entry = buildConversationEntry(conv, msgs);
-    if (entry) entries.push(entry);
-  }
-
   return formatMemoryBlock(entries);
 }
 
-async function buildMemoryContextImpl(opts: MemoryOptions): Promise<string> {
-  const { currentConversationId, username, isAdmin } = opts;
+async function buildEntriesLocal(db: PedagogyDB, currentConversationId: string): Promise<string[]> {
+  const convs = (await db.conversations.orderBy('updatedAt').reverse().toArray())
+    .filter((c) => c.id !== currentConversationId)
+    .slice(0, MAX_CONVERSATIONS);
 
-  try {
-    const conversations = await fetchConversationsFromSupabase(username, isAdmin, currentConversationId);
-    if (!conversations.length) return '';
-
-    const entries: string[] = [];
-    for (const conv of conversations.slice(0, MAX_CONVERSATIONS)) {
-      const msgs = await fetchMessagesFromSupabase(conv.id, conv._username);
-      if (!msgs.length) continue;
-
-      const prefix = isAdmin && conv._username && conv._username !== username
-        ? `[${conv._username}] `
-        : '';
-      const entry = buildConversationEntry(conv, msgs, prefix);
-      if (entry) entries.push(entry);
-    }
-
-    return formatMemoryBlock(entries);
-  } catch (err) {
-    console.warn('[memory] Supabase fetch failed, falling back to local:', err);
-    return buildMemoryContextLocal(opts.db, currentConversationId);
+  const entries: string[] = [];
+  for (const conv of convs) {
+    const msgs = await db.messages.where('conversationId').equals(conv.id).toArray();
+    const slim: MemoryMessage[] = msgs.map((m) => ({
+      conversationId: m.conversationId,
+      role: m.role,
+      content: withAttachmentNames(m),
+      createdAt: m.createdAt,
+      isActive: m.isActive,
+      toolNames: m.toolCalls?.map((t) => t.name),
+    }));
+    const entry = buildConversationEntry(conv, slim);
+    if (entry) entries.push(entry);
   }
+  return entries;
 }
 
-interface ConvWithOwner extends Conversation {
-  _username?: string;
-}
-
-async function fetchConversationsFromSupabase(
-  username: string,
-  isAdmin: boolean,
-  excludeConvId: string,
-): Promise<ConvWithOwner[]> {
-  let query = supabase
+async function buildEntriesRemote(username: string, currentConversationId: string): Promise<string[]> {
+  const { data: convRows, error: convErr } = await supabase
     .from('user_records')
-    .select('username, data')
+    .select('data')
+    .eq('username', username)
     .eq('table_name', 'conversations')
     .eq('deleted', false)
     .order('updated_at', { ascending: false })
-    .limit(30);
+    .limit(MAX_CONVERSATIONS + 1);
+  if (convErr || !convRows) return [];
 
-  if (!isAdmin) {
-    query = query.eq('username', username);
-  }
+  const convs = (convRows as { data: Conversation }[])
+    .map((r) => r.data)
+    .filter((c) => c && c.id && c.id !== currentConversationId)
+    .slice(0, MAX_CONVERSATIONS);
+  if (!convs.length) return [];
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-
-  const convs: ConvWithOwner[] = [];
-  for (const row of data as { username: string; data: Record<string, unknown> }[]) {
-    const conv = row.data as unknown as Conversation;
-    if (!conv || !conv.id || conv.id === excludeConvId) continue;
-    convs.push({ ...conv, _username: row.username });
-  }
-
-  convs.sort((a, b) => b.updatedAt - a.updatedAt);
-  return convs;
-}
-
-async function fetchMessagesFromSupabase(
-  conversationId: string,
-  owner?: string,
-): Promise<Message[]> {
-  let query = supabase
+  // Select only the small text fields — never the attachment payloads.
+  const { data: msgRows, error: msgErr } = await supabase
     .from('user_records')
-    .select('data')
+    .select('conversationId:data->>conversationId, role:data->>role, content:data->>content, createdAt:data->createdAt, isActive:data->isActive')
+    .eq('username', username)
     .eq('table_name', 'messages')
-    .eq('deleted', false);
+    .eq('deleted', false)
+    .in('data->>conversationId', convs.map((c) => c.id));
+  if (msgErr || !msgRows) return [];
 
-  if (owner) {
-    query = query.eq('username', owner);
+  const byConv = new Map<string, MemoryMessage[]>();
+  for (const m of msgRows as unknown as MemoryMessage[]) {
+    if (!m.conversationId) continue;
+    if (!byConv.has(m.conversationId)) byConv.set(m.conversationId, []);
+    byConv.get(m.conversationId)!.push({ ...m, content: m.content ?? '', createdAt: Number(m.createdAt) || 0 });
   }
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-
-  const msgs: Message[] = [];
-  for (const row of data as { data: Record<string, unknown> }[]) {
-    const msg = row.data as unknown as Message;
-    if (msg && msg.conversationId === conversationId) {
-      msgs.push(msg);
-    }
+  const entries: string[] = [];
+  for (const conv of convs) {
+    const entry = buildConversationEntry(conv, byConv.get(conv.id) ?? []);
+    if (entry) entries.push(entry);
   }
-
-  msgs.sort((a, b) => a.createdAt - b.createdAt);
-  return msgs;
+  return entries;
 }
 
-function buildConversationEntry(
-  conv: Conversation,
-  msgs: Message[],
-  prefix = '',
-): string | null {
-  msgs.sort((a, b) => a.createdAt - b.createdAt);
-  const firstUser = msgs.find((m) => m.role === 'user');
-  const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant' && !!m.content.trim());
-  if (!firstUser) return null;
+function buildConversationEntry(conv: Conversation, msgs: MemoryMessage[]): string | null {
+  if (!msgs.length) return null;
+  const sorted = [...msgs].sort((a, b) => a.createdAt - b.createdAt);
+  // Prefer the active branch, but fall back to everything if flags are missing.
+  const active = sorted.filter((m) => m.isActive !== false);
+  const pool = active.length ? active : sorted;
 
-  const ask = truncate(stripAttachments(firstUser), MAX_SNIPPET_CHARS);
-  const answer = lastAssistant ? truncate(lastAssistant.content, MAX_SNIPPET_CHARS) : '';
-  const date = new Date(conv.updatedAt).toISOString().slice(0, 10);
-  const toolNames = collectToolNames(msgs);
-  const toolsLine = toolNames.length ? `\n  Tools used: ${toolNames.join(', ')}` : '';
+  const asks = pool.filter((m) => m.role === 'user' && m.content.trim()).slice(0, MAX_USER_ASKS);
+  if (!asks.length) return null;
+  const lastAssistant = [...pool].reverse().find((m) => m.role === 'assistant' && m.content.trim());
 
-  return `${prefix}[${date}] "${conv.title}"\n  Asked: ${ask}${answer ? `\n  Replied: ${answer}` : ''}${toolsLine}`;
+  const date = new Date(conv.updatedAt || sorted[sorted.length - 1].createdAt).toISOString().slice(0, 10);
+  const lines = [`[${date}] "${truncate(conv.title || 'Untitled', 80)}"`];
+  asks.forEach((m, i) => lines.push(`  ${i === 0 ? 'Asked' : 'Then asked'}: ${truncate(m.content, MAX_SNIPPET_CHARS)}`));
+  if (lastAssistant) lines.push(`  Last reply: ${truncate(lastAssistant.content, MAX_SNIPPET_CHARS)}`);
+
+  const tools = [...new Set(pool.flatMap((m) => m.toolNames ?? []))].slice(0, 6);
+  if (tools.length) lines.push(`  Tools used: ${tools.join(', ')}`);
+  return lines.join('\n');
 }
 
 function formatMemoryBlock(entries: string[]): string {
@@ -183,27 +127,19 @@ function formatMemoryBlock(entries: string[]): string {
     block = block.slice(0, MAX_TOTAL_CHARS) + '\n\u2026(older conversations truncated)';
   }
 
-  return `PRIOR-CONVERSATION MEMORY
-The teacher has had earlier conversations with you. Brief summaries follow. Use these only when genuinely relevant \u2014 do NOT repeat them back unprompted. Treat them as soft context.
+  return `PRIOR-CONVERSATION MEMORY (enabled by the teacher)
+You DO have memory of this teacher's earlier conversations: summaries of their most recent chats are listed below, newest first. When the teacher refers to something from before ("last time", "the worksheet we made", "what did we discuss"), answer using these summaries and never claim you cannot remember past chats. If a detail is not in the summaries, say you only have a brief summary of that chat and ask for the specifics. Do not bring these up unprompted when they are irrelevant.
 
 ${block}`;
 }
 
-function stripAttachments(msg: Message): string {
-  if (!msg.attachments?.length) return msg.content;
+function withAttachmentNames(msg: Message): string {
+  if (!msg.attachments?.length) return msg.content ?? '';
   const kinds = msg.attachments.map((a) => `[${a.kind}:${a.name}]`).join(' ');
-  return `${kinds} ${msg.content}`.trim();
+  return `${kinds} ${msg.content ?? ''}`.trim();
 }
 
 function truncate(s: string, max: number): string {
   const one = s.replace(/\s+/g, ' ').trim();
   return one.length > max ? one.slice(0, max - 1) + '\u2026' : one;
-}
-
-function collectToolNames(msgs: Message[]): string[] {
-  const set = new Set<string>();
-  for (const m of msgs) {
-    for (const t of m.toolCalls ?? []) set.add(t.name);
-  }
-  return [...set].slice(0, 6);
 }

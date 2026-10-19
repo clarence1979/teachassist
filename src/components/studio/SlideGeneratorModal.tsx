@@ -26,7 +26,7 @@ import { SLIDE_THEMES, getTheme, type SlideTheme } from '../../lib/studio/slideT
 import { buildPptx, downloadBase64Pptx } from '../../lib/studio/pptxBuilder';
 import { buildSlidesPdf } from '../../lib/studio/slidesPdfBuilder';
 import { downloadBase64Pdf } from '../../lib/studio/pdfRenderer';
-import { generateImage } from '../../lib/studio/imageGen';
+import { generateImagePng } from '../../lib/studio/imageGen';
 import { populatePexelsImages } from '../../lib/studio/pexelsImages';
 import { SlidePreview } from './SlidePreview';
 
@@ -144,8 +144,8 @@ export function SlideGeneratorModal({ onClose }: Props) {
             total: slidesWithPrompts.length,
           });
           try {
-            const b64 = await generateImage({
-              apiKey: openaiKey,
+            const b64 = await generateImagePng({
+              aspect_ratio: '4:3',
               prompt: [
                 `Create an educational illustration for a ${parsed.yearLevel} lesson on "${parsed.topic}".`,
                 `Subject: ${s.imagePrompt}`,

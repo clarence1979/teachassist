@@ -13,6 +13,7 @@ import {
 } from 'docx';
 import type { StudentNotes, NotesBlock, GlossaryEntry } from './notesSchema';
 import { winAnsiSafe } from './winAnsi';
+import { wrapText } from './pdfText';
 
 // ─── PDF layout constants ─────────────────────────────────────────────────────
 
@@ -63,22 +64,9 @@ function footer(ctx: Ctx) {
 
 function clean(s: string) { return winAnsiSafe(s); }
 
-function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let line = '';
-  for (const w of words) {
-    const t = line ? `${line} ${w}` : w;
-    if (font.widthOfTextAtSize(t, size) > maxW && line) { lines.push(line); line = w; }
-    else line = t;
-  }
-  if (line) lines.push(line);
-  return lines.length ? lines : [''];
-}
-
 function dt(ctx: Ctx, text: string, { size = 10.5, font, color = INK, indent = 0, gap: g = 4 }: { size?: number; font?: PDFFont; color?: Color; indent?: number; gap?: number } = {}) {
   const f = font ?? ctx.font;
-  const lines = wrap(clean(text), f, size, CW - indent);
+  const lines = wrapText(clean(text), f, size, CW - indent);
   for (const line of lines) {
     gap(ctx, size + g);
     ctx.page.drawText(line, { x: M + indent, y: ctx.y - size, size, font: f, color });
@@ -114,7 +102,7 @@ function dcallout(ctx: Ctx, type: 'note' | 'tip' | 'warning', text: string) {
   const bgMap = { note: NOTE_BG, tip: TIP_BG, warning: WARN_BG };
   const bMap = { note: NOTE_BORDER, tip: TIP_BORDER, warning: WARN_BORDER };
   const lMap = { note: 'NOTE', tip: 'TIP', warning: 'WARNING' };
-  const lines = wrap(clean(text), ctx.font, 10, CW - 24);
+  const lines = wrapText(clean(text), ctx.font, 10, CW - 24);
   const h = 22 + lines.length * 13;
   gap(ctx, h + 6);
   ctx.page.drawRectangle({ x: M, y: ctx.y - h, width: CW, height: h, color: bgMap[type], borderColor: bMap[type], borderWidth: 0.6 });
@@ -124,7 +112,7 @@ function dcallout(ctx: Ctx, type: 'note' | 'tip' | 'warning', text: string) {
 }
 
 function dmono(ctx: Ctx, text: string) {
-  const lines = text.split('\n').flatMap((l) => wrap(clean(l), ctx.mono, 9, CW - 20));
+  const lines = text.split('\n').flatMap((l) => wrapText(clean(l), ctx.mono, 9, CW - 20));
   const h = lines.length * 12 + 14;
   gap(ctx, h + 4);
   ctx.page.drawRectangle({ x: M, y: ctx.y - h, width: CW, height: h, color: rgb(0.97, 0.97, 0.98), borderColor: RULE, borderWidth: 0.5 });

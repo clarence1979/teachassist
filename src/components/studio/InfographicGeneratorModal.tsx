@@ -9,7 +9,7 @@ import { useAppStore } from '../../store/appStore';
 import { useDb } from '../../db/DbContext';
 import { artifactsRepo } from '../../db/repos';
 import { complete } from '../../lib/llm';
-import { generateImage } from '../../lib/studio/imageGen';
+import { generateImagePng } from '../../lib/studio/imageGen';
 import {
   buildInfographicPrompt, parseInfographicJson,
   ORIENTATION_LABELS, DETAIL_LABELS,
@@ -21,15 +21,12 @@ import {
   getInfographicDims, downloadSvg, downloadPngFromBase64,
 } from '../../lib/studio/infographicRenderer';
 
-/** Model used for infographic image generation. Always GPT Image 2 regardless of the
- *  active chat model — ensures consistent, high-quality infographic output. */
-const INFOGRAPHIC_IMAGE_MODEL = 'gpt-image-2';
+const INFOGRAPHIC_IMAGE_MODEL = 'flux-dev';
 
-/** Size parameter for OpenAI images API keyed by infographic orientation. */
-const ORIENTATION_TO_IMAGE_SIZE: Record<InfographicOrientation, '1024x1024' | '1536x1024' | '1024x1536'> = {
-  portrait: '1024x1536',
-  landscape: '1536x1024',
-  square: '1024x1024',
+const ORIENTATION_TO_ASPECT: Record<InfographicOrientation, '1:1' | '4:3' | '3:4'> = {
+  portrait: '3:4',
+  landscape: '4:3',
+  square: '1:1',
 };
 
 type Stage = 'form' | 'generating' | 'preview' | 'error';
@@ -62,9 +59,7 @@ export function InfographicGeneratorModal({ onClose, seed }: Props) {
 
   const handleGenerate = async () => {
     const planningKey = getKey(activeProvider);
-    const openaiKey = getKey('openai');
     if (!planningKey) { setState({ stage: 'error', error: `No ${activeProvider} API key.` }); return; }
-    if (!openaiKey) { setState({ stage: 'error', error: 'Infographic rendering requires an OpenAI API key (GPT Image 2). Add one in Settings.' }); return; }
     if (!topic.trim()) { setState({ stage: 'error', error: 'Topic is required.' }); return; }
 
     const req: InfographicRequest = {
@@ -95,19 +90,16 @@ export function InfographicGeneratorModal({ onClose, seed }: Props) {
       const svgString = renderInfographicSvg(parsed);
       const { w, h } = getInfographicDims(parsed.orientation);
 
-      setState({ stage: 'generating', step: 'Generating with GPT Image 2...' });
+      setState({ stage: 'generating', step: 'Generating image...' });
       const imagePrompt = buildImagePromptFromInfographic(parsed);
       let png: string;
       try {
-        png = await generateImage({
-          apiKey: openaiKey,
+        png = await generateImagePng({
           prompt: imagePrompt,
-          size: ORIENTATION_TO_IMAGE_SIZE[parsed.orientation],
-          model: INFOGRAPHIC_IMAGE_MODEL,
+          aspect_ratio: ORIENTATION_TO_ASPECT[parsed.orientation],
         });
       } catch (imgErr) {
-        // If GPT Image 2 is not yet accessible on this key, fall back to rasterising the SVG.
-        console.warn('[infographic] GPT Image 2 failed, falling back to SVG raster:', imgErr);
+        console.warn('[infographic] image generation failed, falling back to SVG raster:', imgErr);
         setState({ stage: 'generating', step: 'Rasterising SVG fallback...' });
         png = await svgToPngBase64(svgString, w, h);
       }

@@ -2,6 +2,7 @@ import type { PedagogyDB, Message } from '../../db/schema';
 import { messagesRepo } from '../../db/repos';
 import { offlineStream, getOfflineModel } from '../llm/webllm';
 import { MAIN_SYSTEM_PROMPT } from './systemPrompt';
+import { buildMemoryContext } from './memory';
 
 export interface OfflineSendOptions {
   db: PedagogyDB;
@@ -11,6 +12,8 @@ export interface OfflineSendOptions {
   onUpdate: (assistantId: string) => void;
   onUsage?: (inputTokens: number, outputTokens: number) => void;
   signal?: AbortSignal;
+  memoryEnabled?: boolean;
+  username?: string;
 }
 
 function chainToChatMessages(chain: Message[]): { role: 'user' | 'assistant' | 'system'; content: string }[] {
@@ -31,6 +34,16 @@ export async function sendMessageOffline(opts: OfflineSendOptions): Promise<void
   const chain = await messagesRepo.getActiveChain(db, conversationId);
   const history = chainToChatMessages(chain);
 
+  let systemPrompt = MAIN_SYSTEM_PROMPT;
+  if (opts.memoryEnabled) {
+    const memoryBlock = await buildMemoryContext({
+      db,
+      currentConversationId: conversationId,
+      username: opts.username || '',
+    }).catch(() => '');
+    if (memoryBlock) systemPrompt = `${MAIN_SYSTEM_PROMPT}\n\n---\n${memoryBlock}`;
+  }
+
   const assistantMsg = await messagesRepo.create(db, {
     conversationId,
     parentId: userMessage.id,
@@ -48,7 +61,7 @@ export async function sendMessageOffline(opts: OfflineSendOptions): Promise<void
     await offlineStream(
       offlineModelId,
       [
-        { role: 'system', content: MAIN_SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         ...history,
       ],
       (delta) => {

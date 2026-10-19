@@ -30,7 +30,7 @@ import { buildWorksheetPdf, buildDocumentPdf } from '../studio/pdfRenderer';
 import { buildWorksheetDocx, buildDocumentDocx } from '../studio/docxBuilder';
 import { buildDocumentPrompt, parseDocumentJson } from '../studio/documentSchema';
 import type { DocumentType } from '../studio/documentSchema';
-import { generateImage } from '../studio/imageGen';
+import { generateImage, generateImagePng } from '../studio/imageGen';
 import { buildInfographicPrompt, parseInfographicJson, type InfographicOrientation, type InfographicDetail } from '../studio/infographicSchema';
 import { renderInfographicSvg, svgToPngBase64, svgToBase64, getInfographicDims } from '../studio/infographicRenderer';
 
@@ -131,7 +131,7 @@ async function execGenerateSlides(ctx: ToolExecContext, args: Args): Promise<Too
       const prompt = slide.imagePrompt
         || `${deck.topic || topic}: editorial classroom-safe illustration for "${slide.title}". Abstract thematic composition, no text, no numbers, no letters.`;
       try {
-        const { b64 } = await generateImage({ prompt, aspect_ratio: '16:9' });
+        const b64 = await generateImagePng({ prompt, aspect_ratio: '16:9' });
         deck.slides[i] = { ...slide, imageBase64: b64 };
       } catch {
         // ignore
@@ -449,7 +449,7 @@ async function execListTimetableBlocks(ctx: ToolExecContext, args: Args): Promis
       ? parseLocal(toISO.length === 10 ? `${toISO}T23:59:59` : toISO)
       : new Date(parseLocal(fromISO.length === 10 ? `${fromISO}T00:00:00` : fromISO).getTime() + 7 * 86400_000);
 
-    let occurrences;
+    let occurrences: ReturnType<typeof expandOccurrences>;
     try {
       occurrences = expandOccurrences(all, windowStart, windowEnd);
     } catch (rruleErr) {
@@ -574,11 +574,11 @@ async function execUpdateTimetableBlock(ctx: ToolExecContext, args: Args): Promi
     await ctx.db.timetableBlocks
       .where('seriesId')
       .equals(block.seriesId)
-      .modify(patch);
+      .modify(patch as never);
     return { ok: true, summary: `Updated series "${block.title}"` };
   }
 
-  await ctx.db.timetableBlocks.update(blockId, patch);
+  await ctx.db.timetableBlocks.update(blockId, patch as never);
   return { ok: true, summary: `Updated "${block.title}"` };
 }
 

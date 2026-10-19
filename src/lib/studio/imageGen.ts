@@ -40,3 +40,19 @@ export async function generateImage(req: ImageGenRequest): Promise<ImageGenResul
   if (!data.b64) throw new Error('No image returned.');
   return { b64: data.b64, mediaType: (data.mediaType as 'image/webp') || 'image/webp' };
 }
+
+/** Generates an image and returns it as PNG base64 (PDF/PPTX embedding only accepts PNG/JPEG). */
+export async function generateImagePng(req: ImageGenRequest): Promise<string> {
+  const { b64, mediaType } = await generateImage(req);
+  if (mediaType === 'image/png') return b64;
+  const img = new Image();
+  img.src = `data:${mediaType};base64,${b64}`;
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const c = canvas.getContext('2d');
+  if (!c) throw new Error('Canvas not available to convert image.');
+  c.drawImage(img, 0, 0);
+  return canvas.toDataURL('image/png').split(',')[1] ?? '';
+}

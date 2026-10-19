@@ -12,6 +12,7 @@ import {
 } from 'docx';
 import type { Rubric, RubricCriterion } from './rubricSchema';
 import { winAnsiSafe } from './winAnsi';
+import { wrapText } from './pdfText';
 
 // ─── PDF helpers ──────────────────────────────────────────────────────────────
 
@@ -45,12 +46,6 @@ function drawFooter(ctx: Ctx, w = PAGE_W, _h = PAGE_H) {
 }
 
 function clean(s: string) { return winAnsiSafe(s); }
-
-function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = text.split(/\s+/); const lines: string[] = []; let line = '';
-  for (const w of words) { const t = line ? `${line} ${w}` : w; if (font.widthOfTextAtSize(t, size) > maxW && line) { lines.push(line); line = w; } else line = t; }
-  if (line) lines.push(line); return lines.length ? lines : [''];
-}
 
 function u8ToB64(b: Uint8Array): string {
   let s = ''; const C = 0x8000;
@@ -126,14 +121,14 @@ function drawAnalyticTable(ctx: Ctx, rubric: Rubric, cw: number, H: number) {
     // Criterion
     ctx.page.drawRectangle({ x: rx, y: ctx.y - rowH, width: criteriaW, height: rowH, color: fill, borderColor: RULE, borderWidth: 0.4 });
     ctx.page.drawText(clean(criterion.name), { x: rx + 4, y: ctx.y - 11, size: 9.5, font: ctx.bold, color: ACCENT });
-    const descLines = wrap(clean(criterion.description), ctx.font, 8.5, criteriaW - 8);
+    const descLines = wrapText(clean(criterion.description), ctx.font, 8.5, criteriaW - 8);
     descLines.forEach((l, i) => ctx.page.drawText(l, { x: rx + 4, y: ctx.y - 22 - i * 11, size: 8.5, font: ctx.font, color: MUTED }));
     if (criterion.weight) ctx.page.drawText(`${criterion.weight}%`, { x: rx + 4, y: ctx.y - rowH + 8, size: 8, font: ctx.italic, color: DIM });
     rx += criteriaW;
     // Levels
     for (const lv of criterion.levels) {
       ctx.page.drawRectangle({ x: rx, y: ctx.y - rowH, width: levelW, height: rowH, color: fill, borderColor: RULE, borderWidth: 0.4 });
-      const descl = wrap(clean(lv.descriptor), ctx.font, 8.5, levelW - 8);
+      const descl = wrapText(clean(lv.descriptor), ctx.font, 8.5, levelW - 8);
       descl.forEach((l, i) => ctx.page.drawText(l, { x: rx + 4, y: ctx.y - 11 - i * 11, size: 8.5, font: ctx.font, color: INK }));
       rx += levelW;
     }
@@ -152,8 +147,8 @@ function drawAnalyticTable(ctx: Ctx, rubric: Rubric, cw: number, H: number) {
 }
 
 function calcRowHeight(criterion: RubricCriterion, font: PDFFont, criteriaW: number, levelW: number, size: number): number {
-  const descH = wrap(criterion.description, font, size, criteriaW - 8).length * 11 + 22;
-  const maxLevelH = Math.max(...criterion.levels.map((lv) => wrap(lv.descriptor, font, size, levelW - 8).length * 11 + 12), 36);
+  const descH = wrapText(criterion.description, font, size, criteriaW - 8).length * 11 + 22;
+  const maxLevelH = Math.max(...criterion.levels.map((lv) => wrapText(lv.descriptor, font, size, levelW - 8).length * 11 + 12), 36);
   return Math.max(descH, maxLevelH);
 }
 
@@ -170,12 +165,12 @@ function drawHolisticTable(ctx: Ctx, rubric: Rubric, cw: number, H: number) {
   }
   ctx.y -= headerH;
   // Body
-  const rowH = Math.max(...levels.map((lv) => wrap(lv.descriptor, ctx.font, 9, colW - 8).length * 13 + 16), 60);
+  const rowH = Math.max(...levels.map((lv) => wrapText(lv.descriptor, ctx.font, 9, colW - 8).length * 13 + 16), 60);
   if (ctx.y - rowH < M + 30) { ctx.page = ctx.pdf.addPage([PAGE_W, H]); ctx.pn++; ctx.y = H - M; drawFooter(ctx, PAGE_W, H); }
   x = M;
   for (const lv of levels) {
     ctx.page.drawRectangle({ x, y: ctx.y - rowH, width: colW, height: rowH, color: rgb(1, 1, 1), borderColor: RULE, borderWidth: 0.4 });
-    wrap(clean(lv.descriptor), ctx.font, 9, colW - 8).forEach((l, i) => ctx.page.drawText(l, { x: x + 4, y: ctx.y - 12 - i * 13, size: 9, font: ctx.font, color: INK }));
+    wrapText(clean(lv.descriptor), ctx.font, 9, colW - 8).forEach((l, i) => ctx.page.drawText(l, { x: x + 4, y: ctx.y - 12 - i * 13, size: 9, font: ctx.font, color: INK }));
     x += colW;
   }
   ctx.y -= rowH + 8;

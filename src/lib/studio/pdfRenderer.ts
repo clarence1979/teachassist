@@ -24,6 +24,7 @@ import type {
 } from './worksheetSchema';
 import { TIER_LABELS } from './worksheetSchema';
 import { winAnsiSafe } from './winAnsi';
+import { wrapText, breakLongWord, normalizeWhitespace } from './pdfText';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 
@@ -46,13 +47,14 @@ interface Ctx {
   page: PDFPage;
   y: number;
   pageNum: number;
-  totalPagesRef: { value: number };
   footer: { schoolName?: string; teacherName?: string; date?: string; title: string };
   font: PDFFont;
   bold: PDFFont;
   italic: PDFFont;
   mono: PDFFont;
 }
+
+const BOTTOM_LIMIT = MARGIN + 40;
 
 async function createCtx(
   footer: Ctx['footer'],
@@ -63,7 +65,6 @@ async function createCtx(
   const ctx: Ctx = {
     pdf, page, y: PAGE_H - MARGIN,
     pageNum: 1,
-    totalPagesRef: { value: 1 },
     footer, font, bold, italic, mono,
   };
   drawFooter(ctx);
@@ -73,59 +74,73 @@ async function createCtx(
 function newPage(ctx: Ctx) {
   ctx.page = ctx.pdf.addPage([PAGE_W, PAGE_H]);
   ctx.pageNum += 1;
-  ctx.totalPagesRef.value = ctx.pageNum;
   ctx.y = PAGE_H - MARGIN;
   drawFooter(ctx);
 }
 
 function ensureSpace(ctx: Ctx, needed: number) {
-  if (ctx.y - needed < MARGIN + 40) newPage(ctx);
+  if (ctx.y - needed < BOTTOM_LIMIT) newPage(ctx);
+}
+
+function truncateToWidth(text: string, font: PDFFont, size: number, maxW: number): string {
+  if (maxW <= 0) return '';
+  if (font.widthOfTextAtSize(text, size) <= maxW) return text;
+  const chars = Array.from(text);
+  while (chars.length && font.widthOfTextAtSize(chars.join('') + '…', size) > maxW) chars.pop();
+  return chars.length ? chars.join('').trimEnd() + '…' : '';
 }
 
 function drawFooter(ctx: Ctx) {
   const { page, footer, font } = ctx;
+  const size = 8;
+  const baseY = MARGIN - 22;
   const bits: string[] = [];
   if (footer.schoolName) bits.push(footer.schoolName);
   if (footer.teacherName) bits.push(footer.teacherName);
   if (footer.date) bits.push(footer.date);
-  const left = bits.join('  ·  ');
   page.drawLine({
     start: { x: MARGIN, y: MARGIN - 10 },
     end: { x: PAGE_W - MARGIN, y: MARGIN - 10 },
     thickness: 0.5, color: RULE,
   });
-  if (left) {
-    page.drawText(sanitize(left), { x: MARGIN, y: MARGIN - 22, size: 8, font, color: MUTED });
-  }
   const right = `Page ${ctx.pageNum}`;
-  const w = font.widthOfTextAtSize(right, 8);
-  page.drawText(right, { x: PAGE_W - MARGIN - w, y: MARGIN - 22, size: 8, font, color: MUTED });
-  const titleText = footer.title;
-  const tw = font.widthOfTextAtSize(titleText, 8);
-  page.drawText(titleText, { x: (PAGE_W - tw) / 2, y: MARGIN - 22, size: 8, font, color: DIM });
+  const rightW = font.widthOfTextAtSize(right, size);
+  page.drawText(right, { x: PAGE_W - MARGIN - rightW, y: baseY, size, font, color: MUTED });
+
+  const left = truncateToWidth(sanitize(bits.join('  ·  ')), font, size, CONTENT_W * 0.38);
+  const leftW = left ? font.widthOfTextAtSize(left, size) : 0;
+  if (left) page.drawText(left, { x: MARGIN, y: baseY, size, font, color: MUTED });
+
+  const center = PAGE_W / 2;
+  const halfRoom = Math.min(center - (MARGIN + leftW + 16), PAGE_W - MARGIN - rightW - 16 - center);
+  const title = truncateToWidth(sanitize(footer.title), font, size, halfRoom * 2);
+  if (title) {
+    const tw = font.widthOfTextAtSize(title, size);
+    page.drawText(title, { x: center - tw / 2, y: baseY, size, font, color: DIM });
+  }
 }
 
 // ─── Text wrapping ───────────────────────────────────────────────────────────
 
-function wrapText(text: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = text.split(/\s+/);
+/** Monospace wrap that preserves leading/inner spaces (code, ASCII diagrams). */
+function wrapMono(text: string, font: PDFFont, size: number, maxW: number): string[] {
+  const maxChars = Math.max(1, Math.floor(maxW / font.widthOfTextAtSize('M', size)));
   const lines: string[] = [];
-  let line = '';
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(test, size) > maxW && line) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = test;
+  for (const raw of normalizeWhitespace(text).split('\n')) {
+    const chars = Array.from(raw.replace(/\s+$/, ''));
+    if (!chars.length) {
+      lines.push('');
+      continue;
     }
+    for (let i = 0; i < chars.length; i += maxChars) lines.push(chars.slice(i, i + maxChars).join(''));
   }
-  if (line) lines.push(line);
+  while (lines.length && lines[0] === '') lines.shift();
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
   return lines;
 }
 
 function sanitize(text: string): string {
-  return winAnsiSafe(text);
+  return winAnsiSafe(text ?? '');
 }
 
 // ─── Primitive drawers ──────────────────────────────────────────────────────
@@ -143,26 +158,70 @@ function drawText(
   const lines = wrapText(sanitize(text), font, size, CONTENT_W - indent);
   for (const line of lines) {
     ensureSpace(ctx, size + lineGap);
-    ctx.page.drawText(line, { x: MARGIN + indent, y: ctx.y - size, size, font, color });
+    if (line) ctx.page.drawText(line, { x: MARGIN + indent, y: ctx.y - size, size, font, color });
     ctx.y -= size + lineGap;
   }
 }
 
+/**
+ * Text with a hanging label ("3.", "A.") — wrapped lines align under the text,
+ * not under the label. Optional right-aligned note sits on the first line.
+ */
+function drawHanging(
+  ctx: Ctx,
+  label: string,
+  text: string,
+  opts: {
+    indent?: number; hang: number; size?: number; font?: PDFFont; color?: Color;
+    labelFont?: PDFFont; labelColor?: Color; rightNote?: string;
+  },
+): void {
+  const size = opts.size ?? 10.5;
+  const font = opts.font ?? ctx.font;
+  const lineH = size * 1.45;
+  const labelFont = opts.labelFont ?? ctx.bold;
+  const labelX = MARGIN + (opts.indent ?? 0);
+  const labelW = label ? labelFont.widthOfTextAtSize(label, size) : 0;
+  const textX = labelX + Math.max(opts.hang, labelW + 5);
+  const note = opts.rightNote ? sanitize(opts.rightNote) : '';
+  const noteSize = size - 1.5;
+  const noteW = note ? ctx.font.widthOfTextAtSize(note, noteSize) : 0;
+  const maxW = PAGE_W - MARGIN - textX - (note ? noteW + 12 : 0);
+  const lines = wrapText(sanitize(text), font, size, maxW);
+
+  lines.forEach((line, i) => {
+    ensureSpace(ctx, lineH);
+    const baseY = ctx.y - size;
+    if (i === 0) {
+      if (label) {
+        ctx.page.drawText(label, { x: labelX, y: baseY, size, font: labelFont, color: opts.labelColor ?? INK });
+      }
+      if (note) {
+        ctx.page.drawText(note, { x: PAGE_W - MARGIN - noteW, y: baseY, size: noteSize, font: ctx.font, color: MUTED });
+      }
+    }
+    if (line) ctx.page.drawText(line, { x: textX, y: baseY, size, font, color: opts.color ?? INK });
+    ctx.y -= lineH;
+  });
+}
+
 function drawHeading(ctx: Ctx, text: string, level: 1 | 2 | 3 = 2): void {
   const size = level === 1 ? 22 : level === 2 ? 14 : 11.5;
+  const lineH = size * 1.2;
   const spaceBefore = level === 1 ? 0 : 12;
-  const spaceAfter = 6;
-  ensureSpace(ctx, size + spaceBefore + spaceAfter + 6);
+  const spaceAfter = level === 3 ? 6 : 10;
+  const lines = wrapText(sanitize(text), ctx.bold, size, CONTENT_W);
+  // keep heading with at least two lines of following content
+  ensureSpace(ctx, spaceBefore + lines.length * lineH + spaceAfter + 30);
   ctx.y -= spaceBefore;
-  ctx.page.drawText(sanitize(text), {
-    x: MARGIN, y: ctx.y - size, size, font: ctx.bold, color: INK,
-  });
-  ctx.y -= size;
+  for (const line of lines) {
+    ctx.page.drawText(line, { x: MARGIN, y: ctx.y - size, size, font: ctx.bold, color: INK });
+    ctx.y -= lineH;
+  }
   if (level === 1 || level === 2) {
-    // Accent rule under heading
     ctx.page.drawLine({
-      start: { x: MARGIN, y: ctx.y - 2 },
-      end: { x: MARGIN + (level === 1 ? 60 : 28), y: ctx.y - 2 },
+      start: { x: MARGIN, y: ctx.y + lineH - size - 5 },
+      end: { x: MARGIN + (level === 1 ? 60 : 28), y: ctx.y + lineH - size - 5 },
       thickness: 1.5, color: ACCENT,
     });
   }
@@ -176,88 +235,103 @@ function drawRule(ctx: Ctx) {
     end: { x: PAGE_W - MARGIN, y: ctx.y - 4 },
     thickness: 0.5, color: RULE,
   });
-  ctx.y -= 10;
+  ctx.y -= 12;
 }
 
 function drawBullets(ctx: Ctx, items: string[], ordered = false) {
   items.forEach((item, i) => {
-    const bullet = ordered ? `${i + 1}.` : '•';
-    ensureSpace(ctx, 12);
-    ctx.page.drawText(bullet, {
-      x: MARGIN, y: ctx.y - 10.5, size: 10.5, font: ctx.bold, color: ACCENT,
+    drawHanging(ctx, ordered ? `${i + 1}.` : '•', item, {
+      hang: 18, labelFont: ctx.bold, labelColor: ACCENT,
     });
-    drawText(ctx, item, { indent: 18, lineGap: 4 });
   });
+  ctx.y -= 2;
 }
 
 function drawKeyValue(ctx: Ctx, pairs: Array<{ key: string; value: string }>) {
   const keyW = 140;
+  const size = 10;
+  const lineH = 13;
   for (const { key, value } of pairs) {
-    ensureSpace(ctx, 14);
-    ctx.page.drawText(sanitize(key), {
-      x: MARGIN, y: ctx.y - 10, size: 10, font: ctx.bold, color: MUTED,
-    });
-    const valLines = wrapText(sanitize(value), ctx.font, 10, CONTENT_W - keyW);
-    valLines.forEach((line, i) => {
-      if (i > 0) ensureSpace(ctx, 12);
-      ctx.page.drawText(line, {
-        x: MARGIN + keyW, y: ctx.y - 10, size: 10, font: ctx.font, color: INK,
-      });
-      if (i < valLines.length - 1) ctx.y -= 12;
-    });
-    ctx.y -= 14;
+    const keyLines = wrapText(sanitize(key), ctx.bold, size, keyW - 10);
+    const valLines = wrapText(sanitize(value), ctx.font, size, CONTENT_W - keyW);
+    const rows = Math.max(keyLines.length, valLines.length);
+    for (let i = 0; i < rows; i++) {
+      ensureSpace(ctx, lineH);
+      const baseY = ctx.y - size;
+      if (keyLines[i]) ctx.page.drawText(keyLines[i], { x: MARGIN, y: baseY, size, font: ctx.bold, color: MUTED });
+      if (valLines[i]) ctx.page.drawText(valLines[i], { x: MARGIN + keyW, y: baseY, size, font: ctx.font, color: INK });
+      ctx.y -= lineH;
+    }
+    ctx.y -= 3;
   }
 }
 
 function drawCallout(ctx: Ctx, label: string, text: string) {
-  const lines = wrapText(sanitize(text), ctx.font, 10, CONTENT_W - 24);
-  const h = 22 + lines.length * 13;
-  ensureSpace(ctx, h + 6);
+  const size = 10;
+  const lineH = 13.5;
+  const pad = 12;
+  const lines = wrapText(sanitize(text), ctx.font, size, CONTENT_W - pad * 2);
+  const h = pad + 9 + 8 + lines.length * lineH + pad - (lineH - size);
+  if (h > PAGE_H - MARGIN - BOTTOM_LIMIT) {
+    drawText(ctx, label.toUpperCase(), { size: 9, font: ctx.bold, color: ACCENT });
+    drawText(ctx, text, { size });
+    ctx.y -= 6;
+    return;
+  }
+  ensureSpace(ctx, h + 8);
+  const top = ctx.y;
   ctx.page.drawRectangle({
-    x: MARGIN, y: ctx.y - h, width: CONTENT_W, height: h,
+    x: MARGIN, y: top - h, width: CONTENT_W, height: h,
     color: CALLOUT_BG, borderColor: ACCENT, borderWidth: 0.6,
   });
   ctx.page.drawText(sanitize(label.toUpperCase()), {
-    x: MARGIN + 12, y: ctx.y - 14, size: 9, font: ctx.bold, color: ACCENT,
+    x: MARGIN + pad, y: top - pad - 7, size: 9, font: ctx.bold, color: ACCENT,
   });
   lines.forEach((line, i) => {
+    if (!line) return;
     ctx.page.drawText(line, {
-      x: MARGIN + 12, y: ctx.y - 30 - i * 13, size: 10, font: ctx.font, color: INK,
+      x: MARGIN + pad, y: top - pad - 9 - 8 - size * 0.8 - i * lineH, size, font: ctx.font, color: INK,
     });
   });
-  ctx.y -= h + 8;
+  ctx.y = top - h - 10;
 }
 
-function drawTable(ctx: Ctx, rows: string[][]) {
+function drawTable(
+  ctx: Ctx,
+  rows: string[][],
+  layout: { indent?: number; widths?: number[] } = {},
+) {
   if (!rows.length) return;
-  const cols = rows[0].length;
-  const colW = CONTENT_W / cols;
-  const cellPad = 5;
+  const cols = Math.max(...rows.map((r) => r.length));
+  const indent = layout.indent ?? 0;
+  const totalW = CONTENT_W - indent;
+  const fractions = layout.widths && layout.widths.length === cols
+    ? layout.widths
+    : Array.from({ length: cols }, () => 1 / cols);
+  const fracSum = fractions.reduce((a, b) => a + b, 0);
+  const colW = fractions.map((f) => (f / fracSum) * totalW);
+  const colX = colW.map((_, i) => MARGIN + indent + colW.slice(0, i).reduce((a, b) => a + b, 0));
+  const size = 9.5;
+  const lineH = 12;
+  const cellPad = 6;
+  const HEADER_BG = rgb(0.95, 0.96, 0.98);
 
   rows.forEach((row, rowIdx) => {
-    const heights = row.map((cell) =>
-      wrapText(sanitize(cell), ctx.font, 9.5, colW - cellPad * 2).length * 12 + cellPad * 2,
-    );
-    const rowH = Math.max(...heights, 20);
+    const font = rowIdx === 0 ? ctx.bold : ctx.font;
+    const cellLines = colW.map((w, c) => wrapText(sanitize(row[c] ?? ''), font, size, w - cellPad * 2));
+    const rowH = Math.max(...cellLines.map((l) => l.length), 1) * lineH + cellPad * 2 - (lineH - size) + 2;
     ensureSpace(ctx, rowH + 2);
 
-    if (rowIdx === 0) {
+    colW.forEach((w, c) => {
       ctx.page.drawRectangle({
-        x: MARGIN, y: ctx.y - rowH, width: CONTENT_W, height: rowH, color: rgb(0.95, 0.96, 0.98),
+        x: colX[c], y: ctx.y - rowH, width: w, height: rowH,
+        borderColor: RULE, borderWidth: 0.5, color: rowIdx === 0 ? HEADER_BG : rgb(1, 1, 1),
       });
-    }
-
-    row.forEach((cell, colIdx) => {
-      const x = MARGIN + colIdx * colW;
-      ctx.page.drawRectangle({
-        x, y: ctx.y - rowH, width: colW, height: rowH,
-        borderColor: RULE, borderWidth: 0.5, color: rowIdx === 0 ? rgb(0.95, 0.96, 0.98) : rgb(1, 1, 1),
-      });
-      const lines = wrapText(sanitize(cell), ctx.font, 9.5, colW - cellPad * 2);
-      lines.forEach((ln, i) => {
+      cellLines[c].forEach((ln, i) => {
+        if (!ln) return;
         ctx.page.drawText(ln, {
-          x: x + cellPad, y: ctx.y - cellPad - 10 - i * 12,
-          size: 9.5, font: rowIdx === 0 ? ctx.bold : ctx.font, color: INK,
+          x: colX[c] + cellPad, y: ctx.y - cellPad - size * 0.85 - i * lineH,
+          size, font, color: INK,
         });
       });
     });
@@ -267,60 +341,75 @@ function drawTable(ctx: Ctx, rows: string[][]) {
   ctx.y -= 8;
 }
 
-function drawMonoBlock(ctx: Ctx, text: string) {
-  const lines = text.split('\n').flatMap((ln) => wrapText(sanitize(ln), ctx.mono, 9, CONTENT_W - 20));
-  const h = lines.length * 12 + 14;
-  ensureSpace(ctx, h + 4);
-  ctx.page.drawRectangle({
-    x: MARGIN, y: ctx.y - h, width: CONTENT_W, height: h,
-    color: rgb(0.97, 0.97, 0.98), borderColor: RULE, borderWidth: 0.5,
-  });
-  lines.forEach((ln, i) => {
-    ctx.page.drawText(ln, {
-      x: MARGIN + 10, y: ctx.y - 12 - i * 12, size: 9, font: ctx.mono, color: INK,
+function drawMonoBlock(ctx: Ctx, text: string, indent = 0) {
+  const size = 9;
+  const lineH = 11.5;
+  const pad = 8;
+  const x = MARGIN + indent;
+  const w = CONTENT_W - indent;
+  const lines = wrapMono(sanitize(text), ctx.mono, size, w - pad * 2);
+  if (!lines.length) return;
+
+  while (lines.length) {
+    ensureSpace(ctx, lineH * Math.min(lines.length, 3) + pad * 2);
+    const fit = Math.max(1, Math.floor((ctx.y - BOTTOM_LIMIT - pad * 2) / lineH));
+    const chunk = lines.splice(0, fit);
+    const h = chunk.length * lineH + pad * 2;
+    ctx.page.drawRectangle({
+      x, y: ctx.y - h, width: w, height: h,
+      color: rgb(0.97, 0.97, 0.98), borderColor: RULE, borderWidth: 0.5,
     });
-  });
-  ctx.y -= h + 6;
+    chunk.forEach((ln, i) => {
+      if (!ln) return;
+      ctx.page.drawText(ln, {
+        x: x + pad, y: ctx.y - pad - lineH * 0.78 - i * lineH, size, font: ctx.mono, color: INK,
+      });
+    });
+    ctx.y -= h;
+    if (lines.length) newPage(ctx);
+  }
+  ctx.y -= 8;
 }
 
 // ─── Titleblock ──────────────────────────────────────────────────────────────
 
 function drawTitleblock(ctx: Ctx, title: string, subtitle?: string, meta?: Array<{ label: string; value: string }>) {
-  // Accent block top-left
-  ctx.page.drawRectangle({
-    x: MARGIN, y: ctx.y - 6, width: 4, height: 40, color: ACCENT,
-  });
-  ctx.page.drawText('TEACH ASSIST', {
-    x: MARGIN + 14, y: ctx.y - 4, size: 8, font: ctx.bold, color: ACCENT,
-  });
-  ctx.y -= 14;
+  const textX = MARGIN + 14;
+  const textW = CONTENT_W - 14;
+  const titleSize = 22;
+  const titleLH = 26;
+  const top = ctx.y;
 
-  ctx.page.drawText(sanitize(title), {
-    x: MARGIN + 14, y: ctx.y - 22, size: 22, font: ctx.bold, color: INK,
-  });
-  ctx.y -= 30;
+  ctx.page.drawText('TEACH ASSIST', { x: textX, y: top - 7, size: 8, font: ctx.bold, color: ACCENT });
+  let y = top - 14;
+
+  const titleLines = wrapText(sanitize(title), ctx.bold, titleSize, textW);
+  for (const ln of titleLines) {
+    ctx.page.drawText(ln, { x: textX, y: y - 20, size: titleSize, font: ctx.bold, color: INK });
+    y -= titleLH;
+  }
+  ctx.page.drawRectangle({ x: MARGIN, y: y + 2, width: 4, height: top - y - 2, color: ACCENT });
+  y -= 4;
 
   if (subtitle) {
-    const lines = wrapText(sanitize(subtitle), ctx.italic, 11, CONTENT_W - 14);
-    lines.forEach((ln, i) => {
-      ctx.page.drawText(ln, {
-        x: MARGIN + 14, y: ctx.y - 12 - i * 14, size: 11, font: ctx.italic, color: MUTED,
-      });
-    });
-    ctx.y -= lines.length * 14 + 4;
+    const lines = wrapText(sanitize(subtitle), ctx.italic, 11, textW);
+    for (const ln of lines) {
+      if (ln) ctx.page.drawText(ln, { x: textX, y: y - 11, size: 11, font: ctx.italic, color: MUTED });
+      y -= 15;
+    }
+    y -= 2;
   }
 
   if (meta && meta.length) {
     const text = meta.map((m) => `${m.label}: ${m.value}`).join('    ·    ');
-    const lines = wrapText(sanitize(text), ctx.font, 9, CONTENT_W);
-    lines.forEach((ln, i) => {
-      ctx.page.drawText(ln, {
-        x: MARGIN, y: ctx.y - 11 - i * 12, size: 9, font: ctx.font, color: MUTED,
-      });
-    });
-    ctx.y -= lines.length * 12 + 6;
+    const lines = wrapText(sanitize(text), ctx.font, 9, textW);
+    for (const ln of lines) {
+      if (ln) ctx.page.drawText(ln, { x: textX, y: y - 9, size: 9, font: ctx.font, color: MUTED });
+      y -= 12;
+    }
   }
 
+  ctx.y = y - 4;
   drawRule(ctx);
 }
 
@@ -359,51 +448,138 @@ function renderBlock(ctx: Ctx, b: DocBlock) {
   ctx.y -= 4;
 }
 
-function drawFillBlankPrompt(ctx: Ctx, prompt: string, marks: string, tag: string) {
-  const size = 10.5;
-  const indent = 20;
-  const lineGap = size * 0.45;
-  const blankW = 80;
-  const maxW = CONTENT_W - indent;
+// ─── Worksheet renderer ─────────────────────────────────────────────────────
 
-  // Split prompt around {{n}} markers
-  const segments = prompt.split(/\{\{\d+\}\}/);
-  const fullText = segments.join('') + marks + tag;
+const Q_HANG = 24;
+const Q_SIZE = 10.5;
+const Q_LINE_H = Q_SIZE * 1.45;
 
-  // If prompt fits on one line with blanks, render inline
-  const totalTextW = ctx.font.widthOfTextAtSize(sanitize(fullText), size);
-  const blankCount = segments.length - 1;
-  const totalW = totalTextW + blankCount * blankW;
+type Shuffles = WeakMap<Question, number[]>;
 
-  if (totalW <= maxW) {
-    ensureSpace(ctx, size + lineGap);
-    let x = MARGIN + indent;
-    const baseY = ctx.y - size;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = sanitize(segments[i] + (i === segments.length - 1 ? marks + tag : ''));
-      if (seg) {
-        ctx.page.drawText(seg, { x, y: baseY, size, font: ctx.font, color: INK });
-        x += ctx.font.widthOfTextAtSize(seg, size);
-      }
-      if (i < segments.length - 1) {
-        // Draw a proper line for the blank
-        ctx.page.drawLine({
-          start: { x: x + 4, y: baseY - 1 },
-          end: { x: x + blankW - 4, y: baseY - 1 },
-          thickness: 0.8, color: INK,
-        });
-        x += blankW;
-      }
-    }
-    ctx.y -= size + lineGap;
-  } else {
-    // Falls back to multi-line: render with a visible placeholder that looks clean
-    const display = prompt.replace(/\{\{\d+\}\}/g, ' ____________ ') + marks + tag;
-    drawText(ctx, display, { indent, size });
+function shuffledOrder(n: number): number[] {
+  const order = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
   }
+  if (n > 1 && order.every((v, i) => v === i)) order.push(order.shift() as number);
+  return order;
 }
 
-// ─── Worksheet renderer ─────────────────────────────────────────────────────
+function orderFor(shuffles: Shuffles, q: Question, n: number): number[] {
+  let order = shuffles.get(q);
+  if (!order || order.length !== n) {
+    order = shuffledOrder(n);
+    shuffles.set(q, order);
+  }
+  return order;
+}
+
+function questionNote(q: Question): string {
+  const bits: string[] = [];
+  if (q.marks) bits.push(`[${q.marks} mark${q.marks === 1 ? '' : 's'}]`);
+  if (q.bloom) bits.push(q.bloom.charAt(0).toUpperCase() + q.bloom.slice(1));
+  return bits.join('  ·  ');
+}
+
+function drawFillBlankPrompt(ctx: Ctx, label: string, prompt: string, note: string) {
+  const size = Q_SIZE;
+  const font = ctx.font;
+  const blankW = 72;
+  const labelX = MARGIN;
+  const startX = MARGIN + Q_HANG;
+  const noteText = sanitize(note);
+  const noteSize = size - 1.5;
+  const noteW = noteText ? font.widthOfTextAtSize(noteText, noteSize) : 0;
+  const maxX = PAGE_W - MARGIN - (noteText ? noteW + 12 : 0);
+  const spaceW = font.widthOfTextAtSize(' ', size);
+
+  type Tok = { kind: 'word'; text: string } | { kind: 'blank' } | { kind: 'space' } | { kind: 'break' };
+  const tokens: Tok[] = [];
+  for (const part of normalizeWhitespace(sanitize(prompt)).trim().split(/(\{\{\s*\d+\s*\}\})/)) {
+    if (/^\{\{\s*\d+\s*\}\}$/.test(part)) {
+      tokens.push({ kind: 'blank' });
+      continue;
+    }
+    for (const piece of part.split(/(\n|[ ]+)/)) {
+      if (!piece) continue;
+      if (piece === '\n') tokens.push({ kind: 'break' });
+      else if (/^ +$/.test(piece)) tokens.push({ kind: 'space' });
+      else tokens.push({ kind: 'word', text: piece });
+    }
+  }
+
+  let x = startX;
+  let pendingSpace = false;
+  let firstLine = true;
+  const startLine = () => {
+    ensureSpace(ctx, Q_LINE_H);
+    if (firstLine) {
+      const baseY = ctx.y - size;
+      ctx.page.drawText(label, { x: labelX, y: baseY, size, font: ctx.bold, color: ACCENT });
+      if (noteText) {
+        ctx.page.drawText(noteText, { x: PAGE_W - MARGIN - noteW, y: baseY, size: noteSize, font, color: MUTED });
+      }
+      firstLine = false;
+    }
+  };
+  const breakLine = () => {
+    ctx.y -= Q_LINE_H;
+    x = startX;
+    pendingSpace = false;
+    startLine();
+  };
+
+  startLine();
+  for (const tok of tokens) {
+    if (tok.kind === 'space') { pendingSpace = x > startX; continue; }
+    if (tok.kind === 'break') { breakLine(); continue; }
+    const pieces = tok.kind === 'word' ? breakLongWord(tok.text, font, size, maxX - startX) : [null];
+    for (const piece of pieces) {
+      const w = piece === null ? blankW : font.widthOfTextAtSize(piece, size);
+      const gap = pendingSpace ? spaceW : 0;
+      if (x > startX && x + gap + w > maxX) breakLine();
+      else x += gap;
+      pendingSpace = false;
+      const baseY = ctx.y - size;
+      if (piece === null) {
+        ctx.page.drawLine({
+          start: { x: x + 2, y: baseY - 1.5 },
+          end: { x: x + w - 2, y: baseY - 1.5 },
+          thickness: 0.8, color: INK,
+        });
+      } else {
+        ctx.page.drawText(piece, { x, y: baseY, size, font, color: INK });
+      }
+      x += w;
+    }
+  }
+  ctx.y -= Q_LINE_H;
+}
+
+function drawNameDateStrip(ctx: Ctx) {
+  const size = 10;
+  ensureSpace(ctx, 30);
+  const baseY = ctx.y - 16;
+  const nameLabel = 'Name';
+  const dateLabel = 'Date';
+  const nameEnd = MARGIN + CONTENT_W * 0.64;
+  const dateX = nameEnd + 20;
+  ctx.page.drawText(nameLabel, { x: MARGIN, y: baseY, size, font: ctx.bold, color: INK });
+  ctx.page.drawLine({
+    start: { x: MARGIN + ctx.bold.widthOfTextAtSize(nameLabel, size) + 8, y: baseY - 2 },
+    end: { x: nameEnd, y: baseY - 2 },
+    thickness: 0.6, color: MUTED,
+  });
+  ctx.page.drawText(dateLabel, { x: dateX, y: baseY, size, font: ctx.bold, color: INK });
+  ctx.page.drawLine({
+    start: { x: dateX + ctx.bold.widthOfTextAtSize(dateLabel, size) + 8, y: baseY - 2 },
+    end: { x: PAGE_W - MARGIN, y: baseY - 2 },
+    thickness: 0.6, color: MUTED,
+  });
+  ctx.y -= 28;
+  drawRule(ctx);
+}
 
 export async function buildWorksheetPdf(
   ws: Worksheet,
@@ -415,6 +591,7 @@ export async function buildWorksheetPdf(
     date: new Date().toISOString().slice(0, 10),
     title: ws.title,
   });
+  const shuffles: Shuffles = new WeakMap();
 
   const meta: Array<{ label: string; value: string }> = [];
   if (ws.yearLevel) meta.push({ label: 'Year', value: ws.yearLevel });
@@ -423,32 +600,23 @@ export async function buildWorksheetPdf(
   if (ws.bloomOverall) meta.push({ label: "Bloom's", value: ws.bloomOverall });
 
   drawTitleblock(ctx, ws.title, ws.topic, meta);
+  drawNameDateStrip(ctx);
 
-  // Name/date strip
-  ensureSpace(ctx, 22);
-  ctx.page.drawText('Name: ______________________________', {
-    x: MARGIN, y: ctx.y - 12, size: 10, font: ctx.font, color: INK,
-  });
-  ctx.page.drawText('Date: __________________', {
-    x: MARGIN + 320, y: ctx.y - 12, size: 10, font: ctx.font, color: INK,
-  });
-  ctx.y -= 26;
-  drawRule(ctx);
-
-  // Each tier as its own section, new page between tiers
   ws.tiers.forEach((tier, idx) => {
-    if (idx > 0) newPage(ctx);
-    renderWorksheetTier(ctx, tier, false);
+    if (idx > 0) {
+      newPage(ctx);
+      drawNameDateStrip(ctx);
+    }
+    renderWorksheetTier(ctx, tier, shuffles);
   });
 
-  // Answer key (separate page)
   if (opts.includeAnswerKey) {
     newPage(ctx);
     drawHeading(ctx, 'Answer Key', 1);
     ws.tiers.forEach((tier, idx) => {
-      if (idx > 0) ctx.y -= 10;
-      drawHeading(ctx, `${TIER_LABELS[tier.tier]} — answers`, 3);
-      tier.questions.forEach((q, qi) => renderAnswer(ctx, q, qi + 1));
+      if (idx > 0) ctx.y -= 6;
+      drawHeading(ctx, `${TIER_LABELS[tier.tier] ?? tier.tier} — answers`, 3);
+      tier.questions.forEach((q, qi) => renderAnswer(ctx, q, qi + 1, shuffles));
     });
   }
 
@@ -456,71 +624,103 @@ export async function buildWorksheetPdf(
   return uint8ToBase64(bytes);
 }
 
-function renderWorksheetTier(ctx: Ctx, tier: WorksheetTier, isKey: boolean) {
-  drawHeading(ctx, `${TIER_LABELS[tier.tier]}`, 1);
+function renderWorksheetTier(ctx: Ctx, tier: WorksheetTier, shuffles: Shuffles) {
+  drawHeading(ctx, TIER_LABELS[tier.tier] ?? tier.tier, 1);
   if (tier.readingLevelNote) {
     drawText(ctx, tier.readingLevelNote, { size: 9.5, font: ctx.italic, color: MUTED });
-    ctx.y -= 2;
+    ctx.y -= 4;
   }
-  if (tier.instructions) {
-    drawCallout(ctx, 'Instructions', tier.instructions);
-  }
-  tier.questions.forEach((q, i) => renderQuestion(ctx, q, i + 1, isKey));
+  if (tier.instructions) drawCallout(ctx, 'Instructions', tier.instructions);
+  tier.questions.forEach((q, i) => renderQuestion(ctx, q, i + 1, shuffles));
 }
 
-function renderQuestion(ctx: Ctx, q: Question, num: number, showAnswer: boolean) {
-  ensureSpace(ctx, 26);
-  const marks = q.marks ? `  [${q.marks} mark${q.marks === 1 ? '' : 's'}]` : '';
-  const tag = q.bloom ? `  (${q.bloom})` : '';
-  // Question number
-  ctx.page.drawText(`${num}.`, {
-    x: MARGIN, y: ctx.y - 11, size: 11, font: ctx.bold, color: ACCENT,
+function drawBubble(ctx: Ctx, x: number, baseY: number) {
+  ctx.page.drawEllipse({
+    x: x + 4.5, y: baseY + 3.4, xScale: 4.5, yScale: 4.5,
+    borderColor: MUTED, borderWidth: 0.8,
   });
+}
+
+function renderQuestion(ctx: Ctx, q: Question, num: number, shuffles: Shuffles) {
+  // keep the question number with its first lines and some response space
+  ensureSpace(ctx, Q_LINE_H * 3);
+  const label = `${num}.`;
+  const note = questionNote(q);
+  const subIndent = Q_HANG;
 
   if (q.type === 'fill_blank') {
-    // Render fill-blank with proper drawn lines for blanks
-    drawFillBlankPrompt(ctx, q.prompt, marks, tag);
+    drawFillBlankPrompt(ctx, label, q.prompt, note);
   } else {
-    drawText(ctx, `${q.prompt}${marks}${tag}`, { indent: 20, size: 10.5 });
+    drawHanging(ctx, label, q.prompt, {
+      hang: Q_HANG, size: Q_SIZE, labelColor: ACCENT, rightNote: note,
+    });
   }
+  ctx.y -= 3;
 
   switch (q.type) {
     case 'multiple_choice':
       q.choices?.forEach((c) => {
-        drawText(ctx, `(  )  ${c.id}.  ${c.text}`, { indent: 30, size: 10 });
+        ensureSpace(ctx, Q_LINE_H);
+        drawBubble(ctx, MARGIN + subIndent, ctx.y - 10);
+        drawHanging(ctx, `${c.id}.`, c.text, {
+          indent: subIndent + 16, hang: 18, size: 10, labelFont: ctx.bold, labelColor: INK,
+        });
+        ctx.y -= 1;
       });
       break;
-    case 'true_false':
-      drawText(ctx, '(  ) True        (  ) False', { indent: 30, size: 10 });
+    case 'true_false': {
+      ensureSpace(ctx, Q_LINE_H);
+      const baseY = ctx.y - 10;
+      const x0 = MARGIN + subIndent;
+      drawBubble(ctx, x0, baseY);
+      ctx.page.drawText('True', { x: x0 + 16, y: baseY, size: 10, font: ctx.font, color: INK });
+      drawBubble(ctx, x0 + 80, baseY);
+      ctx.page.drawText('False', { x: x0 + 96, y: baseY, size: 10, font: ctx.font, color: INK });
+      ctx.y -= Q_LINE_H;
       break;
+    }
     case 'fill_blank':
       break;
     case 'matching':
-      if (q.pairs) {
-        const rows = q.pairs.map((p, i) => [`${i + 1}. ${p.left}`, '____', String.fromCharCode(65 + i) + '. ' + p.right]);
-        drawTable(ctx, [['Item', 'Match', 'Option'], ...rows]);
+      if (q.pairs?.length) {
+        const order = orderFor(shuffles, q, q.pairs.length);
+        const rows = q.pairs.map((p, i) => [
+          `${i + 1}. ${p.left}`,
+          '',
+          `${String.fromCharCode(65 + i)}. ${q.pairs![order[i]].right}`,
+        ]);
+        drawTable(ctx, [['Item', 'Letter', 'Option'], ...rows], { indent: subIndent, widths: [0.44, 0.12, 0.44] });
       }
       break;
     case 'ordering':
-      if (q.sequence) {
-        const scrambled = [...q.sequence].sort(() => Math.random() - 0.5);
-        drawText(ctx, 'Put in order (write numbers):', { indent: 30, size: 10, font: ctx.italic, color: MUTED });
-        scrambled.forEach((item) => drawText(ctx, `___  ${item}`, { indent: 36, size: 10 }));
+      if (q.sequence?.length) {
+        const order = orderFor(shuffles, q, q.sequence.length);
+        drawText(ctx, 'Number the steps in the correct order:', { indent: subIndent, size: 9.5, font: ctx.italic, color: MUTED });
+        order.forEach((srcIdx) => {
+          ensureSpace(ctx, Q_LINE_H);
+          const baseY = ctx.y - 10;
+          ctx.page.drawRectangle({
+            x: MARGIN + subIndent, y: baseY - 3, width: 18, height: 14,
+            borderColor: MUTED, borderWidth: 0.7,
+          });
+          drawHanging(ctx, '', q.sequence![srcIdx], { indent: subIndent, hang: 28, size: 10 });
+          ctx.y -= 2;
+        });
       }
       break;
     case 'label_diagram':
-      if (q.diagramDescription) drawMonoBlock(ctx, q.diagramDescription);
-      if (q.labels) {
-        drawText(ctx, `Labels to use: ${q.labels.join(', ')}`, { indent: 30, size: 9.5, font: ctx.italic, color: MUTED });
+      if (q.diagramDescription) drawMonoBlock(ctx, q.diagramDescription, subIndent);
+      if (q.labels?.length) {
+        drawText(ctx, `Labels to use: ${q.labels.join(', ')}`, { indent: subIndent, size: 9.5, font: ctx.italic, color: MUTED });
       }
       break;
     case 'code_trace':
-      if (q.code) drawMonoBlock(ctx, q.code);
-      drawText(ctx, 'Trace the output / final state:', { indent: 30, size: 10, font: ctx.italic, color: MUTED });
+      if (q.code) drawMonoBlock(ctx, q.code, subIndent);
+      drawText(ctx, 'Trace the output / final state:', { indent: subIndent, size: 9.5, font: ctx.italic, color: MUTED });
       drawAnswerLines(ctx, 3);
       break;
     case 'worked_example':
-      drawText(ctx, 'Show your working:', { indent: 30, size: 10, font: ctx.italic, color: MUTED });
+      drawText(ctx, 'Show your working:', { indent: subIndent, size: 9.5, font: ctx.italic, color: MUTED });
       drawAnswerLines(ctx, 5);
       break;
     case 'short_answer':
@@ -531,38 +731,46 @@ function renderQuestion(ctx: Ctx, q: Question, num: number, showAnswer: boolean)
       break;
   }
 
-  if (showAnswer && q.answer) {
-    drawText(ctx, `Answer: ${q.answer}`, { indent: 30, size: 10, font: ctx.italic, color: ACCENT });
-  }
-  ctx.y -= 6;
+  ctx.y -= 10;
 }
 
 function drawAnswerLines(ctx: Ctx, count: number) {
+  const gap = 22;
   for (let i = 0; i < count; i++) {
-    ensureSpace(ctx, 16);
+    ensureSpace(ctx, gap);
     ctx.page.drawLine({
-      start: { x: MARGIN + 30, y: ctx.y - 12 },
-      end: { x: PAGE_W - MARGIN, y: ctx.y - 12 },
-      thickness: 0.4, color: RULE,
+      start: { x: MARGIN + Q_HANG, y: ctx.y - gap + 4 },
+      end: { x: PAGE_W - MARGIN, y: ctx.y - gap + 4 },
+      thickness: 0.5, color: RULE,
     });
-    ctx.y -= 18;
+    ctx.y -= gap;
   }
 }
 
-function renderAnswer(ctx: Ctx, q: Question, num: number) {
-  ensureSpace(ctx, 18);
+function renderAnswer(ctx: Ctx, q: Question, num: number, shuffles: Shuffles) {
   const parts: string[] = [];
-  if (q.answer) parts.push(q.answer);
-  if (q.blanks?.length) parts.push(q.blanks.join(' / '));
-  if (q.sequence) parts.push(q.sequence.join(' → '));
-  if (q.pairs) parts.push(q.pairs.map((p) => `${p.left} ↔ ${p.right}`).join('; '));
-  if (q.workedSolution) parts.push(q.workedSolution);
-  if (q.labels) parts.push(q.labels.join(', '));
-  const answer = parts.join(' | ') || '(see rubric)';
-  drawText(ctx, `${num}. ${answer}`, { size: 10 });
-  if (q.explanation) {
-    drawText(ctx, q.explanation, { size: 9.5, font: ctx.italic, color: MUTED, indent: 16 });
+  if (q.type === 'matching' && q.pairs?.length) {
+    const order = orderFor(shuffles, q, q.pairs.length);
+    parts.push(q.pairs.map((p, i) => {
+      const letter = String.fromCharCode(65 + order.indexOf(i));
+      return `${i + 1}–${letter} (${p.left} ↔ ${p.right})`;
+    }).join(';  '));
+  } else if (q.type === 'ordering' && q.sequence?.length) {
+    parts.push(q.sequence.map((s, i) => `${i + 1}. ${s}`).join('   '));
+  } else {
+    if (q.answer) parts.push(q.type === 'true_false' ? q.answer.charAt(0).toUpperCase() + q.answer.slice(1) : q.answer);
+    if (q.blanks?.length) parts.push(q.blanks.map((b, i) => `(${i + 1}) ${b}`).join('   '));
+    if (q.labels?.length && !q.answer) parts.push(q.labels.join(', '));
   }
+  const answer = parts.join('  |  ') || '(see rubric)';
+  drawHanging(ctx, `${num}.`, answer, { hang: Q_HANG, size: 10, labelColor: ACCENT });
+  if (q.workedSolution) {
+    drawText(ctx, q.workedSolution, { size: 9.5, indent: Q_HANG });
+  }
+  if (q.explanation) {
+    drawText(ctx, q.explanation, { size: 9.5, font: ctx.italic, color: MUTED, indent: Q_HANG });
+  }
+  ctx.y -= 5;
 }
 
 // ─── base64 helpers / download ────────────────────────────────────────────────

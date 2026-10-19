@@ -12,6 +12,7 @@ import {
 } from 'docx';
 import type { Quiz, QuizQuestion } from './quizSchema';
 import { winAnsiSafe } from './winAnsi';
+import { wrapText } from './pdfText';
 
 // ─── PDF helpers (mirrors pdfRenderer layout engine) ──────────────────────────
 
@@ -37,15 +38,9 @@ function np(ctx: Ctx) { ctx.page = ctx.pdf.addPage([PAGE_W, PAGE_H]); ctx.pn++; 
 function ensureSpace(ctx: Ctx, n: number) { if (ctx.y - n < M + 40) np(ctx); }
 function clean(s: string) { return winAnsiSafe(s); }
 
-function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = text.split(/\s+/); const lines: string[] = []; let line = '';
-  for (const w of words) { const t = line ? `${line} ${w}` : w; if (font.widthOfTextAtSize(t, size) > maxW && line) { lines.push(line); line = w; } else line = t; }
-  if (line) lines.push(line); return lines.length ? lines : [''];
-}
-
 function dt(ctx: Ctx, text: string, { size = 10.5, font, color = INK, indent = 0, g = 4 }: { size?: number; font?: PDFFont; color?: Color; indent?: number; g?: number } = {}) {
   const f = font ?? ctx.font;
-  for (const line of wrap(clean(text), f, size, CW - indent)) {
+  for (const line of wrapText(clean(text), f, size, CW - indent)) {
     ensureSpace(ctx, size + g);
     ctx.page.drawText(line, { x: M + indent, y: ctx.y - size, size, font: f, color });
     ctx.y -= size + g;
@@ -81,7 +76,7 @@ function drawFooter(ctx: Ctx) {
 }
 
 function drawCallout(ctx: Ctx, label: string, text: string) {
-  const lines = wrap(clean(text), ctx.font, 10, CW - 24);
+  const lines = wrapText(clean(text), ctx.font, 10, CW - 24);
   const h = 22 + lines.length * 13; ensureSpace(ctx, h + 6);
   ctx.page.drawRectangle({ x: M, y: ctx.y - h, width: CW, height: h, color: CALLOUT_BG, borderColor: ACCENT, borderWidth: 0.6 });
   ctx.page.drawText(label.toUpperCase(), { x: M + 12, y: ctx.y - 14, size: 9, font: ctx.bold, color: ACCENT });
