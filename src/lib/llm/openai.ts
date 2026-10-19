@@ -13,6 +13,8 @@ const CHAT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 // o1 models use the responses endpoint and don't support streaming
 const O1_MODELS = ['o1', 'o1-mini', 'o1-preview'];
 const isO1 = (model: string) => O1_MODELS.some((m) => model.startsWith(m));
+// Reasoning models reject max_tokens/temperature, and their hidden reasoning counts toward the token cap.
+const isReasoningModel = (model: string) => /^o\d/.test(model) || /^gpt-(5|[6-9]|\d{2})/.test(model);
 
 // ─── Request builders ─────────────────────────────────────────────────────────
 
@@ -74,11 +76,11 @@ function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
     stream,
   };
 
-  if (!isO1(req.model)) {
+  if (isReasoningModel(req.model)) {
+    body.max_completion_tokens = Math.max(req.maxTokens ?? 4096, 16000);
+  } else {
     body.max_tokens = req.maxTokens ?? 4096;
     if (req.temperature !== undefined) body.temperature = req.temperature;
-  } else {
-    body.max_completion_tokens = req.maxTokens ?? 4096;
   }
 
   if (req.tools?.length) {

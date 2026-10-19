@@ -46,9 +46,7 @@ export function DbProvider({ children }: { children: React.ReactNode }) {
       if (typeof prefs.activeProvider === 'string') {
         store.setActiveProvider(prefs.activeProvider as Provider);
       }
-      if (typeof prefs.activeModel === 'string') {
-        store.setActiveModel(prefs.activeModel as string);
-      }
+      // activeModel is intentionally not restored: the model picker selects the newest available model on every load.
       // Offline model is NOT restored from saved prefs — each sign-in should
       // start on the chosen cloud model so users aren't silently locked onto
       // the on-device model from a prior session.

@@ -1,149 +1,86 @@
 /**
- * Fetches the live list of available OpenAI models for the given API key,
- * then categorises them into chat models and image models.
- *
- * Results are cached in memory per API key for the session lifetime so we
- * only hit /v1/models once per key.
+ * Fetches the live list of OpenAI models for an API key and splits them into
+ * chat models (newest release first) and the best image model.
  */
 
 export interface OpenAIModelCatalog {
   chatModels: string[];
+  /** Newest general-purpose chat model — the default selection. */
+  latestModel: string;
+  /** False when the provider couldn't be reached and a built-in list is shown. */
+  isLive: boolean;
   imageModel: string;
 }
 
-// In-memory cache: apiKey → catalog. Keyed by a version stamp so stale cached
-// catalogs from a previous build are automatically discarded on page reload.
-const CACHE_VERSION = '3';
 const cache = new Map<string, OpenAIModelCatalog>();
 
-function cacheKey(apiKey: string): string {
-  return `${CACHE_VERSION}:${apiKey}`;
-}
+const FALLBACK_CHAT_MODELS = ['gpt-4.1', 'gpt-4o', 'gpt-4o-mini'];
 
-// Models we prefer in order — latest / most capable first.
-// The fetcher will keep only IDs that actually appear in the API response.
-const PREFERRED_CHAT_MODELS = [
-  'o3',
-  'o3-mini',
-  'o4-mini',
-  'gpt-4.1',
-  'gpt-4.1-mini',
-  'gpt-4.1-nano',
-  'gpt-4o',
-  'gpt-4o-mini',
-  'o1',
-  'o1-mini',
-  'o1-preview',
-  'gpt-4-turbo',
-  'gpt-4',
-  'gpt-3.5-turbo',
+const PREFERRED_IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'];
+
+// Variants that don't work with the chat completions API the app uses.
+const EXCLUDED_FRAGMENTS = [
+  'audio', 'realtime', 'transcribe', 'tts', 'search', 'image', 'embedding',
+  'moderation', 'instruct', 'codex', 'deep-research', 'computer-use', '-pro',
+  'oss', 'chat-latest',
 ];
 
-// Image generation model preference order — latest first.
-// dall-e models are retired as of March 2026.
-const PREFERRED_IMAGE_MODELS = [
-  'gpt-image-2',
-  'gpt-image-1.5',
-  'gpt-image-1',
-  'gpt-image-1-mini',
-];
+const DATED_SNAPSHOT = /-\d{4}-\d{2}-\d{2}$|-\d{4}$/;
+const SMALL_TIER = /-(mini|nano)\b/;
 
-// IDs that match "chat-capable"
 function isChatModel(id: string): boolean {
-  return (
-    id.startsWith('gpt-') ||
-    id.startsWith('o1') ||
-    id.startsWith('o3') ||
-    id.startsWith('o4') ||
-    id.startsWith('o5') ||
-    id === 'chatgpt-4o-latest'
-  );
-}
-
-// Sort unlisted chat models: newer versions first, then alpha
-function sortUnlistedChatModels(ids: string[]): string[] {
-  return [...ids].sort((a, b) => {
-    // Extract highest numeric token from ID for rough version ordering
-    const ver = (id: string) => {
-      const nums = id.match(/\d+(\.\d+)?/g);
-      return nums ? parseFloat(nums[nums.length - 1]) : 0;
-    };
-    const vDiff = ver(b) - ver(a);
-    return vDiff !== 0 ? vDiff : b.localeCompare(a);
-  });
-}
-
-function isImageModel(id: string): boolean {
-  return id.startsWith('gpt-image-') || id.startsWith('dall-e');
+  const chatFamily = id.startsWith('gpt-') || /^o\d/.test(id);
+  return chatFamily && !EXCLUDED_FRAGMENTS.some((f) => id.includes(f));
 }
 
 export async function fetchOpenAIModelCatalog(apiKey: string): Promise<OpenAIModelCatalog> {
-  const ck = cacheKey(apiKey);
-  if (cache.has(ck)) return cache.get(ck)!;
+  const cached = cache.get(apiKey);
+  if (cached) return cached;
 
-  let allIds: string[] = [];
+  let live: { id: string; created: number }[] = [];
   try {
     const res = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (res.ok) {
       const data = await res.json();
-      allIds = (data.data as { id: string }[]).map((m) => m.id);
+      if (Array.isArray(data?.data)) {
+        live = (data.data as { id?: unknown; created?: unknown }[])
+          .filter((m) => typeof m.id === 'string')
+          .map((m) => ({ id: m.id as string, created: typeof m.created === 'number' ? m.created : 0 }));
+      }
+    } else {
+      console.warn(`[ModelFetch] OpenAI /v1/models returned ${res.status}`);
     }
-  } catch {
-    // Network failure — fall through to static defaults
+  } catch (err) {
+    console.warn('[ModelFetch] Failed to fetch OpenAI models:', err);
   }
 
-  const idSet = new Set(allIds);
+  const ids = new Set(live.map((m) => m.id));
+  // Hide dated snapshots when their undated alias is also available.
+  const chat = live
+    .filter((m) => isChatModel(m.id))
+    .filter((m) => !(DATED_SNAPSHOT.test(m.id) && ids.has(m.id.replace(DATED_SNAPSHOT, ''))))
+    .sort((a, b) => b.created - a.created || b.id.localeCompare(a.id))
+    .map((m) => m.id);
 
-  // Chat models: preferred (known) models first in our defined order,
-  // then any live models not in the preferred list, sorted newest-first.
-  const chatModels: string[] = [];
-  for (const id of PREFERRED_CHAT_MODELS) {
-    if (idSet.has(id)) chatModels.push(id);
-  }
-  const preferredSet = new Set(PREFERRED_CHAT_MODELS);
-  const unlisted = allIds.filter(
-    (id) => !preferredSet.has(id) && isChatModel(id) && !isImageModel(id),
-  );
-  for (const id of sortUnlistedChatModels(unlisted)) {
-    chatModels.push(id);
-  }
+  const chatModels = chat.length > 0 ? chat : FALLBACK_CHAT_MODELS;
+  const latestModel = chatModels.find((id) => !SMALL_TIER.test(id)) ?? chatModels[0];
 
-  // Fall back to a sensible static list if the fetch produced nothing useful
-  if (chatModels.length === 0) {
-    chatModels.push('gpt-4o', 'gpt-4o-mini');
-  }
+  const imageModel =
+    PREFERRED_IMAGE_MODELS.find((id) => ids.has(id)) ??
+    live.filter((m) => m.id.startsWith('gpt-image-')).sort((a, b) => b.created - a.created)[0]?.id ??
+    'gpt-image-1';
 
-  // Image model: pick the best one this account actually has access to.
-  // Only use a model that appears in the live API response.
-  let imageModel = '';
-  for (const id of PREFERRED_IMAGE_MODELS) {
-    if (idSet.has(id)) {
-      imageModel = id;
-      break;
-    }
-  }
-  // If none of the preferred models matched, check for any gpt-image-* model
-  if (!imageModel) {
-    const liveGptImage = allIds
-      .filter((id) => id.startsWith('gpt-image-'))
-      .sort()
-      .reverse()[0];
-    imageModel = liveGptImage ?? 'gpt-image-1';
-  }
-
-  const catalog: OpenAIModelCatalog = { chatModels, imageModel };
-  cache.set(cacheKey(apiKey), catalog);
+  const catalog: OpenAIModelCatalog = { chatModels, latestModel, imageModel, isLive: live.length > 0 };
+  if (live.length > 0) cache.set(apiKey, catalog);
   return catalog;
 }
 
-/** Invalidate the cached catalog for a given key (e.g. when the key changes). */
 export function invalidateOpenAIModelCache(apiKey: string) {
-  cache.delete(cacheKey(apiKey));
+  cache.delete(apiKey);
 }
 
-/** Returns the best available image model, falling back to gpt-image-1 if catalog not yet loaded. */
 export function getBestImageModel(catalog: OpenAIModelCatalog | null): string {
   return catalog?.imageModel ?? 'gpt-image-1';
 }
