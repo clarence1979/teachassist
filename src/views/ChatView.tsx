@@ -30,7 +30,7 @@ export function ChatView() {
   const db = useDb();
   const { getKey, providers } = useCredentials();
   const { viewedAsUser } = useAdminDb();
-  const { activeProvider, activeModel, offlineModelId, addUsage, lastGeneratedArtifactId, clearGeneratedArtifact, memoryEnabled } = useAppStore();
+  const { activeProvider, activeModel, setActiveModel, offlineModelId, addUsage, lastGeneratedArtifactId, clearGeneratedArtifact, memoryEnabled } = useAppStore();
 
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
 
@@ -213,6 +213,7 @@ export function ChatView() {
           openaiKey: getKey('openai'),
           onUpdate: () => { /* live query handles re-render */ },
           onUsage: (i, o) => addUsage(activeProvider, i, o),
+          onModelSwitch: setActiveModel,
           memoryEnabled,
           username: viewedAsUser,
           signal: controller.signal,
@@ -290,6 +291,7 @@ export function ChatView() {
           openaiKey: getKey('openai'),
           onUpdate: () => { /* live */ },
           onUsage: (i, o) => addUsage(activeProvider, i, o),
+          onModelSwitch: setActiveModel,
           memoryEnabled,
           username: viewedAsUser,
           signal: controller.signal,
@@ -356,6 +358,7 @@ export function ChatView() {
           openaiKey: getKey('openai'),
           onUpdate: () => { /* live */ },
           onUsage: (i, o) => addUsage(activeProvider, i, o),
+          onModelSwitch: setActiveModel,
           memoryEnabled,
           username: viewedAsUser,
           signal: controller.signal,

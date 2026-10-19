@@ -78,6 +78,8 @@ export interface LLMResponse {
   text: string;
   toolCalls: ToolCall[];
   usage: LLMUsage;
+  /** Model that actually answered — differs from the request when a substitute was used. */
+  model?: string;
 }
 
 // ─── Streaming ────────────────────────────────────────────────────────────────

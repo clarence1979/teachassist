@@ -8,6 +8,8 @@ import type {
 } from './types';
 import { LLMError } from './types';
 
+import { fetchOpenAIModelCatalog } from './openaiModels';
+
 const CHAT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 // o1 models use the responses endpoint and don't support streaming
@@ -69,7 +71,7 @@ function buildMessages(req: LLMRequest): { role: string; content: unknown }[] {
   return out;
 }
 
-function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
+function buildBody(req: LLMRequest, stream: boolean, reasoningOff = false): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: req.model,
     messages: buildMessages(req),
@@ -93,6 +95,7 @@ function buildBody(req: LLMRequest, stream: boolean): Record<string, unknown> {
       },
     }));
     body.tool_choice = 'auto';
+    if (reasoningOff) body.reasoning_effort = 'none';
   }
 
   if (stream) {
@@ -127,18 +130,19 @@ async function handleError(res: Response): Promise<never> {
 
 // ─── Streaming ────────────────────────────────────────────────────────────────
 
-export async function openaiStream(
+async function streamOnce(
   req: LLMRequest,
   onChunk: OnChunk,
+  reasoningOff: boolean,
 ): Promise<LLMResponse> {
   if (isO1(req.model)) {
-    return openaiComplete(req, onChunk);
+    return completeOnce(req, onChunk, reasoningOff);
   }
 
   const res = await fetch(CHAT_ENDPOINT, {
     method: 'POST',
     headers: headers(req.apiKey),
-    body: JSON.stringify(buildBody(req, true)),
+    body: JSON.stringify(buildBody(req, true, reasoningOff)),
     signal: req.signal,
   });
 
@@ -222,19 +226,20 @@ export async function openaiStream(
   const usage = { inputTokens, outputTokens };
   onChunk({ type: 'usage', usage });
 
-  return { text: fullText, toolCalls, usage };
+  return { text: fullText, toolCalls, usage, model: req.model };
 }
 
 // ─── Non-streaming (o1 + fallback) ───────────────────────────────────────────
 
-export async function openaiComplete(
+async function completeOnce(
   req: LLMRequest,
-  onChunk?: OnChunk,
+  onChunk: OnChunk | undefined,
+  reasoningOff: boolean,
 ): Promise<LLMResponse> {
   const res = await fetch(CHAT_ENDPOINT, {
     method: 'POST',
     headers: headers(req.apiKey),
-    body: JSON.stringify(buildBody(req, false)),
+    body: JSON.stringify(buildBody(req, false, reasoningOff)),
     signal: req.signal,
   });
 
@@ -263,5 +268,84 @@ export async function openaiComplete(
   };
   if (onChunk) onChunk({ type: 'usage', usage });
 
-  return { text, toolCalls, usage };
+  return { text, toolCalls, usage, model: req.model };
+}
+
+// ─── Tool-compatibility recovery ─────────────────────────────────────────────
+// Some models only accept tools with reasoning off; others reject tools on
+// chat completions entirely. Learned fixes are remembered for the session.
+
+type Sender = (req: LLMRequest, reasoningOff: boolean) => Promise<LLMResponse>;
+
+const MAX_SUBSTITUTE_ATTEMPTS = 6;
+const needsReasoningOff = new Set<string>();
+const toolSubstitutes = new Map<string, string>();
+
+function isToolRejection(err: unknown): err is LLMError {
+  return err instanceof LLMError && err.status === 400 && /\b(tool|tools|function)\b/i.test(err.message);
+}
+
+function wantsReasoningOff(err: LLMError): boolean {
+  return /reasoning_effort/i.test(err.message) && /'none'|"none"|\bnone\b/i.test(err.message);
+}
+
+// The candidate can't serve this request, but the key itself is fine.
+function isModelUnusable(err: unknown): boolean {
+  return err instanceof LLMError && [400, 403, 404].includes(err.status);
+}
+
+async function sendOnModel(send: Sender, req: LLMRequest, model: string): Promise<LLMResponse> {
+  const attempt = { ...req, model };
+  if (needsReasoningOff.has(model)) return send(attempt, true);
+  try {
+    return await send(attempt, false);
+  } catch (err) {
+    if (!isToolRejection(err) || !wantsReasoningOff(err)) throw err;
+    needsReasoningOff.add(model);
+    return send(attempt, true);
+  }
+}
+
+async function withToolRecovery(send: Sender, req: LLMRequest): Promise<LLMResponse> {
+  if (!req.tools?.length) return send(req, false);
+
+  const remembered = toolSubstitutes.get(req.model);
+  if (remembered) {
+    try { return await sendOnModel(send, req, remembered); }
+    catch (err) { if (!isModelUnusable(err)) throw err; toolSubstitutes.delete(req.model); }
+  }
+
+  let original: unknown;
+  try {
+    return await sendOnModel(send, req, req.model);
+  } catch (err) {
+    if (!isToolRejection(err)) throw err;
+    original = err;
+  }
+
+  const catalog = await fetchOpenAIModelCatalog(req.apiKey);
+  const candidates = catalog.chatModels.filter((m) => m !== req.model).slice(0, MAX_SUBSTITUTE_ATTEMPTS);
+  for (const candidate of candidates) {
+    if (req.signal?.aborted) break;
+    try {
+      const res = await sendOnModel(send, req, candidate);
+      toolSubstitutes.set(req.model, candidate);
+      return res;
+    } catch (err) {
+      if (!isModelUnusable(err)) throw err;
+    }
+  }
+  throw new LLMError(
+    `${req.model} can't use the app's tools, and no other OpenAI model on this API key could take over. Pick a different model and try again.`,
+    (original as LLMError).status,
+    'openai',
+  );
+}
+
+export function openaiStream(req: LLMRequest, onChunk: OnChunk): Promise<LLMResponse> {
+  return withToolRecovery((r, off) => streamOnce(r, onChunk, off), req);
+}
+
+export function openaiComplete(req: LLMRequest, onChunk?: OnChunk): Promise<LLMResponse> {
+  return withToolRecovery((r, off) => completeOnce(r, onChunk, off), req);
 }

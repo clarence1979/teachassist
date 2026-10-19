@@ -70,6 +70,8 @@ export interface SendOptions {
   openaiKey?: string;
   onUpdate: (assistantId: string) => void;
   onUsage?: (inputTokens: number, outputTokens: number) => void;
+  /** Called when the chosen model couldn't use tools and another model answered instead. */
+  onModelSwitch?: (model: string) => void;
   signal?: AbortSignal;
   /** When true, mix in summaries of prior conversations as additional system context. */
   memoryEnabled?: boolean;
@@ -108,7 +110,8 @@ async function runPreflight(
 // ─── Main send loop ──────────────────────────────────────────────────────────
 
 export async function sendMessage(opts: SendOptions): Promise<void> {
-  const { db, conversationId, userMessage, provider, model, apiKey, onUpdate, onUsage } = opts;
+  const { db, conversationId, userMessage, provider, apiKey, onUpdate, onUsage } = opts;
+  let model = opts.model;
   const anthropicKey = opts.anthropicKey ?? (provider === 'anthropic' ? apiKey : undefined);
   const openaiKey = opts.openaiKey ?? (provider === 'openai' ? apiKey : undefined);
 
@@ -240,7 +243,7 @@ export async function sendMessage(opts: SendOptions): Promise<void> {
         }
       };
 
-      await llmClient.complete(
+      const res = await llmClient.complete(
         {
           provider,
           model,
@@ -253,6 +256,11 @@ export async function sendMessage(opts: SendOptions): Promise<void> {
         },
         onChunk,
       );
+      if (res.model && res.model !== model) {
+        model = res.model;
+        execCtx.model = model;
+        opts.onModelSwitch?.(model);
+      }
 
       // Flush any buffered streamed text to the DB so the UI sees the final state.
       finalText += roundText;
