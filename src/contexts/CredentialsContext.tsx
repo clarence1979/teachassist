@@ -25,8 +25,10 @@ interface CredentialsContextValue {
 
 const CredentialsContext = createContext<CredentialsContextValue | null>(null);
 
-const LS_AUTH = 'ta_auth_username';
-const LS_IS_ADMIN = 'ta_auth_is_admin';
+const LS_SESSION = 'ta_session_token';
+// pre-session builds trusted these unverified values; cleared on startup
+const LS_LEGACY_AUTH = 'ta_auth_username';
+const LS_LEGACY_IS_ADMIN = 'ta_auth_is_admin';
 
 export function CredentialsProvider({ children }: { children: React.ReactNode }) {
   const inIframe = isInIframe();
@@ -43,25 +45,20 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
     setProviders(next);
   }, []);
 
-  const fetchSecretsAndReady = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('secrets')
-      .select('key_name, key_value');
+  const fetchSecretsAndReady = useCallback(async (token: string) => {
+    const { data, error } = await supabase.rpc('get_app_secrets', { p_token: token });
 
-    if (error) {
-      console.error('[Credentials] Failed to fetch secrets:', error.message);
+    if (error || !Array.isArray(data)) {
+      console.error('[Credentials] Failed to fetch secrets:', error?.message);
       setAuthStage('ready');
       return;
     }
 
-    const openaiRow = (data as { key_name: string; key_value: string }[]).find(
-      (r) => r.key_name === 'OPENAI_API_KEY'
+    const rows = data as { key_name: string; key_value: string }[];
+    applyKeys(
+      rows.find((r) => r.key_name === 'OPENAI_API_KEY')?.key_value,
+      rows.find((r) => r.key_name === 'CLAUDE_API_KEY')?.key_value,
     );
-    const claudeRow = (data as { key_name: string; key_value: string }[]).find(
-      (r) => r.key_name === 'CLAUDE_API_KEY'
-    );
-
-    applyKeys(openaiRow?.key_value, claudeRow?.key_value);
     setAuthStage('ready');
   }, [applyKeys]);
 
@@ -86,15 +83,24 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
         return;
       }
 
-      const saved = localStorage.getItem(LS_AUTH);
-      if (saved) {
-        setUsername(saved);
-        setSupabaseUsername(saved);
-        setIsAdmin(localStorage.getItem(LS_IS_ADMIN) === 'true');
-        await fetchSecretsAndReady();
-      } else {
+      localStorage.removeItem(LS_LEGACY_AUTH);
+      localStorage.removeItem(LS_LEGACY_IS_ADMIN);
+      const token = localStorage.getItem(LS_SESSION);
+      if (!token) {
         setAuthStage('login');
+        return;
       }
+      const { data, error } = await supabase.rpc('app_session_info', { p_token: token });
+      const session = Array.isArray(data) ? (data[0] as { username: string; is_admin: boolean } | undefined) : undefined;
+      if (error || !session) {
+        localStorage.removeItem(LS_SESSION);
+        setAuthStage('login');
+        return;
+      }
+      setUsername(session.username);
+      setSupabaseUsername(session.username);
+      setIsAdmin(session.is_admin);
+      await fetchSecretsAndReady(token);
     }
 
     init();
@@ -106,32 +112,36 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
       const trimPass = password.trim();
       if (!trimUser || !trimPass) return { error: 'Username and password are required.' };
 
-      const { data, error } = await supabase
-        .from('users_login')
-        .select('username, password, is_admin')
-        .eq('username', trimUser)
-        .eq('password', trimPass)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('app_login', {
+        p_username: trimUser,
+        p_password: trimPass,
+      });
 
-      if (error) return { error: 'Login failed. Please try again.' };
-      if (!data) return { error: 'Invalid username or password.' };
+      if (error) {
+        console.error('[Credentials] login failed:', error.message);
+        return { error: 'Login failed. Please try again.' };
+      }
+      const session = Array.isArray(data) ? (data[0] as { token: string; is_admin: boolean } | undefined) : undefined;
+      if (!session?.token) return { error: 'Invalid username or password.' };
 
-      const adminFlag = (data as { username: string; password: string; is_admin: boolean }).is_admin ?? false;
-
-      localStorage.setItem(LS_AUTH, trimUser);
-      localStorage.setItem(LS_IS_ADMIN, adminFlag ? 'true' : 'false');
+      localStorage.setItem(LS_SESSION, session.token);
       setUsername(trimUser);
       setSupabaseUsername(trimUser);
-      setIsAdmin(adminFlag);
-      await fetchSecretsAndReady();
+      setIsAdmin(session.is_admin);
+      await fetchSecretsAndReady(session.token);
       return {};
     },
     [fetchSecretsAndReady]
   );
 
   const logout = useCallback(() => {
-    localStorage.removeItem(LS_AUTH);
-    localStorage.removeItem(LS_IS_ADMIN);
+    const token = localStorage.getItem(LS_SESSION);
+    if (token) {
+      supabase.rpc('app_logout', { p_token: token }).then(({ error }) => {
+        if (error) console.warn('[Credentials] logout failed:', error.message);
+      });
+    }
+    localStorage.removeItem(LS_SESSION);
     localStorage.removeItem('VITE_OPENAI_API_KEY');
     localStorage.removeItem('VITE_CLAUDE_API_KEY');
     setProviders([]);
