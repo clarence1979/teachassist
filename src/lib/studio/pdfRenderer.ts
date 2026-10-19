@@ -218,13 +218,6 @@ function drawHeading(ctx: Ctx, text: string, level: 1 | 2 | 3 = 2): void {
     ctx.page.drawText(line, { x: MARGIN, y: ctx.y - size, size, font: ctx.bold, color: INK });
     ctx.y -= lineH;
   }
-  if (level === 1 || level === 2) {
-    ctx.page.drawLine({
-      start: { x: MARGIN, y: ctx.y + lineH - size - 5 },
-      end: { x: MARGIN + (level === 1 ? 60 : 28), y: ctx.y + lineH - size - 5 },
-      thickness: 1.5, color: ACCENT,
-    });
-  }
   ctx.y -= spaceAfter;
 }
 
@@ -607,7 +600,7 @@ export async function buildWorksheetPdf(
       newPage(ctx);
       drawNameDateStrip(ctx);
     }
-    renderWorksheetTier(ctx, tier, shuffles);
+    renderWorksheetTier(ctx, tier, shuffles, ws.tiers.length > 1 ? `Version ${idx + 1} of ${ws.tiers.length}` : undefined);
   });
 
   if (opts.includeAnswerKey) {
@@ -615,7 +608,13 @@ export async function buildWorksheetPdf(
     drawHeading(ctx, 'Answer Key', 1);
     ws.tiers.forEach((tier, idx) => {
       if (idx > 0) ctx.y -= 6;
-      drawHeading(ctx, `${TIER_LABELS[tier.tier] ?? tier.tier} — answers`, 3);
+      if (ws.tiers.length > 1) {
+        drawHeading(ctx, `Version ${idx + 1} — ${TIER_LABELS[tier.tier] ?? tier.tier}`, 3);
+      }
+      if (tier.readingLevelNote) {
+        drawText(ctx, tier.readingLevelNote, { size: 9.5, font: ctx.italic, color: MUTED });
+        ctx.y -= 4;
+      }
       tier.questions.forEach((q, qi) => renderAnswer(ctx, q, qi + 1, shuffles));
     });
   }
@@ -624,10 +623,10 @@ export async function buildWorksheetPdf(
   return uint8ToBase64(bytes);
 }
 
-function renderWorksheetTier(ctx: Ctx, tier: WorksheetTier, shuffles: Shuffles) {
-  drawHeading(ctx, TIER_LABELS[tier.tier] ?? tier.tier, 1);
-  if (tier.readingLevelNote) {
-    drawText(ctx, tier.readingLevelNote, { size: 9.5, font: ctx.italic, color: MUTED });
+// Difficulty level and reading note are teacher-facing; they appear in the answer key only.
+function renderWorksheetTier(ctx: Ctx, tier: WorksheetTier, shuffles: Shuffles, versionLabel?: string) {
+  if (versionLabel) {
+    drawText(ctx, versionLabel, { size: 9, font: ctx.bold, color: MUTED });
     ctx.y -= 4;
   }
   if (tier.instructions) drawCallout(ctx, 'Instructions', tier.instructions);
