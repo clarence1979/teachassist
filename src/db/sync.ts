@@ -1,5 +1,5 @@
 import type { PedagogyDB } from './schema';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, USERNAME_HEADER } from '../lib/supabaseClient';
 
 const SYNCED_TABLES = [
   'conversations',
@@ -81,7 +81,7 @@ async function pushUpsert(username: string, table: SyncedTableName, row: Record<
     data: row,
     deleted: false,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'username,table_name,record_id' });
+  }, { onConflict: 'username,table_name,record_id' }).setHeader(USERNAME_HEADER, username);
   if (error) console.warn('[sync] upsert failed:', table, id, error.message);
 }
 
@@ -94,7 +94,7 @@ async function pushDelete(username: string, table: SyncedTableName, id: string) 
     data: { id },
     deleted: true,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'username,table_name,record_id' });
+  }, { onConflict: 'username,table_name,record_id' }).setHeader(USERNAME_HEADER, username);
   if (error) console.warn('[sync] delete failed:', table, id, error.message);
 }
 
@@ -130,7 +130,8 @@ export async function pullFromSupabase(db: PedagogyDB, username: string): Promis
       .select('table_name, record_id, data, deleted, updated_at')
       .eq('username', username)
       .order('updated_at', { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
+      .range(offset, offset + PAGE_SIZE - 1)
+      .setHeader(USERNAME_HEADER, username);
     if (since) q = q.gt('updated_at', since);
     const { data, error } = await q;
 
@@ -235,7 +236,8 @@ export async function pushLocalOnly(db: PedagogyDB, username: string): Promise<v
       .eq('username', username)
       .order('table_name', { ascending: true })
       .order('record_id', { ascending: true })
-      .range(idOffset, idOffset + PAGE_SIZE - 1);
+      .range(idOffset, idOffset + PAGE_SIZE - 1)
+      .setHeader(USERNAME_HEADER, username);
     if (error) {
       console.warn('[sync] pushLocalOnly: remote index fetch failed:', error.message);
       return;
@@ -276,7 +278,7 @@ export async function pushLocalOnly(db: PedagogyDB, username: string): Promise<v
     if (!payload.length) continue;
     const { error: upErr } = await supabase.from('user_records').upsert(payload, {
       onConflict: 'username,table_name,record_id',
-    });
+    }).setHeader(USERNAME_HEADER, username);
     if (upErr) console.warn('[sync] pushLocalOnly upsert failed:', table, upErr.message);
   }
 }
@@ -305,7 +307,8 @@ export async function reconcileLocalWithRemote(db: PedagogyDB, username: string)
       .eq('deleted', false)
       .order('table_name', { ascending: true })
       .order('record_id', { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1);
+      .range(offset, offset + PAGE_SIZE - 1)
+      .setHeader(USERNAME_HEADER, username);
     if (error) {
       console.warn('[sync] reconcile: remote index fetch failed:', error.message);
       return;

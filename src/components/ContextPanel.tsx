@@ -5,7 +5,7 @@ import {
 import { clsx } from 'clsx';
 import { useAppStore } from '../store/appStore';
 import { useAdminDb } from '../db/DbContext';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, USERNAME_HEADER } from '../lib/supabaseClient';
 import { parseFile } from '../lib/fileParsers';
 
 // ─── Persistence ────────────────────────────────────────────────────────────
@@ -36,6 +36,7 @@ async function remoteLoad<T>(username: string, key: string, fallback: T): Promis
     .eq('username', username)
     .eq('table_name', PREF_TABLE)
     .eq('record_id', key)
+    .setHeader(USERNAME_HEADER, username)
     .maybeSingle();
   if (error || !data || data.deleted) return fallback;
   const payload = data.data as { value?: T } | null;
@@ -51,7 +52,7 @@ async function remoteSave(username: string, key: string, value: unknown): Promis
     data: { key, value },
     deleted: false,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'username,table_name,record_id' });
+  }, { onConflict: 'username,table_name,record_id' }).setHeader(USERNAME_HEADER, username);
   if (error) console.warn('[context] save failed:', key, error.message);
 }
 

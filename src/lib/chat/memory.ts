@@ -1,5 +1,5 @@
 import type { PedagogyDB, Message, Conversation } from '../../db/schema';
-import { supabase } from '../supabaseClient';
+import { supabase, USERNAME_HEADER } from '../supabaseClient';
 
 const MAX_CONVERSATIONS = 12;
 const MAX_USER_ASKS = 3;
@@ -64,7 +64,8 @@ async function buildEntriesRemote(username: string, currentConversationId: strin
     .eq('table_name', 'conversations')
     .eq('deleted', false)
     .order('updated_at', { ascending: false })
-    .limit(MAX_CONVERSATIONS + 1);
+    .limit(MAX_CONVERSATIONS + 1)
+    .setHeader(USERNAME_HEADER, username);
   if (convErr || !convRows) return [];
 
   const convs = (convRows as { data: Conversation }[])
@@ -80,7 +81,8 @@ async function buildEntriesRemote(username: string, currentConversationId: strin
     .eq('username', username)
     .eq('table_name', 'messages')
     .eq('deleted', false)
-    .in('data->>conversationId', convs.map((c) => c.id));
+    .in('data->>conversationId', convs.map((c) => c.id))
+    .setHeader(USERNAME_HEADER, username);
   if (msgErr || !msgRows) return [];
 
   const byConv = new Map<string, MemoryMessage[]>();

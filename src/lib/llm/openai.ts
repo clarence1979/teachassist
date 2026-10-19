@@ -277,9 +277,10 @@ async function completeOnce(
 
 type Sender = (req: LLMRequest, reasoningOff: boolean) => Promise<LLMResponse>;
 
-const MAX_SUBSTITUTE_ATTEMPTS = 6;
+const MAX_SUBSTITUTE_ATTEMPTS = 12;
 const needsReasoningOff = new Set<string>();
 const toolSubstitutes = new Map<string, string>();
+const toolIncapable = new Set<string>();
 
 function isToolRejection(err: unknown): err is LLMError {
   return err instanceof LLMError && err.status === 400 && /\b(tool|tools|function)\b/i.test(err.message);
@@ -301,8 +302,18 @@ async function sendOnModel(send: Sender, req: LLMRequest, model: string): Promis
     return await send(attempt, false);
   } catch (err) {
     if (!isToolRejection(err) || !wantsReasoningOff(err)) throw err;
+  }
+  try {
+    const res = await send(attempt, true);
     needsReasoningOff.add(model);
-    return send(attempt, true);
+    return res;
+  } catch (err) {
+    // The model needs reasoning but rejects tools with it, so it can't serve tool requests here.
+    if (err instanceof LLMError && err.status === 400) {
+      toolIncapable.add(model);
+      throw new LLMError(`${model} does not support function tools in chat completions.`, 400, 'openai');
+    }
+    throw err;
   }
 }
 
@@ -315,16 +326,20 @@ async function withToolRecovery(send: Sender, req: LLMRequest): Promise<LLMRespo
     catch (err) { if (!isModelUnusable(err)) throw err; toolSubstitutes.delete(req.model); }
   }
 
-  let original: unknown;
-  try {
-    return await sendOnModel(send, req, req.model);
-  } catch (err) {
-    if (!isToolRejection(err)) throw err;
-    original = err;
+  let original: unknown = new LLMError(`${req.model} does not support function tools in chat completions.`, 400, 'openai');
+  if (!toolIncapable.has(req.model)) {
+    try {
+      return await sendOnModel(send, req, req.model);
+    } catch (err) {
+      if (!isToolRejection(err)) throw err;
+      original = err;
+    }
   }
 
   const catalog = await fetchOpenAIModelCatalog(req.apiKey);
-  const candidates = catalog.chatModels.filter((m) => m !== req.model).slice(0, MAX_SUBSTITUTE_ATTEMPTS);
+  const candidates = catalog.chatModels
+    .filter((m) => m !== req.model && !toolIncapable.has(m))
+    .slice(0, MAX_SUBSTITUTE_ATTEMPTS);
   for (const candidate of candidates) {
     if (req.signal?.aborted) break;
     try {
