@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { isInIframe, attemptAutoLogin } from '../utils/auto-login';
 import type { ProviderCredential } from '../types/credentials';
-import { supabase, setSupabaseUsername } from '../lib/supabaseClient';
+import { supabase, setSupabaseUsername, setSupabaseSession } from '../lib/supabaseClient';
 
 export type AuthStage = 'loading' | 'login' | 'ready';
 
@@ -99,6 +99,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
       }
       setUsername(session.username);
       setSupabaseUsername(session.username);
+      setSupabaseSession(token);
       setIsAdmin(session.is_admin);
       await fetchSecretsAndReady(token);
     }
@@ -127,6 +128,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
       localStorage.setItem(LS_SESSION, session.token);
       setUsername(trimUser);
       setSupabaseUsername(trimUser);
+      setSupabaseSession(session.token);
       setIsAdmin(session.is_admin);
       await fetchSecretsAndReady(session.token);
       return {};
@@ -147,6 +149,7 @@ export function CredentialsProvider({ children }: { children: React.ReactNode })
     setProviders([]);
     setUsername('');
     setSupabaseUsername('');
+    setSupabaseSession('');
     setIsAdmin(false);
     setAuthStage('login');
   }, []);
