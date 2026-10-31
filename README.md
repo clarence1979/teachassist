@@ -1,3 +1,88 @@
-# teachassist
+# Teach Assist — standalone edition
 
-[![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-pfcpczuu)
+One HTML file. Bring your own Claude and/or OpenAI key. Same machinery the web interfaces use, so the answers — and the Word/PowerPoint/Excel/PDF files — come out the same.
+
+## Files
+
+| File | What it is |
+|---|---|
+| `teach-assist.html` | The whole app. Open it in Chrome/Edge/Firefox, or host it anywhere static (GitHub Pages, Netlify). |
+| `anthropic-files-relay.js` | 60-line Cloudflare Worker. Needed for Claude to *return* generated documents and to *receive* your Word/Excel attachments (see "Why a relay?"). OpenAI needs nothing extra. |
+
+## Setup (5 minutes)
+
+1. Open `teach-assist.html` → **Settings** → paste your Anthropic and/or OpenAI key → **Test**. Keys live only in that browser's localStorage and go straight to the provider.
+2. **Claude users — deploy the relay once:** Cloudflare dashboard → Workers & Pages → Create → "Hello World" → replace the code with `anthropic-files-relay.js` → Deploy → copy the `https://….workers.dev` URL into Settings → "Claude files relay URL" → **Test**. (Optional: set the `ALLOWED_ORIGIN` variable to the origin you open the app from, e.g. `https://you.github.io`, or `null` for `file://`.)
+3. Pick a model (the live list from your key; defaults to `claude-fable-5-1` / `gpt-6-astra`), an effort level, and go.
+
+Everything is stored in the browser's IndexedDB (conversations, attachments, generated files). Export/import from Settings covers the conversations and text (not the binary files — download those from their cards).
+
+## What was wrong with the Bolt project
+
+The output was inferior to claude.ai / ChatGPT for structural reasons, not prompt-wording ones:
+
+1. **Document generation threw away the conversation.** When you asked for a document, the chat model only emitted `{topic, yearLevel, type, length}`. A *second*, hard-coded model (`gpt-4o` if you had an OpenAI key, else `claude-sonnet-5` — never the model you picked) then wrote the content from a bare template prompt. It never saw your uploaded files, your instructions, or anything said earlier in the chat.
+2. **The prompt ordered thin output.** The JSON schema prompt said "keep paragraph strings tight (2–4 sentences)", "no markdown", "under 200 words" for some types; `max_tokens` was 4,000 for a whole document, `temperature 0.4`, then a hand-rolled pdf-lib/docx renderer with fixed sections. A 30-second tool timeout killed anything longer.
+3. **Reasoning was crippled.** For OpenAI it sent `reasoning_effort: 'none'` whenever tools were present, and if the chosen model rejected tools it silently substituted *another model from the catalog*. For Claude, tool results were faked as plain text in a user message ("Continue — use these tool results…") instead of real `tool_result` blocks, so thinking continuity across tool rounds was lost; `MAX_TOOL_ROUNDS = 4`.
+4. **Wrong API surface.** It used Chat Completions. The web interfaces produce documents by writing them *in a code sandbox* (claude.ai: code execution + the docx/pptx/xlsx/pdf Skills; ChatGPT: code interpreter), with web search, native file inputs and persisted reasoning — none of which Chat Completions offers.
+5. **Uploads were flattened.** PDFs → pdf.js text only (tables, diagrams, scanned pages lost); DOCX → raw text (headings/tables lost); XLSX/CSV/PPTX unsupported; everything capped at 120k characters. Both web UIs send PDFs natively (text + page images) and let the model open spreadsheets with code.
+6. **A regex "pre-flight clarifier"** intercepted any message containing *notes*, *test*, *lesson*, *quiz*, *handout*… and made a separate temperature-0 call that asked you a question instead of answering.
+7. **System prompt noise.** Fifty lines of MANDATORY/NEVER/CRITICAL and date tables push the model toward tool calls and defensive behaviour rather than good work.
+
+## What this edition does instead
+
+| | Claude (Anthropic) | OpenAI |
+|---|---|---|
+| API | Messages API, streaming | **Responses API**, streaming, `previous_response_id` chaining (reasoning + sandbox state persist like ChatGPT) |
+| Reasoning | Adaptive thinking (`display: summarized`), `output_config.effort` low→max. Thinking/signature blocks replayed verbatim. The request prefix is kept byte-identical (current Claude models bind thinking to it): `system` and `tools` are frozen per conversation, user turns are frozen as sent, and later changes (date rollover, profile edits, relay set-up) go in as mid-conversation `role: "system"` notes. Partial/errored turns are pruned before replay | `reasoning.effort` low→max with summaries; never `none` |
+| Web | `web_search` + `web_fetch` server tools (current versions, AU location from your timezone), citations → Sources list | `web_search` tool with `user_location`, `url_citation` → Sources |
+| Documents | **Code execution sandbox + Anthropic's docx/pptx/xlsx/pdf Skills** (the same Skills claude.ai uses). Files copied to `$OUTPUT_DIR` come back as `file_id`s → download cards via the relay | **code_interpreter** container; files cited (`container_file_citation`) *and* discovered by listing the container → download cards; `sandbox:/mnt/data/…` links become download links |
+| Uploads | PDF → native `document` block (vision + text); images native; CSV/TXT/MD → `text/plain` document; DOCX/XLSX/PPTX → uploaded to the sandbox (`container_upload`) via the relay *plus* a client-side text extract (mammoth / SheetJS) so the model can read them without code | PDF/DOCX/XLSX/CSV/TXT → Files API → `input_file` (native parsing) *and* into the code-interpreter container |
+| Images | `generate_image` tool backed by your OpenAI key (gpt-image-2 / 2.5) | built-in `image_generation` tool |
+| Long turns | `pause_turn` continuation, container reuse across turns (30-day sandbox) | container auto-reuse within the response chain |
+| Robustness | Self-heals 400s: lowers `max_tokens` to the model max, drops unsupported `display`/`effort`, falls back to legacy tool versions, strips invalidated thinking blocks | Steps effort down (max→xhigh→high…), drops `summary`/`include`, falls back from an expired `previous_response_id` to full history |
+| Prompt | Short, calm system prompt: answer-first, complete classroom-ready resources, accuracy over speed, build real files, read SKILL.md first, summarise after | same, adapted to the python tool and `/mnt/data` |
+
+Thinking cards, tool cards (query / code / output), file cards, usage line (in/out/reasoning tokens, searches), edit-and-resend, regenerate, stop, per-conversation Web/Code toggles (changing them mid-chat resets Claude's saved reasoning for that chat — by design of the API), light/dark, mobile layout.
+
+Independently reviewed against the fetched API docs after building; the review's blockers (a private field leaking into requests, un-finalised blocks replayed after a Stop/error, mis-ordered self-heal branches) and should-fixes (prefix stability, container reuse, input_file limits, image re-encoding, truncated inline transfers, oversize PDFs) are fixed and covered by the test suite (68 checks).
+
+## Why a relay for Claude?
+
+`api.anthropic.com` allows browser calls to `/v1/messages` (with `anthropic-dangerous-direct-browser-access: true`) but answers every browser-origin request to `/v1/files/*` with `400 Disallowed CORS origin` — verified live on 31 Oct 2026. The Files API is the only way to download what the Skills produce and to put non-PDF files into the sandbox. The Worker forwards *only* `/v1/files/*` with the `x-api-key` the browser already sends; it holds no key and stores nothing.
+
+Without the relay the app still works: Claude is told to print each finished file as base64 in the command output, the browser decodes it into a download, and the base64 is scrubbed from the stored history. That path is capped at ~160 KB per file (the base64 sits in the model's context once, ~60k tokens at the cap), so decks with images need the relay. OpenAI's endpoints are CORS-open, so OpenAI needs no relay.
+
+## Cost notes
+
+Tokens are billed by the provider as usual; the usage line under each reply shows input/output/reasoning tokens and searches. Web search is about US$10 per 1,000 searches on both providers. Claude's sandbox is free when a web tool is in the request (it is, when Web search is on) and otherwise has 1,550 free hours/month; OpenAI's container is ~US$0.03 per session. A document-building turn at high effort typically runs 50–150k tokens.
+
+## Not carried over
+
+The Bolt project's Supabase login/sync, timetable, to-do, library and Studio pages are not in the standalone file (they needed a backend and were not part of the quality problem). The Studio generators are superseded: ask for the document in chat and the model builds it with the real document toolchain.
+
+## Development
+
+```
+node build.mjs          # inlines app.js into teach-assist.html → dist/teach-assist.html
+node test/e2e.mjs       # headless Chromium, mocked Anthropic/OpenAI/relay endpoints, 60+ checks
+```
+
+## Running from the main program
+
+When Teach Assist is opened from the main program, it fills the API key fields itself:
+
+1. **Same origin** (the HTML is served from the main program's site): it reads `localStorage.api_cache` (`CLAUDE_API_KEY`, `OPENAI_API_KEY`, `username`), then the individual keys `CLAUDE_API_KEY` / `OPENAI_API_KEY` / `openai_api_key`, then a same-origin parent's `apiCache.get(...)`.
+2. **Inside the main program's frame** (any origin): it posts `{type: 'REQUEST_API_VALUES'}` to the parent and accepts `{type: 'API_VALUES_RESPONSE', data: {...}}` (also the older `PEDAGOGY_CREDENTIALS` message). Replies are accepted **only from the parent frame**; set *Settings → Trusted main-program origin* to also pin the parent's origin.
+
+A key you type in Settings is never overwritten; keys that came from the main program refresh when the main program supplies new ones. *Settings → Reload keys from main program* hands control back to the main program.
+
+**Tighten the main program side too:** it currently replies with `postMessage(..., '*')`, so any page loaded in a program's frame can request and receive the keys. In the main program, check `event.origin` against an allow-list before answering `REQUEST_API_VALUES`, and reply with that origin as the target instead of `'*'`.
+
+## Chat history file
+
+*Settings → Chat history → Save chat history* (on by default):
+
+- **On:** chats stay in the sidebar, and every completed exchange (prompt, reply, attachment and file names, sources, model, token usage, timestamp) is appended to `teach-assist-chat-history.json` in the browser's Cache Storage. Where Cache Storage isn't available (HTML opened from disk), it's kept in IndexedDB instead.
+- **Off:** new chats last only for the current session and nothing is written to the file.
+- **Export history** downloads the JSON; **Import history** merges a JSON back in and rebuilds any chats missing from the sidebar (text only — attachments and generated files are not stored in the history file); **Clear history file** empties it without touching the sidebar; **Delete all chats** clears the sidebar but keeps the file.
