@@ -1,0 +1,2797 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Teach Assist</title>
+<meta name="description" content="Standalone AI teaching assistant — bring your own Claude or OpenAI API key. Native file uploads, web search, and real document generation.">
+<meta name="color-scheme" content="dark light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.21/katex.min.css">
+<link rel="stylesheet" id="hljsDark" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+<link rel="stylesheet" id="hljsLight" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" disabled>
+<style>
+/* ───────────────────────── Theme tokens ───────────────────────── */
+:root {
+  --bg: #0b1220;
+  --bg-panel: #0f172a;
+  --bg-elev: #152036;
+  --bg-hover: #1b2740;
+  --border: #243249;
+  --border-strong: #324361;
+  --text: #e6edf7;
+  --text-2: #b4c0d3;
+  --text-dim: #8392ab;
+  --accent: #22d3ee;
+  --accent-ink: #05212b;
+  --accent-soft: rgba(34, 211, 238, 0.12);
+  --amber: #fbbf24;
+  --red: #f87171;
+  --green: #34d399;
+  --user-bubble: #16213a;
+  --code-bg: #0d1526;
+  --shadow: 0 10px 30px rgba(0,0,0,0.35);
+  --radius: 12px;
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs: 15px;
+}
+:root[data-theme="light"] {
+  --bg: #f4f6fa;
+  --bg-panel: #ffffff;
+  --bg-elev: #f1f4f9;
+  --bg-hover: #e8edf5;
+  --border: #d9e0ea;
+  --border-strong: #c3cddd;
+  --text: #0f172a;
+  --text-2: #334155;
+  --text-dim: #64748b;
+  --accent: #0891b2;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(8, 145, 178, 0.10);
+  --user-bubble: #e9f0fa;
+  --code-bg: #f6f8fb;
+  --shadow: 0 10px 30px rgba(15,23,42,0.10);
+}
+:root[data-theme="light"] .hljs { background: var(--code-bg); color: #24292e; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+button, select, textarea, input { font-family: inherit; font-size: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent); }
+::selection { background: var(--accent-soft); }
+.hidden { display: none !important; }
+
+/* ───────────────────────── Layout ───────────────────────── */
+#app { display: flex; height: 100dvh; width: 100%; overflow: hidden; }
+
+#sidebar {
+  width: 280px; flex: 0 0 280px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: margin-left .2s ease;
+}
+#sidebar.collapsed { margin-left: -280px; }
+.sb-head { padding: 14px 12px 8px; display: flex; gap: 8px; align-items: center; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: .2px; flex: 1; padding-left: 4px; }
+.brand .logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #6366f1); display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--bg-elev); color: var(--text);
+  border-radius: 10px; padding: 8px 12px; font-weight: 500; line-height: 1;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn.ghost:hover { background: var(--bg-hover); color: var(--text); }
+.btn.icon { padding: 7px; width: 34px; height: 34px; }
+.btn.sm { padding: 5px 9px; font-size: 13px; border-radius: 8px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.danger { color: var(--red); }
+.btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+
+#convList { flex: 1; overflow-y: auto; padding: 4px 8px 8px; }
+.conv-group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); padding: 12px 8px 4px; }
+.conv-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-radius: 9px; cursor: pointer;
+  color: var(--text-2); font-size: 14px;
+}
+.conv-item:hover { background: var(--bg-hover); color: var(--text); }
+.conv-item.active { background: var(--bg-elev); color: var(--text); }
+.conv-item .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.conv-item .busy-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s infinite; }
+.conv-item .x { opacity: 0; border: 0; background: transparent; color: var(--text-dim); padding: 2px 4px; border-radius: 6px; }
+.conv-item:hover .x { opacity: 1; }
+.conv-item .x:hover { color: var(--red); background: rgba(248,113,113,.12); }
+.sb-foot { padding: 10px 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; }
+.sb-foot .who { flex: 1; font-size: 12px; color: var(--text-dim); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+#main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+#topbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(8px);
+  flex: 0 0 auto;
+}
+#convTitle { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 15px; }
+.sel {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238392ab' stroke-width='2.5'><path d='m6 9 6 6 6-6'/></svg>") no-repeat right 9px center;
+  border: 1px solid var(--border); border-radius: 9px; padding: 7px 28px 7px 10px;
+  font-size: 13px; color: var(--text); max-width: 240px; text-overflow: ellipsis;
+}
+.sel:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+#messages { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+.msgs-inner { max-width: 820px; margin: 0 auto; padding: 24px 20px 12px; }
+.empty {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 10px; padding: 24px; color: var(--text-dim);
+}
+.empty h1 { font-size: 24px; margin: 8px 0 0; color: var(--text); font-weight: 700; }
+.empty p { max-width: 520px; margin: 0; }
+.empty .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; max-width: 680px; }
+.chip { border: 1px solid var(--border); background: var(--bg-panel); border-radius: 999px; padding: 7px 13px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.chip:hover { border-color: var(--accent); color: var(--text); }
+
+/* ───────────────────────── Messages ───────────────────────── */
+.msg { display: flex; flex-direction: column; gap: 6px; margin-bottom: 26px; position: relative; }
+.msg.user { align-items: flex-end; }
+.msg.user .bubble {
+  background: var(--user-bubble); border: 1px solid var(--border);
+  border-radius: 16px 16px 4px 16px; padding: 11px 15px; max-width: 85%;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.msg .attach-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.msg.assistant .attach-row { justify-content: flex-start; }
+.att-pill {
+  display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border);
+  background: var(--bg-panel); border-radius: 10px; padding: 6px 10px; font-size: 13px; max-width: 320px;
+}
+.att-pill .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.att-pill .meta { color: var(--text-dim); font-size: 11.5px; }
+.att-pill img.thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
+.att-pill .ic { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; flex: 0 0 auto; letter-spacing: .02em; }
+.ic.pdf { background: #dc2626; } .ic.doc { background: #2563eb; } .ic.xls { background: #16a34a; } .ic.ppt { background: #ea580c; }
+.ic.img { background: #7c3aed; } .ic.txt { background: #475569; } .ic.zip { background: #a16207; } .ic.code { background: #0e7490; } .ic.csv { background: #15803d; } .ic.md { background: #334155; } .ic.html { background: #c2410c; } .ic.json { background: #6d28d9; }
+
+.msg.assistant .avatar {
+  width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #6366f1);
+  display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 12px; flex: 0 0 auto;
+}
+.msg.assistant .head { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 12px; }
+.msg.assistant .head .model { font-family: var(--mono); font-size: 11px; }
+.msg .body { min-width: 0; }
+.msg .actions { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.msg:hover .actions, .msg.user:hover .actions { opacity: 1; }
+.msg.user .actions { justify-content: flex-end; }
+.msg .actions .btn { color: var(--text-dim); }
+.msg .usage { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+.msg .err { border: 1px solid rgba(248,113,113,.5); background: rgba(248,113,113,.08); color: var(--red); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; white-space: pre-wrap; }
+.msg .err .btn { margin-top: 8px; }
+.cursor { display: inline-block; width: 8px; height: 1em; background: var(--accent); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(1) infinite; border-radius: 2px; }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+.thinking-dots { color: var(--text-dim); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.thinking-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); display: inline-block; animation: pulse 1.2s infinite; }
+.thinking-dots i:nth-child(2) { animation-delay: .2s; } .thinking-dots i:nth-child(3) { animation-delay: .4s; }
+
+/* Markdown prose */
+.prose { word-wrap: break-word; overflow-wrap: anywhere; }
+.prose > :first-child { margin-top: 0; }
+.prose > :last-child { margin-bottom: 0; }
+.prose p { margin: 0.6em 0; }
+.prose h1, .prose h2, .prose h3, .prose h4 { margin: 1.2em 0 .5em; line-height: 1.3; font-weight: 650; }
+.prose h1 { font-size: 1.45em; } .prose h2 { font-size: 1.25em; } .prose h3 { font-size: 1.1em; } .prose h4 { font-size: 1em; }
+.prose ul, .prose ol { padding-left: 1.5em; margin: .5em 0; }
+.prose li { margin: .25em 0; }
+.prose li > p { margin: .2em 0; }
+.prose blockquote { margin: .8em 0; padding: .3em 1em; border-left: 3px solid var(--border-strong); color: var(--text-2); }
+.prose hr { border: 0; border-top: 1px solid var(--border); margin: 1.2em 0; }
+.prose table { border-collapse: collapse; margin: .8em 0; display: block; overflow-x: auto; max-width: 100%; font-size: .94em; }
+.prose th, .prose td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+.prose th { background: var(--bg-elev); font-weight: 600; }
+.prose img { max-width: 100%; border-radius: 8px; }
+.prose code { font-family: var(--mono); font-size: .88em; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 5px; padding: .1em .35em; }
+.prose pre { margin: 0; }
+.prose pre code { background: transparent; border: 0; padding: 0; font-size: 12.8px; line-height: 1.5; display: block; }
+.codeblock { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: .8em 0; background: var(--code-bg); }
+.codeblock .cb-head { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px 5px 12px; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); background: var(--bg-elev); border-bottom: 1px solid var(--border); }
+.codeblock .cb-head button { border: 0; background: transparent; color: var(--text-dim); font-size: 12px; padding: 2px 6px; border-radius: 5px; }
+.codeblock .cb-head button:hover { color: var(--text); background: var(--bg-hover); }
+.codeblock pre { padding: 12px 14px; overflow-x: auto; }
+.prose .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.sources { margin-top: 10px; font-size: 12.5px; color: var(--text-dim); }
+.sources ol { margin: 4px 0 0; padding-left: 1.4em; }
+.sources a { color: var(--text-2); text-decoration: none; }
+.sources a:hover { color: var(--accent); text-decoration: underline; }
+
+/* Thinking + tool cards */
+.card {
+  border: 1px solid var(--border); background: var(--bg-panel); border-radius: 10px;
+  margin: 8px 0; overflow: hidden; font-size: 13px;
+}
+.card > summary, .card .card-head {
+  list-style: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; color: var(--text-2); user-select: none;
+}
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary .chev { margin-left: auto; transition: transform .15s; color: var(--text-dim); }
+.card[open] > summary .chev { transform: rotate(180deg); }
+.card .card-body { padding: 4px 12px 12px; color: var(--text-2); border-top: 1px solid var(--border); }
+.card .card-body pre { margin: 6px 0; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 320px; overflow: auto; }
+.card .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin-top: 8px; }
+.card .status { font-size: 11px; color: var(--text-dim); margin-left: 6px; }
+.card .status.ok { color: var(--green); } .card .status.err { color: var(--red); }
+.card .ic-sm { width: 16px; height: 16px; flex: 0 0 auto; color: var(--accent); display: inline-flex; }
+.card .ic-sm svg, .card .chev svg { width: 15px; height: 15px; display: block; }
+.card .chev { display: inline-flex; }
+.card .status svg { width: 12px; height: 12px; display: block; }
+.card.thinking > summary { color: var(--text-dim); font-style: italic; }
+.card.thinking .card-body { font-size: 13px; color: var(--text-dim); white-space: pre-wrap; line-height: 1.5; max-height: 360px; overflow: auto; }
+.card .q { color: var(--text); }
+.card .results li { margin: 3px 0; }
+.card .results a { color: var(--text-2); }
+
+/* File cards */
+.files { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 10px 0 4px; }
+.file-card {
+  border: 1px solid var(--border); background: var(--bg-panel); border-radius: 12px; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+}
+.file-card .ic { width: 38px; height: 38px; border-radius: 9px; font-size: 11px; }
+.file-card .info { flex: 1; min-width: 0; }
+.file-card .nm { font-weight: 600; font-size: 13.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.file-card .meta { font-size: 11.5px; color: var(--text-dim); }
+.file-card .dl { border: 1px solid var(--border); background: var(--bg-elev); border-radius: 8px; width: 34px; height: 34px; display: grid; place-items: center; color: var(--text-2); flex: 0 0 auto; }
+.file-card .dl:hover { border-color: var(--accent); color: var(--accent); }
+.file-card .dl svg { width: 16px; height: 16px; }
+.file-card.pending .dl { opacity: .5; pointer-events: none; }
+.gen-img { max-width: 100%; max-height: 560px; border-radius: 10px 10px 0 0; border: 1px solid var(--border); border-bottom: 0; display: block; background: #fff; min-width: 120px; min-height: 40px; object-fit: contain; }
+.gen-img-wrap { display: inline-flex; flex-direction: column; max-width: 100%; margin: 10px 0 4px; }
+.gen-img-wrap .cap { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 0 0 10px 10px; padding: 6px 8px 6px 12px; background: var(--bg-panel); font-size: 12.5px; }
+.gen-img-wrap .cap .nm { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-2); }
+.gen-img-wrap .cap .meta { color: var(--text-dim); font-size: 11.5px; }
+.gen-img-wrap .dl { border: 1px solid var(--border); background: var(--bg-elev); border-radius: 8px; width: 30px; height: 30px; display: grid; place-items: center; color: var(--text-2); flex: 0 0 auto; }
+.gen-img-wrap .dl:hover { border-color: var(--accent); color: var(--accent); }
+.gen-img-wrap .dl svg { width: 14px; height: 14px; }
+.no-anim, .no-anim * { transition: none !important; }
+
+/* ───────────────────────── Composer ───────────────────────── */
+#composerWrap { flex: 0 0 auto; padding: 8px 16px 14px; }
+#composerBox {
+  max-width: 820px; margin: 0 auto; border: 1px solid var(--border-strong); background: var(--bg-panel);
+  border-radius: 18px; padding: 8px 10px 8px; box-shadow: var(--shadow);
+  transition: border-color .15s, box-shadow .15s;
+}
+#composerBox:focus-within { border-color: var(--accent); }
+#composerBox.drag { border-color: var(--accent); background: var(--accent-soft); }
+#attachBar { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 4px 8px; }
+#attachBar:empty { display: none; }
+.pending-att { position: relative; }
+.pending-att .rm { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--text-dim); color: var(--bg); font-size: 11px; line-height: 1; display: grid; place-items: center; }
+.pending-att .rm:hover { background: var(--red); color: #fff; }
+.pending-att.parsing { opacity: .6; }
+#inputRow { display: flex; align-items: flex-end; gap: 6px; }
+#input {
+  flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text);
+  padding: 8px 6px; max-height: 40vh; min-height: 24px; line-height: 1.5; font-size: 15px;
+}
+#input::placeholder { color: var(--text-dim); }
+#composerFoot { display: flex; align-items: center; gap: 6px; padding: 6px 4px 0; flex-wrap: wrap; }
+#composerFoot .hint { margin-left: auto; font-size: 11.5px; color: var(--text-dim); }
+.toggle {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; color: var(--text-dim); background: transparent; line-height: 1.2;
+}
+.toggle svg { width: 13px; height: 13px; }
+.toggle.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.toggle:hover { border-color: var(--border-strong); }
+#sendBtn { width: 36px; height: 36px; border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; flex: 0 0 auto; }
+#sendBtn:disabled { background: var(--bg-elev); color: var(--text-dim); }
+#stopBtn { width: 36px; height: 36px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--bg-elev); color: var(--text); display: grid; place-items: center; flex: 0 0 auto; }
+#stopBtn:hover { border-color: var(--red); color: var(--red); }
+#sendBtn svg, #stopBtn svg { width: 16px; height: 16px; }
+.banner { max-width: 820px; margin: 0 auto 8px; border-radius: 10px; padding: 8px 12px; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+.banner.warn { border: 1px solid rgba(251,191,36,.5); background: rgba(251,191,36,.08); color: var(--amber); }
+.banner.err { border: 1px solid rgba(248,113,113,.5); background: rgba(248,113,113,.08); color: var(--red); }
+.banner .x { margin-left: auto; border: 0; background: transparent; color: inherit; opacity: .7; }
+.banner a { color: inherit; }
+
+/* ───────────────────────── Modal ───────────────────────── */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; backdrop-filter: blur(3px); }
+.modal { width: min(760px, 100%); max-height: 92vh; overflow: auto; background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: 16px; box-shadow: var(--shadow); }
+.modal .m-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-panel); z-index: 1; }
+.modal .m-head h2 { margin: 0; font-size: 17px; flex: 1; }
+.modal .m-body { padding: 10px 20px 20px; }
+.field { margin: 14px 0; }
+.field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-2); }
+.field .help { font-size: 12px; color: var(--text-dim); margin-top: 5px; line-height: 1.45; }
+.field input[type=text], .field input[type=password], .field input[type=number], .field textarea, .field select {
+  width: 100%; border: 1px solid var(--border); background: var(--bg-elev); border-radius: 9px; padding: 9px 11px; color: var(--text); font-size: 14px;
+}
+.field textarea { min-height: 90px; resize: vertical; line-height: 1.45; }
+.field input:focus, .field textarea:focus, .field select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; min-width: 0; }
+.key-row { display: flex; gap: 8px; align-items: center; }
+.key-row input { flex: 1; }
+.key-status { font-size: 12px; margin-top: 5px; min-height: 1.2em; }
+.key-status.ok { color: var(--green); } .key-status.err { color: var(--red); } .key-status.wait { color: var(--text-dim); }
+.m-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.m-section h3 { margin: 0 0 4px; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); font-weight: 600; }
+.check { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 14px; cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.check .help { font-size: 12px; color: var(--text-dim); display: block; }
+.kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; color: var(--text-2); }
+
+/* Mobile */
+@media (max-width: 860px) {
+  #sidebar { position: absolute; z-index: 30; height: 100%; box-shadow: var(--shadow); }
+  #sidebar.collapsed { margin-left: -280px; box-shadow: none; }
+  .msgs-inner { padding: 16px 12px 8px; }
+  .msg.user .bubble { max-width: 94%; }
+  #composerWrap { padding: 6px 8px 10px; }
+  .sel { max-width: 130px; font-size: 12px; padding: 6px 22px 6px 8px; background-position: right 6px center; }
+  #topbar { gap: 6px; padding: 8px 10px; }
+  #convTitle { display: none; }
+  .msg .actions { opacity: 1; }
+}
+#scrim { position: absolute; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: none; }
+@media (max-width: 860px) { #scrim.show { display: block; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar" class="no-anim">
+    <div class="sb-head">
+      <div class="brand"><span class="logo">T</span><span>Teach Assist</span></div>
+      <button class="btn icon ghost" id="newChatBtn" title="New chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
+    </div>
+    <div id="convList"></div>
+    <div class="sb-foot">
+      <div class="who" id="whoLabel">Not configured</div>
+      <button class="btn sm" id="settingsBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="scrim"></div>
+    <header id="topbar">
+      <button class="btn icon ghost" id="sbToggle" title="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div id="convTitle">New chat</div>
+      <select class="sel" id="providerSel" title="Provider">
+        <option value="anthropic">Claude</option>
+        <option value="openai">OpenAI</option>
+      </select>
+      <select class="sel" id="modelSel" title="Model"></select>
+      <select class="sel" id="effortSel" title="Reasoning effort">
+        <option value="low">Effort: low</option>
+        <option value="medium">Effort: medium</option>
+        <option value="high">Effort: high</option>
+        <option value="max">Effort: max</option>
+      </select>
+    </header>
+
+    <div id="messages"><div class="msgs-inner" id="msgsInner"></div></div>
+
+    <div id="composerWrap">
+      <div id="bannerHost"></div>
+      <div id="composerBox">
+        <div id="attachBar"></div>
+        <div id="inputRow">
+          <button class="btn icon ghost" id="attachBtn" title="Attach files (PDF, Word, Excel, CSV, images, code…)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <textarea id="input" rows="1" placeholder="Message Teach Assist…" title="Enter to send · Shift+Enter for a new line · paste or drop files to attach"></textarea>
+          <button id="stopBtn" class="hidden" title="Stop generating">
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+          <button id="sendBtn" title="Send" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+          </button>
+        </div>
+        <div id="composerFoot">
+          <button class="toggle on" id="tglWeb" title="Allow the model to search and read the web">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            Web search
+          </button>
+          <button class="toggle on" id="tglCode" title="Allow the model to run code and create downloadable files (DOCX, PPTX, XLSX, PDF, charts)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg>
+            Code &amp; files
+          </button>
+          <span class="hint" id="hintLabel"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<input type="file" id="fileInput" multiple hidden>
+<div id="modalHost"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.7/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.4/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.21/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.21/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════════════
+   Teach Assist — standalone single-file edition
+   Bring-your-own-key chat client for Claude (Anthropic) and OpenAI that uses
+   the same server-side machinery the web interfaces use:
+     • native PDF / image inputs; Files API uploads for everything else
+     • web search (+ web fetch) server tools
+     • code execution sandboxes that produce REAL downloadable files
+       (Anthropic: code execution + docx/pptx/xlsx/pdf Skills;
+        OpenAI: Responses API code interpreter containers)
+     • full reasoning ("thinking") preserved across tool rounds
+   Everything is stored locally in IndexedDB. Keys live in localStorage.
+   API details verified against platform.claude.com and developers.openai.com
+   docs on 2026-10-31.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────── API spec ───────────────────────────── */
+const SPEC = {
+  anthropic: {
+    base: 'https://api.anthropic.com',
+    version: '2023-06-01',
+    // Code execution, Skills, Files, web search and web fetch are GA — no beta headers.
+    tools: {
+      webSearch: { type: 'web_search_20260318', name: 'web_search', max_uses: 12 },
+      webFetch: { type: 'web_fetch_20260318', name: 'web_fetch', max_uses: 12, citations: { enabled: true }, max_content_tokens: 100000 },
+      codeExec: { type: 'code_execution_20260521', name: 'code_execution' },
+    },
+    // Fallback (older) tool versions if the account/model rejects the newer ones.
+    legacyTools: {
+      webSearch: { type: 'web_search_20250305', name: 'web_search', max_uses: 12 },
+      webFetch: { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 12, citations: { enabled: true }, max_content_tokens: 100000 },
+      codeExec: { type: 'code_execution_20250825', name: 'code_execution' },
+    },
+    skills: ['docx', 'pptx', 'xlsx', 'pdf'].map((id) => ({ type: 'anthropic', skill_id: id, version: 'latest' })),
+    maxTokensDefault: 64000,
+    pdfMaxBytes: 32 * 1024 * 1024,
+    inlineFileMaxKB: 160, // no-relay fallback: files are base64'd through stdout (costs tokens once)
+    preferredModels: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5'],
+    fallbackModels: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
+  },
+  openai: {
+    base: 'https://api.openai.com',
+    maxTokensDefault: 64000,
+    dataDir: '/mnt/data',
+    preferredModels: ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-5.6-sol', 'gpt-5.5', 'gpt-6-sol', 'gpt-5.4'],
+    fallbackModels: ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+    imageModels: ['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'],
+    inputFileMaxBytes: 50 * 1024 * 1024, // per file and combined per request
+    // File types the Responses API parses natively as input_file; anything else goes to the container only.
+    inputFileExt: new Set(['pdf', 'xlsx', 'xls', 'csv', 'tsv', 'iif', 'doc', 'docx', 'dot', 'odt', 'rtf', 'ppt', 'pptx', 'txt', 'md', 'json', 'html', 'htm', 'xml', 'py', 'js', 'ts', 'sql', 'css', 'java', 'c', 'cpp', 'cs', 'go', 'rb', 'php', 'sh', 'yaml', 'yml']),
+  },
+  imageTypes: new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+  imageMaxBytes: 4.5 * 1024 * 1024,
+  imageMaxDim: 2000,
+  textExtractCap: 90000,
+  attachmentMaxBytes: 100 * 1024 * 1024,
+};
+const EFFORTS = [['low', 'Effort: low'], ['medium', 'Effort: medium'], ['high', 'Effort: high'], ['xhigh', 'Effort: extra high'], ['max', 'Effort: max']];
+const FILE_MARK_BEGIN = /-----BEGIN FILE (.+?) (\d+)-----\s*([A-Za-z0-9+/=\s]*?)\s*-----END FILE-----/g;
+
+/* ───────────────────────────── Utilities ───────────────────────────── */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const uid = (p = 'id') => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtBytes(n) {
+  if (!Number.isFinite(n)) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+function fmtTokens(n) { return n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n); }
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') node.className = v;
+    else if (k === 'html') node.innerHTML = v;
+    else if (k === 'text') node.textContent = v;
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+    else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+    else node.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return node;
+}
+function svgIcon(name) {
+  const paths = {
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    refresh: '<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    code: '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+    terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+    file: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/>',
+    brain: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>',
+    chev: '<path d="m6 9 6 6 6-6"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
+}
+function iconClassFor(name = '', mime = '') {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (mime.startsWith('image/')) return ['img', 'IMG'];
+  if (ext === 'pdf' || mime === 'application/pdf') return ['pdf', 'PDF'];
+  if (['doc', 'docx', 'odt', 'rtf'].includes(ext)) return ['doc', 'DOC'];
+  if (['xls', 'xlsx', 'xlsm', 'ods'].includes(ext)) return ['xls', 'XLS'];
+  if (ext === 'csv' || ext === 'tsv') return ['csv', 'CSV'];
+  if (['ppt', 'pptx', 'odp'].includes(ext)) return ['ppt', 'PPT'];
+  if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return ['zip', 'ZIP'];
+  if (['md', 'markdown'].includes(ext)) return ['md', 'MD'];
+  if (['html', 'htm'].includes(ext)) return ['html', 'HTML'];
+  if (ext === 'json') return ['json', 'JSON'];
+  if (['py', 'js', 'ts', 'tsx', 'jsx', 'java', 'c', 'cpp', 'cs', 'go', 'rs', 'rb', 'php', 'sh', 'sql', 'kt', 'swift', 'css', 'xml', 'yaml', 'yml', 'ipynb'].includes(ext)) return ['code', ext.toUpperCase().slice(0, 4)];
+  return ['txt', ext ? ext.toUpperCase().slice(0, 4) : 'FILE'];
+}
+function guessMime(name = '') {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const map = {
+    pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    doc: 'application/msword', xls: 'application/vnd.ms-excel', ppt: 'application/vnd.ms-powerpoint',
+    csv: 'text/csv', tsv: 'text/tab-separated-values', txt: 'text/plain', md: 'text/markdown', json: 'application/json',
+    html: 'text/html', htm: 'text/html', xml: 'application/xml', zip: 'application/zip',
+    py: 'text/x-python', js: 'text/javascript', ts: 'text/typescript', css: 'text/css', java: 'text/x-java', c: 'text/x-c', cpp: 'text/x-c++', sh: 'text/x-sh', sql: 'text/x-sql', yaml: 'text/yaml', yml: 'text/yaml', ipynb: 'application/x-ipynb+json',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+const TEXTLIKE_EXT = new Set(['txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts', 'tsx', 'jsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'go', 'rs', 'rb', 'php', 'sh', 'bat', 'sql', 'kt', 'swift', 'yaml', 'yml', 'ini', 'toml', 'log', 'tex', 'r', 'ipynb', 'svg']);
+
+function arrayBufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(bin);
+}
+function base64ToBlob(b64, mime) {
+  const bin = atob(b64.replace(/\s+/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime || 'application/octet-stream' });
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: name || 'download' });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+function localDateStamp(d = new Date()) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function parseJsonLoose(s) { try { return JSON.parse(s); } catch { return null; } }
+function todayContext(tz) {
+  // Date only (no clock time) so the system prompt stays byte-identical within a day —
+  // current Claude models bind thinking blocks to an unchanged prefix.
+  try { return new Intl.DateTimeFormat('en-AU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: tz || undefined }).format(new Date()); }
+  catch { return new Date().toDateString(); }
+}
+function locationFromTimezone(tz = '') {
+  const AU = { Melbourne: 'Victoria', Sydney: 'New South Wales', Brisbane: 'Queensland', Perth: 'Western Australia', Adelaide: 'South Australia', Hobart: 'Tasmania', Darwin: 'Northern Territory', Canberra: 'Australian Capital Territory' };
+  const city = tz.split('/')[1]?.replace(/_/g, ' ');
+  if (tz.startsWith('Australia/')) return { country: 'AU', city: city in AU ? city : undefined, region: AU[city], timezone: tz };
+  const countryByPrefix = { 'Europe/London': 'GB', 'Pacific/Auckland': 'NZ', 'Asia/Singapore': 'SG', 'Asia/Kuala_Lumpur': 'MY', 'Asia/Tokyo': 'JP', 'Asia/Hong_Kong': 'HK', 'Europe/Dublin': 'IE', 'Asia/Kolkata': 'IN' };
+  if (countryByPrefix[tz]) return { country: countryByPrefix[tz], city, timezone: tz };
+  if (tz.startsWith('America/')) return { timezone: tz }; // ambiguous country; let the provider infer
+  return { timezone: tz };
+}
+
+/* ───────────────────────────── Settings ───────────────────────────── */
+const SETTINGS_KEY = 'teachassist.settings.v1';
+const DEFAULT_SETTINGS = {
+  anthropicKey: '',
+  openaiKey: '',
+  anthropicRelay: '',
+  provider: 'anthropic',
+  anthropicModel: '',
+  openaiModel: '',
+  effort: 'high',
+  maxTokens: 64000,
+  webSearch: true,
+  codeTools: true,
+  imageGen: true,
+  imageModel: 'gpt-image-2',
+  showThinking: true,
+  theme: 'dark',
+  userName: '',
+  profile: 'I teach Digital Technologies (Years 8–12, including VCE Software Development and Applied Computing) at a Melbourne secondary school. Use Australian English spelling, Australian Curriculum v9 / VCAA terminology by default, and the Australia/Melbourne timezone.',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Australia/Melbourne',
+  sidebarCollapsed: false,
+  saveHistory: true,          // keep chats after the tab closes + append to the JSON history file
+  keySource: { anthropic: '', openai: '' }, // 'main' = supplied by the main program, 'user' = typed in Settings
+  trustedParentOrigin: '',    // optional: only accept keys posted from this origin
+};
+let settings = { ...DEFAULT_SETTINGS, ...(parseJsonLoose(localStorage.getItem(SETTINGS_KEY)) || {}) };
+settings.keySource = { anthropic: '', openai: '', ...(settings.keySource || {}) };
+function saveSettings(patch = {}) {
+  settings = { ...settings, ...patch };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  applyTheme();
+}
+function applyTheme() {
+  const light = settings.theme === 'light';
+  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  const d = $('#hljsDark'), l = $('#hljsLight');
+  if (d && l) { d.disabled = light; l.disabled = !light; }
+}
+function keyFor(provider) { return provider === 'anthropic' ? settings.anthropicKey.trim() : settings.openaiKey.trim(); }
+function currentModel() { return settings.provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel; }
+function relayBase() { return (settings.anthropicRelay || '').trim().replace(/\/+$/, ''); }
+
+/* ───────────────────────────── Keys from the main program ─────────────────────────────
+   When Teach Assist is launched from the main program it picks up the keys the main
+   program already holds, so the user never retypes them:
+     1. localStorage `api_cache` (JSON: OPENAI_API_KEY, CLAUDE_API_KEY, username, …) —
+        shared when the app is served from the same origin as the main program;
+     2. the individual localStorage keys OPENAI_API_KEY / CLAUDE_API_KEY / openai_api_key
+        (and the older VITE_* names);
+     3. a same-origin parent's `apiCache.get(...)`;
+     4. when embedded in a frame: the postMessage handshake
+        {type:'REQUEST_API_VALUES'} → {type:'API_VALUES_RESPONSE', data:{…}}.
+   A key the user typed in Settings is never overwritten; a key that came from the main
+   program is refreshed whenever the main program supplies a new one. */
+const MAIN = { connected: false, via: '', origin: '', username: '' };
+function inFrame() { try { return window.self !== window.top; } catch { return true; } }
+function readLocalApiCache() {
+  const out = {};
+  const ls = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
+  const cache = parseJsonLoose(ls('api_cache')) || {};
+  out.OPENAI_API_KEY = cache.OPENAI_API_KEY || ls('OPENAI_API_KEY') || ls('openai_api_key') || ls('VITE_OPENAI_API_KEY');
+  out.CLAUDE_API_KEY = cache.CLAUDE_API_KEY || ls('CLAUDE_API_KEY') || ls('VITE_CLAUDE_API_KEY');
+  out.username = cache.username || '';
+  // Same-origin parent exposing the apiCache helper.
+  try {
+    const pc = window.parent !== window && window.parent.apiCache;
+    if (pc && typeof pc.get === 'function') {
+      out.OPENAI_API_KEY = out.OPENAI_API_KEY || pc.get('OPENAI_API_KEY') || '';
+      out.CLAUDE_API_KEY = out.CLAUDE_API_KEY || pc.get('CLAUDE_API_KEY') || '';
+      out.username = out.username || pc.get('username') || '';
+    }
+  } catch { /* cross-origin parent: use postMessage instead */ }
+  return out;
+}
+/** Merge main-program keys into settings. Returns true if anything changed. */
+function applyMainKeys(data, via, origin = '') {
+  if (!data || typeof data !== 'object') return false;
+  const patch = {}; const src = { ...settings.keySource };
+  const take = (provider, field, value) => {
+    value = typeof value === 'string' ? value.trim() : '';
+    if (!value) return;
+    const mine = settings[field] && src[provider] !== 'main'; // user-typed key wins
+    if (mine) return;
+    if (settings[field] !== value) patch[field] = value;
+    src[provider] = 'main';
+  };
+  take('anthropic', 'anthropicKey', data.CLAUDE_API_KEY || data.ANTHROPIC_API_KEY);
+  take('openai', 'openaiKey', data.OPENAI_API_KEY);
+  if (data.OPENAI_API_KEY || data.CLAUDE_API_KEY) { MAIN.connected = true; MAIN.via = via; MAIN.origin = origin; }
+  if (data.username) { MAIN.username = data.username; if (!settings.userName) patch.userName = String(data.username); }
+  const changed = Object.keys(patch).length > 0 || JSON.stringify(src) !== JSON.stringify(settings.keySource);
+  if (changed) saveSettings({ ...patch, keySource: src });
+  return Object.keys(patch).some((k) => k.endsWith('Key'));
+}
+/** Ask the embedding main program for keys; resolves after a reply or a short timeout. */
+function requestParentKeys(timeoutMs = 2500) {
+  if (!inFrame()) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    window.addEventListener('message', function once(ev) {
+      if (ev.data?.type !== 'API_VALUES_RESPONSE') return;
+      window.removeEventListener('message', once);
+      finish(true);
+    });
+    // The request carries no secrets, so '*' is safe here; we validate the REPLY's sender.
+    let target = '*';
+    try { if (settings.trustedParentOrigin) target = settings.trustedParentOrigin; } catch { /* ignore */ }
+    try { window.parent.postMessage({ type: 'REQUEST_API_VALUES' }, target); } catch { finish(false); }
+    setTimeout(() => finish(false), timeoutMs);
+  });
+}
+function referrerOrigin() { try { return document.referrer ? new URL(document.referrer).origin : ''; } catch { return ''; } }
+/** Accept key messages only from our own parent frame (and, if set, only from the trusted origin). */
+function onParentMessage(ev) {
+  const d = ev.data;
+  if (!d || typeof d !== 'object' || ev.source !== window.parent || window.parent === window) return;
+  const trusted = settings.trustedParentOrigin || '';
+  if (trusted && ev.origin !== trusted) { console.warn('[keys] ignored message from untrusted origin', ev.origin); return; }
+  let payload = null;
+  if (d.type === 'API_VALUES_RESPONSE') payload = d.data;
+  else if (d.type === 'PEDAGOGY_CREDENTIALS' || d.type === 'PEDAGOGY_CREDENTIALS_UPDATE') {
+    const ps = d.payload?.providers || [];
+    payload = { CLAUDE_API_KEY: ps.find((p) => p.id === 'anthropic')?.apiKey, OPENAI_API_KEY: ps.find((p) => p.id === 'openai')?.apiKey, username: d.payload?.user?.name };
+  }
+  if (!payload) return;
+  if (applyMainKeys(payload, 'postMessage', ev.origin)) onKeysChanged();
+  else if (MAIN.connected) renderModelSelect();
+}
+let onKeysChanged = () => {};
+
+/* ───────────────────────────── Chat history JSON file ─────────────────────────────
+   When "Save chat history" is on, every completed exchange is appended to one JSON file
+   kept in the browser's Cache Storage (falls back to IndexedDB where Cache Storage isn't
+   available, e.g. when the HTML is opened from disk). It can be exported or cleared. */
+const HISTORY = { cache: 'teach-assist-history', url: new URL('teach-assist-chat-history.json', location.href.startsWith('http') ? location.href : 'https://teach-assist.local/').href, idbKey: 'history:chat-history.json' };
+function cacheStorageOk() { try { return !!window.caches && window.isSecureContext; } catch { return false; } }
+async function readHistory() {
+  try {
+    if (cacheStorageOk()) {
+      const c = await caches.open(HISTORY.cache);
+      const r = await c.match(HISTORY.url);
+      if (r) return await r.json();
+    } else {
+      const rec = await getCachedFile(HISTORY.idbKey);
+      if (rec) return JSON.parse(await rec.blob.text());
+    }
+  } catch (e) { console.warn('[history] read failed', e); }
+  return null;
+}
+async function writeHistory(doc) {
+  const blob = new Blob([JSON.stringify(doc, null, 1)], { type: 'application/json' });
+  if (cacheStorageOk()) {
+    const c = await caches.open(HISTORY.cache);
+    await c.put(HISTORY.url, new Response(blob, { headers: { 'Content-Type': 'application/json', 'Last-Modified': new Date().toUTCString() } }));
+  } else {
+    await cacheFileBlob(HISTORY.idbKey, blob, 'teach-assist-chat-history.json', 'application/json');
+  }
+  return blob.size;
+}
+let historyQueue = Promise.resolve();
+/** Append one completed exchange (serialised so concurrent chats never clobber each other). */
+function appendHistory(conv, userMsg, assistant) {
+  if (!settings.saveHistory || !userMsg || !assistant) return;
+  historyQueue = historyQueue.then(async () => {
+    const doc = (await readHistory()) || { app: 'Teach Assist', format: 'teach-assist-chat-history', version: 1, created: new Date().toISOString(), entries: [] };
+    doc.entries.push({
+      id: assistant.id,
+      conversationId: conv.id,
+      conversationTitle: conv.title || 'New chat',
+      timestamp: new Date(assistant.createdAt).toISOString(),
+      provider: assistant.provider,
+      model: assistant.model,
+      user: { text: userMsg.text || '', attachments: (userMsg.attachments || []).map((a) => ({ name: a.name, type: a.mediaType, size: a.size })) },
+      assistant: {
+        text: assistant.text || '',
+        files: (assistant.files || []).filter((f) => f.status === 'ready').map((f) => ({ name: f.name, type: f.mediaType, size: f.size })),
+        sources: (assistant.sources || []).map((s) => ({ title: s.title, url: s.url })),
+        status: assistant.error ? 'error' : (assistant.stopReason === 'stopped' ? 'stopped' : 'complete'),
+        ...(assistant.error ? { error: assistant.error } : {}),
+      },
+      usage: assistant.usage || null,
+    });
+    doc.updated = new Date().toISOString();
+    await writeHistory(doc);
+  }).catch((e) => console.warn('[history] append failed', e));
+  return historyQueue;
+}
+async function exportHistory() {
+  await historyQueue;
+  const doc = await readHistory();
+  if (!doc || !doc.entries?.length) { alert('The chat history file is empty.'); return; }
+  downloadBlob(new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }), `teach-assist-chat-history-${localDateStamp()}.json`);
+}
+async function clearHistory() {
+  await historyQueue;
+  try {
+    if (cacheStorageOk()) await caches.delete(HISTORY.cache);
+    await store.del('files', HISTORY.idbKey).catch(() => {});
+  } catch (e) { console.warn('[history] clear failed', e); }
+}
+async function historyStats() {
+  const doc = await readHistory();
+  if (!doc) return { entries: 0, bytes: 0, convs: 0 };
+  return { entries: doc.entries.length, bytes: JSON.stringify(doc).length, convs: new Set(doc.entries.map((e) => e.conversationId)).size, updated: doc.updated };
+}
+
+/* ───────────────────────────── IndexedDB ───────────────────────────── */
+const DB_NAME = 'teachassist-standalone';
+let dbp = null;
+function openDb() {
+  if (dbp) return dbp;
+  dbp = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' }).createIndex('updatedAt', 'updatedAt');
+      if (!db.objectStoreNames.contains('messages')) db.createObjectStore('messages', { keyPath: 'id' }).createIndex('conversationId', 'conversationId');
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbp;
+}
+async function idb(storeName, mode, fn) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, mode);
+    let req;
+    try { req = fn(tx.objectStore(storeName)); } catch (e) { reject(e); return; }
+    tx.oncomplete = () => resolve(req && 'result' in req ? req.result : undefined);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+const store = {
+  put: (s, obj) => idb(s, 'readwrite', (os) => os.put(obj)),
+  get: (s, key) => idb(s, 'readonly', (os) => os.get(key)),
+  del: (s, key) => idb(s, 'readwrite', (os) => os.delete(key)),
+  all: (s) => idb(s, 'readonly', (os) => os.getAll()),
+  byIndex: (s, idx, val) => idb(s, 'readonly', (os) => os.index(idx).getAll(val)),
+  clear: (s) => idb(s, 'readwrite', (os) => os.clear()),
+};
+
+/* ───────────────────────────── State ───────────────────────────── */
+const state = {
+  convs: [],
+  activeConvId: null,
+  messages: [],
+  busy: new Map(),
+  pending: [],
+  models: { anthropic: null, openai: null },
+  renderTimers: new Map(),
+  fileBlobUrls: new Map(),
+};
+
+/* ───────────────────────────── Model catalogs ───────────────────────────── */
+async function fetchModels(provider, force = false) {
+  const key = keyFor(provider);
+  if (!key) { state.models[provider] = null; return []; }
+  if (state.models[provider]?.live && !force) return state.models[provider].ids;
+  let ids = [];
+  try {
+    if (provider === 'anthropic') {
+      const res = await fetch(`${SPEC.anthropic.base}/v1/models?limit=100`, { headers: anthropicHeaders(key, { json: false }) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      ids = (data.data || []).filter((m) => typeof m.id === 'string' && m.id.startsWith('claude'))
+        .sort((a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0)).map((m) => m.id);
+    } else {
+      const res = await fetch(`${SPEC.openai.base}/v1/models`, { headers: openaiHeaders(key, false) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const EXCL = ['audio', 'realtime', 'transcribe', 'tts', 'search', 'image', 'embedding', 'moderation', 'instruct', 'codex', 'deep-research', 'computer-use', 'oss', 'chat-latest', 'whisper', 'dall-e', 'babbage', 'davinci', 'omni', '-pro'];
+      const DATED = /-\d{4}-\d{2}-\d{2}$|-\d{4}$/;
+      const all = (data.data || []).filter((m) => typeof m.id === 'string');
+      const idset = new Set(all.map((m) => m.id));
+      ids = all.filter((m) => (m.id.startsWith('gpt-') || /^o\d/.test(m.id)) && !EXCL.some((f) => m.id.includes(f)))
+        .filter((m) => !(DATED.test(m.id) && idset.has(m.id.replace(DATED, ''))))
+        .filter((m) => !/^gpt-(3|4-turbo|4o)/.test(m.id))
+        .sort((a, b) => (b.created || 0) - (a.created || 0) || b.id.localeCompare(a.id)).map((m) => m.id);
+    }
+  } catch (e) { console.warn('[models]', provider, e); }
+  const live = ids.length > 0;
+  if (!live) ids = SPEC[provider].fallbackModels;
+  state.models[provider] = { ids, live };
+  const cur = provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel;
+  if (!cur || (live && !ids.includes(cur))) {
+    const pref = SPEC[provider].preferredModels.find((m) => ids.includes(m));
+    const isSmall = provider === 'anthropic' ? (m) => /haiku/.test(m) : (m) => /-(mini|nano|luna)\b/.test(m) || /^o\d/.test(m) || /^gpt-4/.test(m);
+    const pick = pref || ids.find((m) => !isSmall(m)) || ids[0];
+    saveSettings(provider === 'anthropic' ? { anthropicModel: pick } : { openaiModel: pick });
+  }
+  return ids;
+}
+
+/* ───────────────────────────── Anthropic adapter ───────────────────────────── */
+function anthropicHeaders(key, { json = true, betas = [] } = {}) {
+  const h = { 'x-api-key': key, 'anthropic-version': SPEC.anthropic.version, 'anthropic-dangerous-direct-browser-access': 'true' };
+  if (betas.length) h['anthropic-beta'] = betas.join(',');
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+/** Which thinking/effort surface a model accepts (verified against the Oct-2026 docs). */
+function anthropicCaps(model) {
+  const m = model.toLowerCase();
+  const ver = (fam) => {
+    // "claude-opus-4-7", "claude-sonnet-5-5"; legacy "claude-3-7-sonnet-2025…" puts the version first.
+    let r = m.match(new RegExp(`${fam}-(\\d{1,2})(?:-(\\d{1,2}))?(?!\\d)`));
+    if (!r) r = m.match(new RegExp(`claude-(\\d)(?:-(\\d))?-${fam}`));
+    return r ? parseFloat(`${r[1]}.${r[2] || 0}`) : null;
+  };
+  const opus = ver('opus'), sonnet = ver('sonnet'), haiku = ver('haiku');
+  const fable = m.includes('fable') || m.includes('mythos');
+  const adaptive = fable || (opus !== null && opus >= 4.6) || (sonnet !== null && sonnet >= 4.6) || (haiku !== null && haiku >= 5);
+  const legacyThinking = !adaptive && ((opus !== null && opus >= 4) || (sonnet !== null && sonnet >= 3.7) || (haiku !== null && haiku >= 4.5));
+  const effort = adaptive || (opus !== null && opus >= 4.5);
+  // Mid-conversation role:"system" messages: Fable/Mythos, Opus 5.x/4.8, Sonnet 5.5, Haiku 5.5 (not Sonnet 5, not 4.7 and older).
+  const midSystem = fable || (opus !== null && (opus >= 5 || opus === 4.8)) || (sonnet !== null && sonnet >= 5.5) || (haiku !== null && haiku >= 5.5);
+  // 1M-context models accept up to 600 PDF pages per request; older ones 100.
+  const pdfPages = (fable || (opus !== null && opus >= 5) || (sonnet !== null && sonnet >= 5) || (haiku !== null && haiku >= 5)) ? 600 : 100;
+  return { adaptive, legacyThinking, effort, midSystem, pdfPages };
+}
+function toolsKey(tools) { return JSON.stringify((tools || []).map((t) => t.type ? `${t.type}:${t.name}:${JSON.stringify(t.allowed_callers || '')}` : `fn:${t.name}`)); }
+async function anthropicError(res) {
+  let detail = '';
+  try { const b = await res.json(); detail = b?.error?.message || JSON.stringify(b); } catch { try { detail = await res.text(); } catch { /* ignore */ } }
+  const base = res.status === 401 ? 'Invalid Anthropic API key.' : res.status === 429 ? 'Anthropic rate limit reached — wait a moment and retry.' : res.status >= 500 ? `Anthropic server error (${res.status}).` : `Anthropic error ${res.status}.`;
+  const e = new Error(detail ? `${base} ${detail}` : base);
+  e.status = res.status; e.detail = detail || ''; e.provider = 'anthropic';
+  return e;
+}
+function requireRelay() {
+  const r = relayBase();
+  if (!r) { const e = new Error('Claude files relay not configured'); e.code = 'NO_RELAY'; throw e; }
+  return r;
+}
+async function anthropicUploadFile(key, blob, filename) {
+  const base = requireRelay();
+  const fd = new FormData();
+  fd.append('file', blob, filename);
+  const res = await fetch(`${base}/v1/files`, { method: 'POST', headers: anthropicHeaders(key, { json: false }), body: fd });
+  if (!res.ok) throw await anthropicError(res);
+  return res.json();
+}
+async function anthropicFileMeta(key, fileId) {
+  const base = requireRelay();
+  const res = await fetch(`${base}/v1/files/${fileId}`, { headers: anthropicHeaders(key, { json: false }) });
+  if (!res.ok) throw await anthropicError(res);
+  return res.json();
+}
+async function anthropicFileContent(key, fileId) {
+  const base = requireRelay();
+  const res = await fetch(`${base}/v1/files/${fileId}/content`, { headers: anthropicHeaders(key, { json: false }) });
+  if (!res.ok) throw await anthropicError(res);
+  return res.blob();
+}
+
+function describeAttachment(a, provider, codeTools, opts = {}) {
+  const size = fmtBytes(a.size);
+  const inSandbox = codeTools && (provider === 'anthropic' ? !!a.anthropicFileId : !!a.openaiFileId);
+  const where = provider === 'anthropic' ? 'the sandbox input directory (run `ls` / `find` to locate it)' : `${SPEC.openai.dataDir}/ (run \`ls /mnt/data\` first — the stored name may carry a prefix)`;
+  if (a.kind === 'image') return `[Attached image: ${a.name} (${size})]`;
+  if (a.kind === 'pdf') {
+    const native = opts.pdfNative === false ? `too long to attach natively (${a.pages} pages)` : 'provided natively above';
+    return `[Attached PDF: ${a.name} (${size}${a.pages ? `, ${a.pages} pages` : ''}) — ${native}${inSandbox ? `; the original is in ${where}` : ''}]`;
+  }
+  const nativeFile = provider === 'openai' && !!a.openaiFileId && opts.openaiInputFile !== false;
+  const preview = nativeFile ? '; provided as a file input' : a.text ? (a.textTruncated ? '; a truncated text extract is attached' : '; a text extract is attached') : '';
+  const sandbox = inSandbox ? `; the original file is in ${where} — open it with code for full fidelity (tables, formulas, formatting)` : (codeTools ? '; the original binary is NOT in the sandbox (only the extract)' : '');
+  return `[Attached file: ${a.name} (${size})${preview}${sandbox}]`;
+}
+
+/**
+ * Build the content blocks for a user message ONCE and store them on the message
+ * (large base64 payloads are stored as references and rehydrated). Current Claude
+ * models bind thinking blocks to an unchanged prefix, so a user turn must be replayed
+ * byte-identically forever after it was first sent.
+ */
+function freezeAnthropicUserBlocks(m, { codeTools, pdfPages }) {
+  if (m.anthropicContent) return;
+  const blocks = [];
+  for (const a of m.attachments || []) {
+    if (a.kind === 'image' && a.base64) {
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: a.mediaType, data: `@att:${a.id}` } });
+    } else if (a.kind === 'pdf') {
+      a.pdfNative = !(a.pages && a.pages > pdfPages);
+      if (a.pdfNative && a.anthropicFileId) blocks.push({ type: 'document', source: { type: 'file', file_id: a.anthropicFileId }, title: a.name, citations: { enabled: true } });
+      else if (a.pdfNative && a.base64) blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: `@att:${a.id}` }, title: a.name, citations: { enabled: true } });
+    } else if (a.text) {
+      blocks.push({ type: 'document', source: { type: 'text', media_type: 'text/plain', data: `@text:${a.id}` }, title: a.kind === 'text' ? a.name : `${a.name} (extracted text)` });
+    }
+    if (codeTools && a.anthropicFileId && a.kind !== 'image') blocks.push({ type: 'container_upload', file_id: a.anthropicFileId });
+  }
+  const notes = (m.attachments || []).map((a) => describeAttachment(a, 'anthropic', codeTools, { pdfNative: a.pdfNative })).filter(Boolean);
+  let text = m.text || '';
+  if (notes.length) text = `${notes.join('\n')}\n\n${text}`.trim();
+  blocks.push({ type: 'text', text: text || '(see attachments)' });
+  m.anthropicContent = blocks;
+}
+function rehydrateBlocks(m, blocks) {
+  const byId = new Map((m.attachments || []).map((a) => [a.id, a]));
+  return blocks.map((b) => {
+    if (b.source?.data && typeof b.source.data === 'string' && b.source.data.startsWith('@')) {
+      const [kind, id] = b.source.data.slice(1).split(':');
+      const a = byId.get(id);
+      const data = kind === 'att' ? (a?.base64 || '') : (a?.text || '');
+      return { ...b, source: { ...b.source, data } };
+    }
+    return b;
+  }).filter((b) => !(b.source && b.source.type !== 'file' && b.source.data === ''));
+}
+/** Drop private bookkeeping keys and blocks the API would reject (defensive; the live path prunes already). */
+function sanitizeAssistantBlocks(blocks) {
+  return blocks.filter((b) => b && b.type && !(b.type === 'text' && !b.text) && !(b.type === 'thinking' && !b.signature))
+    .map((b) => Object.fromEntries(Object.entries(b).filter(([k]) => !k.startsWith('_'))));
+}
+
+/** Build Anthropic `messages` from the chain, replaying stored turns verbatim. */
+function buildAnthropicMessages(chain, { codeTools, pdfPages, midSystem, dropThinkingBefore }) {
+  const out = [];
+  for (const m of chain) {
+    if (m.role === 'user') {
+      freezeAnthropicUserBlocks(m, { codeTools, pdfPages });
+      out.push({ role: 'user', content: rehydrateBlocks(m, m.anthropicContent) });
+      if (midSystem && m.anthropicSystemNote) out.push({ role: 'system', content: m.anthropicSystemNote });
+    } else if (m.role === 'assistant') {
+      const dropThinking = dropThinkingBefore && m.createdAt < dropThinkingBefore;
+      if (m.native?.provider === 'anthropic' && Array.isArray(m.native.turns) && m.native.turns.length) {
+        for (const t of m.native.turns) {
+          let content = t.role === 'assistant' ? sanitizeAssistantBlocks(t.content || []) : (t.content || []).filter((b) => b && b.type);
+          if (dropThinking) content = content.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking');
+          if (content.length) out.push({ role: t.role, content });
+        }
+      } else {
+        const t = (m.text || '').trim();
+        if (t) out.push({ role: 'assistant', content: [{ type: 'text', text: t }] });
+      }
+    }
+  }
+  // Merge consecutive same-role user/assistant turns (system notes stay separate).
+  const merged = [];
+  for (const msg of out) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === msg.role && msg.role !== 'system') last.content = [...last.content, ...msg.content];
+    else merged.push({ role: msg.role, content: Array.isArray(msg.content) ? [...msg.content] : msg.content });
+  }
+  while (merged.length && merged[0].role !== 'user') merged.shift();
+  // A trailing assistant turn would make the model continue its own message.
+  while (merged.length && merged[merged.length - 1].role === 'assistant') merged.pop();
+  return merged;
+}
+
+function buildSystemPrompt(provider, opts) {
+  const p = systemPromptParts(provider, opts);
+  return [p.identity, p.profile, p.date, p.style, p.files, p.images, p.web].filter(Boolean).join('\n');
+}
+/** The prompt in sections; sections that can change mid-conversation are compared individually. */
+function systemPromptParts(provider, { codeTools, webSearch, imageTool }) {
+  const name = settings.userName?.trim();
+  const P = {};
+  P.identity = `You are Teach Assist, a capable, careful AI assistant working with ${name ? name + ', ' : ''}a teacher. You help with anything they bring you: lesson planning and resources, marking and feedback, admin and emails, coding and IT, curriculum questions, general knowledge and personal productivity. Treat every request as a real task from a busy professional.`;
+  P.profile = settings.profile?.trim() ? `\nAbout the teacher: ${settings.profile.trim()}` : '';
+  P.date = `\nToday's date: ${todayContext(settings.timezone)} (${settings.timezone}).`;
+  const L = [];
+  L.push(`
+# How to respond
+- Lead with the answer or the deliverable. No preamble, no restating the request, no flattery.
+- Match depth to the task: a quick question gets a short, direct answer; a request for a resource gets a complete, classroom-ready resource. Never pad, never truncate.
+- Use Markdown. Use LaTeX ($...$ and $$...$$) for mathematics. Use fenced code blocks with language tags for code.
+- Accuracy and spelling in teaching materials are non-negotiable: check terminology, names, dates and arithmetic before finishing.
+- Small ambiguities: make a sensible assumption and note it in one line. Ask a clarifying question only when the answer would change the deliverable substantially.
+- Read attached files fully before responding and use their actual content, structure and wording.`);
+  P.style = L.join('\n');
+  L.length = 0;
+
+  if (codeTools && provider === 'anthropic') {
+    const relay = !!relayBase();
+    L.push(`
+# Files and documents
+You have a code execution sandbox (bash + file editor, Python 3.11 with python-docx, python-pptx, openpyxl, reportlab, matplotlib, pandas, pypdf and more) with the docx, pptx, xlsx and pdf Skills attached under /skills/.
+- Whenever the user asks for a document, worksheet, handout, lesson plan, letter, rubric, quiz, slide deck, spreadsheet, markbook, PDF, chart or any other file, build a real file in the sandbox. Use Word (.docx) for prose documents, PowerPoint (.pptx) for slides, Excel (.xlsx) for tabular work, PDF only when a fixed print layout is explicitly wanted, PNG/SVG for charts and diagrams.
+- Before building, read the relevant Skill's SKILL.md (e.g. /skills/docx/SKILL.md) and follow it — it holds the production workflow and quality checks.
+- Write the complete content first, at the quality an expert teacher would hand to colleagues: full explanations, worked examples, every question with an answer key, consistent headings and numbering, correct terminology. Never deliver a thin outline or placeholder text.
+- ${relay
+    ? 'To deliver a file, copy it into "$OUTPUT_DIR" and list that directory in the same bash command, e.g. `cp /tmp/outputs/report.docx "$OUTPUT_DIR/" && ls -la "$OUTPUT_DIR"`. Only files in $OUTPUT_DIR at the end of a command reach the user.'
+    : `FILE TRANSFER (important — this client cannot use the Files API): to deliver a file, run ONE bash command that prints it as base64 between markers, e.g. \`f=/tmp/outputs/report.docx; echo "-----BEGIN FILE $(basename "$f") $(stat -c%s "$f")-----"; base64 -w0 "$f"; echo; echo "-----END FILE-----"\`. The client decodes it into a download. Keep each file under ${SPEC.anthropic.inlineFileMaxKB} KB (check with \`stat\`; prefer text/vector over embedded photos; compress or drop images; split very long decks into parts). If a file is bigger, say so and offer a lighter version or parts.`}
+- Files the user attached ${relay ? 'are in the sandbox input directory when noted in the message (look with `ls`/`find`)' : 'are available as text extracts in the message; the original binaries are not in the sandbox'}.
+- After creating a file, reply with a short summary of what it contains and any assumptions — do not paste the whole content again.
+- Only answer inline (no file) when the user asks for the content in the chat or it is short (a paragraph, a handful of questions).`);
+  } else if (codeTools && provider === 'openai') {
+    L.push(`
+# Files and documents
+You have the python tool (code interpreter) with python-docx, python-pptx, openpyxl, reportlab, matplotlib, pandas and similar libraries.
+- Whenever the user asks for a document, worksheet, handout, lesson plan, letter, rubric, quiz, slide deck, spreadsheet, markbook, PDF, chart or any other file, write it with the python tool and save it under ${SPEC.openai.dataDir}/ — it is returned to the user as a download. Use Word (.docx) for prose documents, PowerPoint (.pptx) for slides, Excel (.xlsx) for tabular work, PDF only when a fixed print layout is explicitly wanted, PNG/SVG for charts.
+- Write the complete content first, at the quality an expert teacher would hand to colleagues: full explanations, worked examples, every question with an answer key, consistent headings and numbering, correct terminology. Never deliver a thin outline or placeholder text. Use real document features (heading styles, tables, numbered lists, page breaks, slide layouts, sensible column widths) and verify the file opens by re-reading it.
+- If a library is missing, use an available alternative rather than giving up.
+- Files the user attached are in ${SPEC.openai.dataDir}/ — run \`ls /mnt/data\` first (stored names may carry a prefix) and open them with code when you need full fidelity.
+- After creating a file, reply with a short summary of what it contains and any assumptions — do not paste the whole content again. Link files as sandbox:/mnt/data/<filename>.
+- Only answer inline (no file) when the user asks for the content in the chat or it is short.`);
+  } else {
+    L.push(`\n# Files\nCode execution is switched off for this conversation, so you cannot create downloadable files. If the user asks for a document, give the complete content in well-formatted Markdown and mention that turning on "Code & files" would deliver it as a DOCX/PPTX/XLSX/PDF.`);
+  }
+  P.files = L.join('\n');
+  P.images = imageTool ? `\n# Images\nWhen the user asks for a picture, illustration, poster, diagram artwork or any generated image, use the generate_image tool. Pass a detailed prompt (subject, composition, style, colours, mood, text to include if any). Never say you cannot create images.` : '';
+  P.web = webSearch ? `\n# Web\nUse web search for anything time-sensitive or that you are not certain about (current curriculum documents, software versions, prices, news, research). Cite sources with links.` : `\n# Web\nWeb search is switched off for this conversation; answer from your own knowledge and say when something may have changed.`;
+  return P;
+}
+/** Text for a mid-conversation system note: only the sections that changed since the frozen prompt. */
+function systemUpdateNote(prevParts, nextParts) {
+  const changed = [];
+  const labels = { profile: 'About the teacher', date: 'Date', style: 'How to respond', files: 'Files and documents', images: 'Images', web: 'Web' };
+  for (const k of Object.keys(labels)) if ((prevParts[k] || '') !== (nextParts[k] || '')) changed.push(nextParts[k] ? nextParts[k].trim() : `${labels[k]}: (section removed — no longer applies)`);
+  if (!changed.length) return '';
+  return `Context update — the following replaces the corresponding section(s) of your instructions from this point on:\n\n${changed.join('\n\n')}`;
+}
+
+const IMAGE_TOOL_DEF = {
+  name: 'generate_image',
+  description: 'Generate an image from a text prompt (photorealistic, illustration, diagram artwork, poster, etc.). Returns the image. Use for any request to create, draw, design or render a picture.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      prompt: { type: 'string', description: 'Detailed description: subject, composition, style, colours, lighting, mood, any text to render.' },
+      size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536'], description: 'Square, landscape or portrait.' },
+    },
+    required: ['prompt'],
+  },
+};
+
+/** One Anthropic assistant turn, including pause_turn continuation and client tool rounds. */
+async function runAnthropic({ conv, chain, msg, signal, onProgress }) {
+  const key = keyFor('anthropic');
+  const model = settings.anthropicModel;
+  const codeTools = !!conv.codeTools;
+  const webSearch = !!conv.webSearch;
+  const imageTool = !!(settings.imageGen && settings.openaiKey.trim());
+  const caps = anthropicCaps(model);
+
+  // Upload attachments of the NEW user message only — earlier turns must replay unchanged.
+  const newest = [...chain].reverse().find((m) => m.role === 'user' && !m.anthropicContent);
+  if (newest) await ensureAnthropicUploads(newest, key, codeTools, onProgress);
+
+  const callers = codeTools ? ['direct', SPEC.anthropic.tools.codeExec.type] : ['direct'];
+  const loc = locationFromTimezone(settings.timezone);
+  const desiredTools = [];
+  if (webSearch) {
+    const ws = { ...SPEC.anthropic.tools.webSearch, allowed_callers: callers };
+    if (loc.country) ws.user_location = { type: 'approximate', ...(loc.city ? { city: loc.city } : {}), ...(loc.region ? { region: loc.region } : {}), country: loc.country, timezone: loc.timezone };
+    desiredTools.push(ws);
+    desiredTools.push({ ...SPEC.anthropic.tools.webFetch, allowed_callers: callers });
+  }
+  if (codeTools) desiredTools.push({ ...SPEC.anthropic.tools.codeExec });
+  if (imageTool) desiredTools.push(IMAGE_TOOL_DEF);
+  const desiredParts = systemPromptParts('anthropic', { codeTools, webSearch, imageTool });
+  const desiredSystem = [desiredParts.identity, desiredParts.profile, desiredParts.date, desiredParts.style, desiredParts.files, desiredParts.images, desiredParts.web].filter(Boolean).join('\n');
+
+  // Freeze `system` and `tools` for the conversation so the request prefix stays byte-identical
+  // (current Claude models bind thinking blocks to it). Changes arrive as mid-conversation
+  // system notes on models that support them; a changed tool set unavoidably resets thinking.
+  let fz = conv.anthropicFrozen;
+  if (!fz) { fz = conv.anthropicFrozen = { system: desiredSystem, parts: desiredParts, tools: desiredTools, key: toolsKey(desiredTools) }; }
+  if (fz.key !== toolsKey(desiredTools)) {
+    // Toggle changed mid-chat: the tool set (part of the bound prefix) changes, so earlier thinking is void.
+    fz.tools = desiredTools; fz.key = toolsKey(desiredTools);
+    conv.anthropicDropThinkingBefore = Date.now();
+  }
+  if (caps.midSystem && newest) {
+    const note = systemUpdateNote(fz.parts, desiredParts);
+    if (note) { newest.anthropicSystemNote = note; fz.parts = desiredParts; }
+  }
+  const useFrozenSystem = caps.midSystem;
+  await store.put('conversations', conv);
+
+  const body = {
+    model,
+    max_tokens: settings.maxTokens || SPEC.anthropic.maxTokensDefault,
+    system: useFrozenSystem ? fz.system : desiredSystem,
+    messages: buildAnthropicMessages(chain, { codeTools, pdfPages: caps.pdfPages, midSystem: caps.midSystem, dropThinkingBefore: conv.anthropicDropThinkingBefore }),
+    stream: true,
+  };
+  if (newest) await store.put('messages', newest);
+  if (fz.tools.length) body.tools = structuredClone(fz.tools);
+  if (codeTools) {
+    body.container = { skills: SPEC.anthropic.skills };
+    // Containers live 30 days (checkpointed when idle); expires_at is a short rolling value, so always resend the id.
+    if (conv.anthropicContainerId) body.container.id = conv.anthropicContainerId;
+  }
+  if (caps.adaptive) body.thinking = { type: 'adaptive', display: settings.showThinking ? 'summarized' : 'omitted' };
+  else if (caps.legacyThinking) {
+    const budget = { low: 2000, medium: 8000, high: 16000, xhigh: 32000, max: 32000 }[settings.effort] || 8000;
+    body.thinking = { type: 'enabled', budget_tokens: Math.min(budget, body.max_tokens - 1024) };
+  }
+  if (caps.effort) body.output_config = { effort: settings.effort };
+
+  msg.native = { provider: 'anthropic', turns: [] };
+  const inlineMode = codeTools && !relayBase();
+  const ctx = { conv };
+
+  try {
+    for (let round = 0; round < 24; round++) {
+      const result = await anthropicStreamOnce(key, body, msg, signal, onProgress, ctx);
+      // Keep whatever tool definitions the API accepted (self-healed versions) so later turns resend them identically.
+      if (body.tools && JSON.stringify(body.tools) !== JSON.stringify(fz.tools)) { fz.tools = structuredClone(body.tools); await store.put('conversations', conv); }
+      if (result.container?.id) {
+        conv.anthropicContainerId = result.container.id;
+        conv.anthropicContainerExpiresAt = result.container.expires_at || null;
+        await store.put('conversations', conv);
+        if (body.container) body.container.id = conv.anthropicContainerId;
+      }
+      msg.usage = addUsage(msg.usage, result.usage);
+      msg.stopReason = result.stopReason;
+      if (signal.aborted) break;
+
+      if (result.stopReason === 'pause_turn') {
+        body.messages = [...body.messages, { role: 'assistant', content: result.blocks }];
+        onProgress();
+        continue;
+      }
+      if (result.stopReason === 'tool_use') {
+        // Client tools (generate_image). Server tools never need a tool_result from us.
+        const clientCalls = result.blocks.filter((b) => b.type === 'tool_use');
+        if (!clientCalls.length) break;
+        const results = [];
+        for (const call of clientCalls) {
+          const seg = (msg.segments || []).find((s) => s.toolId === call.id);
+          try {
+            const r = await runClientTool(call, msg);
+            results.push({ type: 'tool_result', tool_use_id: call.id, content: r.content });
+            if (seg) { seg.status = 'done'; seg.output = r.summary || ''; }
+          } catch (e) {
+            results.push({ type: 'tool_result', tool_use_id: call.id, content: `Error: ${e.message}`, is_error: true });
+            if (seg) { seg.status = 'error'; seg.output = e.message; }
+          }
+          onProgress();
+        }
+        const userTurn = { role: 'user', content: results };
+        msg.native.turns.push(userTurn);
+        body.messages = [...body.messages, { role: 'assistant', content: result.blocks }, userTurn];
+        continue;
+      }
+      break;
+    }
+  } finally {
+    // Whatever happened (stop, error, max_tokens mid-tool-call), leave only replayable blocks behind.
+    pruneAnthropicTurns(msg);
+    if (inlineMode) extractInlineFiles(msg);
+    syncAnthropicSegments(msg);
+  }
+  await collectAnthropicFiles(key, msg, onProgress);
+}
+
+/** Remove blocks the API would reject on replay: partial tool inputs, unsigned thinking, empty text, tool calls without results. */
+function pruneAnthropicTurns(msg) {
+  const turns = msg.native?.turns || [];
+  const resultIds = new Set();
+  for (const t of turns) for (const b of t.content || []) if (b && b.tool_use_id) resultIds.add(b.tool_use_id);
+  for (const t of turns) {
+    t.content = (t.content || []).filter((b) => {
+      if (!b || !b.type) return false;
+      if ('_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
+      if (t.role === 'assistant') {
+        if (b.type === 'text') return !!b.text;
+        if (b.type === 'thinking') return !!b.signature;
+        if (b.type === 'tool_use' || b.type === 'server_tool_use') return resultIds.has(b.id);
+      }
+      return true;
+    });
+  }
+  msg.native.turns = turns.filter((t) => t.content.length);
+}
+
+async function ensureAnthropicUploads(m, key, codeTools, onProgress) {
+  if (!relayBase()) return; // Files API unreachable from the browser without the relay.
+  let changed = false;
+  for (const a of m.attachments || []) {
+    if (a.kind === 'image' || a.anthropicFileId || a.anthropicUploadFailed) continue;
+    if (!codeTools && a.kind !== 'pdf') continue;
+    const blob = await getAttachmentBlob(a);
+    if (!blob) continue;
+    try {
+      a.uploading = true; onProgress();
+      const meta = await anthropicUploadFile(key, blob, safeFilename(a.name));
+      a.anthropicFileId = meta.id; changed = true;
+    } catch (e) {
+      console.warn('[anthropic upload]', e);
+      a.anthropicUploadFailed = true; a.uploadError = e.message;
+    } finally { a.uploading = false; }
+  }
+  if (changed) await store.put('messages', m);
+}
+function safeFilename(name) { return String(name || 'file').replace(/[<>:"|?*\\/]/g, '-').trim() || 'file'; }
+
+/** Stream one Anthropic request; append a new assistant turn to msg.native.turns. */
+async function anthropicStreamOnce(key, body, msg, signal, onProgress, ctx = {}) {
+  let res;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    res = await fetch(`${SPEC.anthropic.base}/v1/messages`, { method: 'POST', headers: anthropicHeaders(key), body: JSON.stringify(body), signal });
+    if (res.ok) break;
+    const err = await anthropicError(res);
+    const d = err.detail || '';
+    if (err.status !== 400 && err.status !== 404) throw err;
+    // Self-heal common validation errors so the app keeps working across model generations.
+    // Order matters: the most specific messages are tested first.
+    const nums = (d.match(/\d{4,7}/g) || []).map(Number);
+    if (/signature|bound to a different|prefix/i.test(d)) {
+      // Thinking blocks no longer match the prefix: drop them (persistently, so later turns stay consistent).
+      body.messages = stripThinking(body.messages);
+      if (ctx.conv) { ctx.conv.anthropicDropThinkingBefore = Date.now(); store.put('conversations', ctx.conv).catch(() => {}); }
+      continue;
+    }
+    if (/max_tokens/i.test(d) && nums.length) { const limit = Math.min(...nums.filter((n) => n >= 1024)); if (limit && limit < body.max_tokens) { body.max_tokens = limit; if (body.thinking?.budget_tokens) body.thinking.budget_tokens = Math.min(body.thinking.budget_tokens, limit - 1024); continue; } }
+    if (/allowed_callers/i.test(d) && body.tools) { body.tools = body.tools.map((t) => (t.allowed_callers ? { ...t, allowed_callers: ['direct'] } : t)); continue; }
+    if (/web_search_2026|web_fetch_2026|code_execution_2026|tool.*version|unsupported.*tool|does not support .*tool/i.test(d) && body.tools && !ctx.legacyTools) {
+      ctx.legacyTools = true;
+      body.tools = body.tools.map((t) => {
+        if (t.name === 'web_search') return { ...SPEC.anthropic.legacyTools.webSearch };
+        if (t.name === 'web_fetch') return { ...SPEC.anthropic.legacyTools.webFetch };
+        if (t.name === 'code_execution') return { ...SPEC.anthropic.legacyTools.codeExec };
+        return t;
+      });
+      continue;
+    }
+    if (/display/i.test(d) && body.thinking?.display) { delete body.thinking.display; continue; }
+    if (/output_config|effort/i.test(d) && body.output_config) { if (['xhigh', 'max'].includes(body.output_config.effort)) body.output_config.effort = 'high'; else delete body.output_config; continue; }
+    if (/thinking\.type|budget_tokens|thinking.*not supported|thinking.*enabled/i.test(d) && body.thinking) {
+      if (body.thinking.type === 'adaptive') body.thinking = { type: 'enabled', budget_tokens: Math.min(10000, body.max_tokens - 1024) };
+      else delete body.thinking;
+      continue;
+    }
+    if (/container/i.test(d) && body.container?.id) { delete body.container.id; if (ctx.conv) { ctx.conv.anthropicContainerId = null; store.put('conversations', ctx.conv).catch(() => {}); } continue; }
+    if (/skill/i.test(d) && body.container) { delete body.container; continue; }
+    if (/user_location/i.test(d) && body.tools) { body.tools = body.tools.map((t) => { const { user_location, ...rest } = t; return rest; }); continue; }
+    if (/citations/i.test(d)) { body.messages = JSON.parse(JSON.stringify(body.messages, (k, v) => (k === 'citations' && v && typeof v === 'object' && 'enabled' in v ? undefined : v))); continue; }
+    if (/role.*system|system.*role|system message/i.test(d) && body.messages.some((m) => m.role === 'system')) { body.messages = body.messages.filter((m) => m.role !== 'system'); continue; }
+    if (/thinking/i.test(d) && body.thinking) { delete body.thinking; continue; }
+    throw err;
+  }
+  if (!res.ok) throw await anthropicError(res);
+
+  const blocks = [];
+  const turn = { role: 'assistant', content: blocks };
+  msg.native.turns.push(turn);
+  let stopReason = null, usage = {}, container = null;
+  const finalize = () => {
+    for (const b of blocks) if (b && '_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
+    turn.content = blocks.filter(Boolean);
+  };
+  try {
+    await readSse(res, signal, (ev) => {
+      const t = ev.type;
+      if (t === 'message_start') {
+        usage = ev.message?.usage || {};
+        if (ev.message?.container) container = ev.message.container;
+      } else if (t === 'content_block_start') {
+        const b = structuredClone(ev.content_block);
+        if (b.type === 'tool_use' || b.type === 'server_tool_use' || b.type === 'mcp_tool_use') { b._json = ''; b.input = b.input || {}; }
+        if (b.type === 'text') { b.text = b.text || ''; }
+        if (b.type === 'thinking') { b.thinking = b.thinking || ''; }
+        blocks[ev.index] = b;
+      } else if (t === 'content_block_delta') {
+        const b = blocks[ev.index]; if (!b) return;
+        const d = ev.delta;
+        if (d.type === 'text_delta') b.text += d.text;
+        else if (d.type === 'thinking_delta') b.thinking += d.thinking;
+        else if (d.type === 'signature_delta') b.signature = (b.signature || '') + d.signature;
+        else if (d.type === 'input_json_delta') b._json += d.partial_json;
+        else if (d.type === 'citations_delta' && d.citation) (b.citations = b.citations || []).push(d.citation);
+      } else if (t === 'content_block_stop') {
+        const b = blocks[ev.index]; if (!b) return;
+        if ('_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
+      } else if (t === 'message_delta') {
+        stopReason = ev.delta?.stop_reason || stopReason;
+        if (ev.usage) for (const [k, v] of Object.entries(ev.usage)) if (v !== null && v !== undefined) usage[k] = v;
+        if (ev.delta?.container) container = ev.delta.container;
+      } else if (t === 'error') {
+        throw new Error(ev.error?.message || 'Stream error');
+      }
+      syncAnthropicSegments(msg);
+      onProgress();
+    });
+  } finally { finalize(); }
+  syncAnthropicSegments(msg);
+  return {
+    blocks: turn.content, stopReason, container,
+    usage: { input: usage.input_tokens || 0, output: usage.output_tokens || 0, cacheRead: usage.cache_read_input_tokens || 0, cacheWrite: usage.cache_creation_input_tokens || 0, searches: usage.server_tool_use?.web_search_requests || 0 },
+  };
+}
+function stripThinking(messages) {
+  return messages.map((m) => (m.role === 'assistant' && Array.isArray(m.content) ? { ...m, content: m.content.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking') } : m));
+}
+
+/** Project native Anthropic turns into display segments. */
+function syncAnthropicSegments(msg) {
+  const segs = [];
+  const pending = new Map();
+  for (const turn of msg.native.turns) {
+    for (const b of turn.content) {
+      if (!b) continue;
+      if (turn.role === 'user') {
+        if (b.type === 'tool_result') { const seg = pending.get(b.tool_use_id); if (seg) seg.status = b.is_error ? 'error' : 'done'; }
+        continue;
+      }
+      switch (b.type) {
+        case 'thinking': segs.push({ type: 'thinking', text: b.thinking || '' }); break;
+        case 'redacted_thinking': break;
+        case 'text': {
+          const cites = (b.citations || []).filter((c) => c && c.url).map((c) => ({ url: c.url, title: c.title || c.url }));
+          segs.push({ type: 'text', text: b.text || '', citations: cites }); break;
+        }
+        case 'server_tool_use': case 'tool_use': {
+          const input = b.input || {};
+          let seg;
+          if (b.name === 'web_search') seg = { type: 'tool', kind: 'search', title: 'Searching the web', query: input.query || '', status: 'running', results: [] };
+          else if (b.name === 'web_fetch') seg = { type: 'tool', kind: 'fetch', title: 'Reading a web page', query: input.url || '', status: 'running', results: [] };
+          else if (b.name === 'code_execution') seg = { type: 'tool', kind: 'code', title: 'Running Python', code: input.code || '', lang: 'python', status: 'running', output: '' };
+          else if (b.name === 'bash_code_execution') seg = { type: 'tool', kind: 'bash', title: 'Running a command', code: input.command || '', lang: 'bash', status: 'running', output: '' };
+          else if (b.name === 'text_editor_code_execution') seg = { type: 'tool', kind: 'editor', title: editorTitle(input), code: input.file_text || input.new_str || '', lang: langFromPath(input.path), status: 'running', output: '', path: input.path };
+          else if (b.name === 'generate_image') seg = { type: 'tool', kind: 'image', title: 'Generating an image', query: (input.prompt || '').slice(0, 120), status: 'running', output: '' };
+          else seg = { type: 'tool', kind: 'other', title: b.name || 'Tool', code: JSON.stringify(input, null, 2), status: 'running', output: '' };
+          seg.toolId = b.id; pending.set(b.id, seg); segs.push(seg); break;
+        }
+        case 'web_search_tool_result': {
+          const seg = pending.get(b.tool_use_id); if (!seg) break;
+          if (Array.isArray(b.content)) { seg.status = 'done'; seg.results = b.content.filter((r) => r.type === 'web_search_result').map((r) => ({ url: r.url, title: r.title || r.url })); }
+          else if (b.content?.type === 'web_search_tool_result_error') { seg.status = 'error'; seg.output = b.content.error_code; }
+          break;
+        }
+        case 'web_fetch_tool_result': {
+          const seg = pending.get(b.tool_use_id); if (!seg) break;
+          if (b.content?.type === 'web_fetch_tool_result_error') { seg.status = 'error'; seg.output = b.content.error_code; }
+          else { seg.status = 'done'; const u = b.content?.url; if (u) seg.results = [{ url: u, title: b.content?.content?.title || u }]; }
+          break;
+        }
+        case 'code_execution_tool_result': case 'bash_code_execution_tool_result': case 'text_editor_code_execution_tool_result': {
+          const seg = pending.get(b.tool_use_id); if (!seg) break;
+          const c = b.content || {};
+          if (c.type && /error/.test(c.type)) { seg.status = 'error'; seg.output = c.error_code || 'error'; break; }
+          seg.status = c.return_code ? 'error' : 'done';
+          let out = [c.stdout, c.stderr].filter(Boolean).join('\n');
+          if (c.type === 'text_editor_code_execution_view_result' && typeof c.content === 'string') out = c.content;
+          if (c.type === 'text_editor_code_execution_create_result') out = c.is_file_update ? 'File updated.' : 'File created.';
+          if (c.type === 'text_editor_code_execution_str_replace_result') out = 'Edit applied.';
+          seg.output = out.replace(FILE_MARK_BEGIN, (m, name, size) => `[file transferred: ${name}, ${fmtBytes(+size)}]`);
+          const files = Array.isArray(c.content) ? c.content.filter((x) => x && typeof x.file_id === 'string') : [];
+          for (const f of files) registerFile(msg, { provider: 'anthropic', fileId: f.file_id });
+          break;
+        }
+        default: break;
+      }
+    }
+  }
+  msg.segments = segs;
+  const srcs = new Map();
+  for (const s of segs) if (s.type === 'text') for (const c of s.citations || []) if (!srcs.has(c.url)) srcs.set(c.url, c.title);
+  msg.sources = [...srcs].map(([url, title]) => ({ url, title }));
+}
+function editorTitle(input) {
+  const cmd = input.command || 'edit';
+  const p = input.path ? ` ${String(input.path).split('/').pop()}` : '';
+  return { view: `Viewing${p}`, create: `Creating${p}`, str_replace: `Editing${p}` }[cmd] || `Editing${p}`;
+}
+function langFromPath(p = '') {
+  const ext = (String(p).split('.').pop() || '').toLowerCase();
+  return { py: 'python', js: 'javascript', ts: 'typescript', html: 'html', css: 'css', json: 'json', md: 'markdown', sh: 'bash', xml: 'xml', yaml: 'yaml', yml: 'yaml' }[ext] || '';
+}
+function registerFile(msg, f) {
+  msg.files = msg.files || [];
+  const key = f.key || (f.provider === 'anthropic' ? `anthropic:${f.fileId}` : f.provider === 'openai' ? `openai:${f.containerId}:${f.fileId}` : `inline:${msg.id}:${f.fileId || f.name}`);
+  let rec = msg.files.find((x) => x.key === key);
+  if (rec) return rec;
+  rec = { key, status: 'pending', ...f };
+  msg.files.push(rec);
+  return rec;
+}
+/** No-relay fallback: pull base64 files out of bash stdout, then scrub the payload from history. */
+function extractInlineFiles(msg) {
+  const turns = msg.native.turns;
+  let scrubbedAt = null; // [turnIdx, blockIdx] of the first scrub
+  turns.forEach((turn, ti) => {
+    if (turn.role !== 'assistant') return;
+    turn.content.forEach((b, bi) => {
+      if (!/code_execution_tool_result$/.test(b.type || '')) return;
+      const c = b.content; if (!c || typeof c.stdout !== 'string' || !/-----BEGIN FILE /.test(c.stdout)) return;
+      let changed = false;
+      c.stdout = c.stdout.replace(FILE_MARK_BEGIN, (m, name, size, b64) => {
+        changed = true;
+        try {
+          const blob = base64ToBlob(b64, guessMime(name));
+          if (blob.size !== +size) throw new Error(`size mismatch (${blob.size} vs ${size} bytes — output probably truncated)`);
+          const rec = registerFile(msg, { provider: 'inline', fileId: `${name}:${size}`, name, mediaType: guessMime(name), size: blob.size });
+          rec._blob = blob;
+          return `[file transferred to the user: ${name}, ${size} bytes]`;
+        } catch (e) {
+          registerFile(msg, { provider: 'inline', fileId: `${name}:${size}`, name, mediaType: guessMime(name), size: +size, status: 'error', error: `inline transfer failed: ${e.message}` });
+          return `[file transfer failed: ${name}]`;
+        }
+      });
+      // A BEGIN marker with no END means the sandbox truncated the output.
+      c.stdout = c.stdout.replace(/-----BEGIN FILE (.+?) (\d+)-----[\s\S]*$/, (m, name, size) => {
+        changed = true;
+        registerFile(msg, { provider: 'inline', fileId: `${name}:${size}`, name, mediaType: guessMime(name), size: +size, status: 'error', error: 'inline transfer truncated — file too large for this mode; set up the Claude files relay or ask for a smaller file' });
+        return `[file transfer truncated: ${name} — too large for inline transfer]`;
+      });
+      if (changed && !scrubbedAt) scrubbedAt = [ti, bi];
+    });
+  });
+  // The scrub edits the prefix of any thinking block that follows it in this turn; those blocks
+  // would be invalid on replay, so drop them now (later messages are bound to the scrubbed text).
+  if (scrubbedAt) {
+    turns.forEach((turn, ti) => {
+      if (turn.role !== 'assistant' || ti < scrubbedAt[0]) return;
+      turn.content = turn.content.filter((b, bi) => !((ti > scrubbedAt[0] || bi > scrubbedAt[1]) && (b.type === 'thinking' || b.type === 'redacted_thinking')));
+    });
+  }
+}
+async function collectAnthropicFiles(key, msg, onProgress) {
+  for (const f of msg.files || []) {
+    if (f.status !== 'pending') continue;
+    try {
+      if (f.provider === 'inline') {
+        if (f._blob) { await cacheFileBlob(f.key, f._blob, f.name, f.mediaType); delete f._blob; f.status = 'ready'; }
+        else f.status = 'error';
+      } else if (f.provider === 'anthropic') {
+        if (!relayBase()) { f.status = 'error'; f.error = 'needs the Claude files relay (Settings)'; f.needsRelay = true; continue; }
+        const meta = await anthropicFileMeta(key, f.fileId);
+        f.name = meta.filename || f.name || f.fileId; f.mediaType = meta.mime_type || guessMime(f.name); f.size = meta.size_bytes;
+        const blob = await anthropicFileContent(key, f.fileId);
+        await cacheFileBlob(f.key, blob, f.name, f.mediaType);
+        f.size = f.size || blob.size; f.status = 'ready';
+      }
+    } catch (e) { console.warn('[anthropic file]', e); f.status = 'error'; f.error = e.message; }
+    onProgress();
+  }
+  // Images produced by a client tool (generate_image) are already registered as inline files.
+}
+
+/** Client-side tool execution (currently: generate_image via the OpenAI Images API). */
+async function runClientTool(call, msg) {
+  if (call.name !== 'generate_image') throw new Error(`Unknown tool ${call.name}`);
+  const okey = settings.openaiKey.trim();
+  if (!okey) throw new Error('No OpenAI key for image generation');
+  const input = call.input || {};
+  const size = ['1024x1024', '1536x1024', '1024x1536'].includes(input.size) ? input.size : '1024x1024';
+  const res = await fetch(`${SPEC.openai.base}/v1/images/generations`, { method: 'POST', headers: openaiHeaders(okey), body: JSON.stringify({ model: settings.imageModel || 'gpt-image-2', prompt: String(input.prompt || ''), size, n: 1, output_format: 'png' }) });
+  if (!res.ok) throw await openaiError(res);
+  const data = await res.json();
+  const b64 = data?.data?.[0]?.b64_json;
+  if (!b64) throw new Error('No image returned');
+  const name = `image-${Date.now().toString(36)}.png`;
+  const full = base64ToBlob(b64, 'image/png');
+  const rec = registerFile(msg, { provider: 'inline', fileId: name, name, mediaType: 'image/png', size: full.size });
+  await cacheFileBlob(rec.key, full, name, 'image/png'); rec.status = 'ready';
+  // The model only needs a small preview; the full-size file is for the user. Keeps history light.
+  let preview = { media_type: 'image/png', data: b64 };
+  try {
+    const bmp = await createImageBitmap(full);
+    const out = await drawScaled(bmp, 512, 'image/jpeg', 0.8); bmp.close?.();
+    preview = { media_type: 'image/jpeg', data: arrayBufferToBase64(await out.blob.arrayBuffer()) };
+  } catch { /* fall back to the full image */ }
+  return { content: [{ type: 'text', text: `Image generated (${size}) and shown to the user as ${name}. A reduced preview follows.` }, { type: 'image', source: { type: 'base64', ...preview } }], summary: `${size} image` };
+}
+
+/* ───────────────────────────── OpenAI adapter ───────────────────────────── */
+function openaiHeaders(key, json = true) {
+  const h = { Authorization: `Bearer ${key}` };
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+async function openaiError(res) {
+  let detail = '';
+  try { const b = await res.json(); detail = b?.error?.message || JSON.stringify(b); } catch { try { detail = await res.text(); } catch { /* ignore */ } }
+  const base = res.status === 401 ? 'Invalid OpenAI API key.' : res.status === 429 ? 'OpenAI rate limit / quota reached — check billing or retry shortly.' : res.status >= 500 ? `OpenAI server error (${res.status}).` : `OpenAI error ${res.status}.`;
+  const e = new Error(detail ? `${base} ${detail}` : base);
+  e.status = res.status; e.detail = detail || ''; e.provider = 'openai';
+  return e;
+}
+async function openaiUploadFile(key, blob, filename, purpose = 'user_data') {
+  const fd = new FormData();
+  fd.append('purpose', purpose);
+  fd.append('file', blob, filename);
+  const res = await fetch(`${SPEC.openai.base}/v1/files`, { method: 'POST', headers: openaiHeaders(key, false), body: fd });
+  if (!res.ok) throw await openaiError(res);
+  return res.json();
+}
+async function openaiListContainerFiles(key, containerId) {
+  const res = await fetch(`${SPEC.openai.base}/v1/containers/${containerId}/files?limit=100&order=desc`, { headers: openaiHeaders(key, false) });
+  if (!res.ok) throw await openaiError(res);
+  return (await res.json()).data || [];
+}
+async function openaiContainerFileContent(key, containerId, fileId) {
+  const res = await fetch(`${SPEC.openai.base}/v1/containers/${containerId}/files/${fileId}/content`, { headers: openaiHeaders(key, false) });
+  if (!res.ok) throw await openaiError(res);
+  return res.blob();
+}
+function openaiCaps(model) {
+  const m = model.toLowerCase();
+  const reasoning = /^o\d/.test(m) || /^gpt-(5|[6-9]|\d{2})/.test(m);
+  return { reasoning };
+}
+
+/** Build Responses `input`; chain with previous_response_id when the last assistant turn is an OpenAI one. */
+function buildOpenAIInput(chain, { codeTools }) {
+  let anchor = -1;
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const m = chain[i];
+    if (m.role === 'assistant') { if (m.native?.provider === 'openai' && m.native.responseId && !m.error) anchor = i; break; }
+  }
+  const items = [];
+  let fileBudget = SPEC.openai.inputFileMaxBytes; // combined input_file limit per request
+  for (const m of (anchor >= 0 ? chain.slice(anchor + 1) : chain)) {
+    if (m.role === 'user') {
+      const content = [];
+      const asInput = new Map();
+      for (const a of m.attachments || []) {
+        if (a.kind === 'image' && a.base64) { content.push({ type: 'input_image', image_url: `data:${a.mediaType};base64,${a.base64}`, detail: 'high' }); continue; }
+        const ext = (a.name.split('.').pop() || '').toLowerCase();
+        const nativeOk = SPEC.openai.inputFileExt.has(ext) && a.size <= fileBudget;
+        if (a.openaiFileId && nativeOk) { content.push({ type: 'input_file', file_id: a.openaiFileId }); fileBudget -= a.size; asInput.set(a.id, true); }
+        else if (a.kind === 'pdf' && a.base64 && nativeOk) { content.push({ type: 'input_file', filename: a.name, file_data: `data:application/pdf;base64,${a.base64}` }); fileBudget -= a.size; asInput.set(a.id, true); }
+        else if (a.text) content.push({ type: 'input_text', text: `<file name="${a.name}"${a.textTruncated ? ' truncated="true"' : ''}>\n${a.text}\n</file>` });
+      }
+      const notes = (m.attachments || []).map((a) => describeAttachment(a, 'openai', codeTools, { openaiInputFile: asInput.has(a.id) })).filter(Boolean);
+      let text = m.text || '';
+      if (notes.length) text = `${notes.join('\n')}\n\n${text}`.trim();
+      content.push({ type: 'input_text', text: text || '(see attachments)' });
+      items.push({ role: 'user', content });
+    } else if (m.role === 'assistant') {
+      const t = (m.text || '').trim();
+      if (t) items.push({ role: 'assistant', content: [{ type: 'output_text', text: t }] });
+    }
+  }
+  return { items, previousResponseId: anchor >= 0 ? chain[anchor].native.responseId : null };
+}
+
+async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
+  const key = keyFor('openai');
+  const model = settings.openaiModel;
+  const codeTools = !!conv.codeTools;
+  const webSearch = !!conv.webSearch;
+  const imageTool = !!settings.imageGen;
+  const caps = openaiCaps(model);
+
+  await ensureOpenAIUploads(chain, key, codeTools, onProgress);
+  const fileIds = [...new Set(chain.flatMap((m) => (m.attachments || []).filter((a) => a.openaiFileId && a.kind !== 'image').map((a) => a.openaiFileId)))].slice(-50);
+
+  const loc = locationFromTimezone(settings.timezone);
+  const tools = [];
+  if (webSearch) tools.push({ type: 'web_search', search_context_size: 'medium', user_location: { type: 'approximate', ...(loc.country ? { country: loc.country } : {}), ...(loc.city ? { city: loc.city } : {}), ...(loc.region ? { region: loc.region } : {}), timezone: loc.timezone } });
+  if (codeTools) tools.push({ type: 'code_interpreter', container: { type: 'auto', ...(fileIds.length ? { file_ids: fileIds } : {}) } });
+  if (imageTool) tools.push({ type: 'image_generation', output_format: 'png', ...(settings.imageModel && settings.imageModel !== 'gpt-image-2' ? { model: settings.imageModel } : {}) });
+
+  const { items, previousResponseId } = buildOpenAIInput(chain, { codeTools });
+  const body = {
+    model,
+    instructions: buildSystemPrompt('openai', { codeTools, webSearch, imageTool }),
+    input: items,
+    stream: true,
+    store: true,
+    max_output_tokens: settings.maxTokens || SPEC.openai.maxTokensDefault,
+    include: ['code_interpreter_call.outputs', 'web_search_call.action.sources'],
+    truncation: 'auto',
+  };
+  if (tools.length) { body.tools = tools; body.tool_choice = 'auto'; }
+  if (previousResponseId) body.previous_response_id = previousResponseId;
+  if (caps.reasoning) body.reasoning = { effort: settings.effort, summary: 'auto' };
+
+  msg.native = { provider: 'openai', items: [], responseId: null };
+  const fullHistory = () => { delete body.previous_response_id; body.input = buildOpenAIInput(chain.map((m) => (m.role === 'assistant' ? { ...m, native: null } : m)), { codeTools }).items; };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const res = await fetch(`${SPEC.openai.base}/v1/responses`, { method: 'POST', headers: openaiHeaders(key), body: JSON.stringify(body), signal });
+    if (res.ok) {
+      await openaiReadStream(res, key, msg, conv, signal, onProgress);
+      return;
+    }
+    const err = await openaiError(res);
+    const d = err.detail || '';
+    if (err.status !== 400 && err.status !== 404) throw err;
+    if (/effort/i.test(d) && body.reasoning) {
+      const chainE = ['max', 'xhigh', 'high', 'medium', 'low'];
+      const i = chainE.indexOf(body.reasoning.effort);
+      if (i >= 0 && i < chainE.length - 1) { body.reasoning.effort = chainE[i + 1]; continue; }
+      delete body.reasoning; continue;
+    }
+    if (/summary/i.test(d) && body.reasoning?.summary) { delete body.reasoning.summary; continue; }
+    if (/previous_response/i.test(d) && body.previous_response_id) { fullHistory(); continue; }
+    if (/container/i.test(d) && /expired|not found|no longer/i.test(d)) {
+      // The sandbox tied to the response chain is gone: restart from full history with a fresh container.
+      conv.openaiContainerId = null;
+      if (body.previous_response_id) { fullHistory(); continue; }
+      throw err;
+    }
+    if (/include/i.test(d) && body.include) { delete body.include; continue; }
+    if (/truncation/i.test(d) && body.truncation) { delete body.truncation; continue; }
+    if (/user_location/i.test(d) && body.tools) { body.tools = body.tools.map((t) => { const { user_location, ...rest } = t; return rest; }); continue; }
+    if (/image_generation/i.test(d) && body.tools?.some((t) => t.type === 'image_generation')) { body.tools = body.tools.filter((t) => t.type !== 'image_generation'); if (!body.tools.length) delete body.tools; continue; }
+    if (/input_file|file_id|unsupported file/i.test(d) && body.input.some((it) => it.content?.some?.((c) => c.type === 'input_file'))) {
+      // A file the API won't parse natively: keep it for the container only.
+      body.input = body.input.map((it) => (it.content ? { ...it, content: it.content.filter((c) => c.type !== 'input_file') } : it));
+      continue;
+    }
+    if (/max_output_tokens/i.test(d)) { const n = (d.match(/\d{4,7}/g) || []).map(Number); if (n.length) { body.max_output_tokens = Math.min(...n); continue; } }
+    throw err;
+  }
+}
+
+async function ensureOpenAIUploads(chain, key, codeTools, onProgress) {
+  for (const m of chain) {
+    if (m.role !== 'user') continue;
+    let changed = false;
+    for (const a of m.attachments || []) {
+      if (a.kind === 'image' || a.openaiFileId || a.openaiUploadFailed) continue;
+      const ext = (a.name.split('.').pop() || '').toLowerCase();
+      const nativeOk = SPEC.openai.inputFileExt.has(ext) && a.size <= SPEC.openai.inputFileMaxBytes;
+      if (!nativeOk && !codeTools) continue; // nothing could consume it
+      const blob = await getAttachmentBlob(a);
+      if (!blob) continue;
+      try {
+        a.uploading = true; onProgress();
+        const meta = await openaiUploadFile(key, blob, safeFilename(a.name), 'user_data');
+        a.openaiFileId = meta.id; changed = true;
+      } catch (e) { console.warn('[openai upload]', e); a.openaiUploadFailed = true; a.uploadError = e.message; }
+      finally { a.uploading = false; }
+    }
+    if (changed) await store.put('messages', m);
+  }
+}
+
+/** Read a Responses API SSE stream into msg.segments / msg.files. */
+async function openaiReadStream(res, key, msg, conv, signal, onProgress) {
+  const items = msg.native.items;
+  const byId = new Map();
+  const segOf = new Map();
+  const segs = msg.segments = [];
+  let usage = null;
+  let turnStart = Math.floor(Date.now() / 1000) - 30; // replaced by the server's created_at below
+  const itemFor = (ev) => {
+    if (ev.item) { const it = structuredClone(ev.item); items[ev.output_index] = it; if (it.id) byId.set(it.id, it); return it; }
+    return items[ev.output_index] || byId.get(ev.item_id) || null;
+  };
+  const segFor = (it) => {
+    if (!it) return null;
+    const k = it.id || `idx${items.indexOf(it)}`;
+    if (segOf.has(k)) return segOf.get(k);
+    let seg = null;
+    switch (it.type) {
+      case 'reasoning': seg = { type: 'thinking', text: '' }; break;
+      case 'message': seg = { type: 'text', text: '', citations: [] }; break;
+      case 'web_search_call': seg = { type: 'tool', kind: 'search', title: 'Searching the web', query: it.action?.query || it.action?.url || '', status: 'running', results: [] }; break;
+      case 'code_interpreter_call': seg = { type: 'tool', kind: 'code', title: 'Running Python', code: it.code || '', lang: 'python', status: 'running', output: '' }; break;
+      case 'image_generation_call': seg = { type: 'tool', kind: 'image', title: 'Generating an image', status: 'running', output: '' }; break;
+      case 'file_search_call': seg = { type: 'tool', kind: 'search', title: 'Searching files', query: (it.queries || []).join(', '), status: 'running', results: [] }; break;
+      case 'shell_call': seg = { type: 'tool', kind: 'bash', title: 'Running a command', code: (it.action?.commands || []).join('\n'), lang: 'bash', status: 'running', output: '' }; break;
+      case 'function_call': seg = { type: 'tool', kind: 'other', title: it.name || 'Tool', code: it.arguments || '', status: 'running', output: '' }; break;
+      default: return null;
+    }
+    segOf.set(k, seg); segs.push(seg); return seg;
+  };
+
+  await readSse(res, signal, (ev) => {
+    const t = ev.type;
+    if (t === 'response.created') { msg.native.responseId = ev.response?.id || msg.native.responseId; if (ev.response?.created_at) turnStart = ev.response.created_at - 2; }
+    else if (t === 'response.output_item.added') segFor(itemFor(ev));
+    else if (t === 'response.output_item.done') {
+      const it = itemFor(ev); const seg = segFor(it); if (!seg) return;
+      if (it.type === 'message') {
+        const part = (it.content || []).find((c) => c.type === 'output_text');
+        if (part) { seg.text = part.text ?? seg.text; applyAnnotations(seg, part.annotations || [], msg); }
+        const refusal = (it.content || []).find((c) => c.type === 'refusal');
+        if (refusal) seg.text = (seg.text ? seg.text + '\n\n' : '') + refusal.refusal;
+      } else if (it.type === 'reasoning') {
+        const txt = (it.summary || []).map((s) => s.text).filter(Boolean).join('\n\n');
+        if (txt) seg.text = txt;
+      } else if (it.type === 'web_search_call') {
+        seg.status = it.status === 'failed' ? 'error' : 'done';
+        if (it.action?.query) seg.query = it.action.query;
+        if (it.action?.type === 'open_page' && it.action.url) { seg.kind = 'fetch'; seg.title = 'Reading a web page'; seg.query = it.action.url; }
+        if (Array.isArray(it.action?.sources)) seg.results = it.action.sources.map((s) => ({ url: s.url, title: s.title || s.url }));
+      } else if (it.type === 'code_interpreter_call') {
+        seg.status = it.status === 'failed' ? 'error' : 'done';
+        if (it.code) seg.code = it.code;
+        if (it.container_id) conv.openaiContainerId = it.container_id;
+        const outs = Array.isArray(it.outputs) ? it.outputs : [];
+        const logs = outs.filter((o) => o.type === 'logs').map((o) => o.logs).join('\n');
+        if (logs) seg.output = logs;
+        for (const o of outs) if (o.type === 'image' && o.url) seg.images = [...(seg.images || []), o.url];
+      } else if (it.type === 'image_generation_call') {
+        seg.status = it.status === 'failed' ? 'error' : 'done';
+        if (it.revised_prompt) seg.query = it.revised_prompt.slice(0, 120);
+        if (it.result) {
+          const fmt = it.output_format || 'png';
+          const name = `image-${(it.id || uid()).slice(-6)}.${fmt}`;
+          const rec = registerFile(msg, { provider: 'inline', fileId: it.id || name, name, mediaType: `image/${fmt}` });
+          rec._b64 = it.result;
+          it.result = '[image stored locally]';
+        }
+      } else if (it.type === 'shell_call') { seg.status = 'done'; }
+    } else if (t === 'response.output_text.delta') { const seg = segFor(itemFor(ev)); if (seg) seg.text += ev.delta || ''; }
+    else if (t === 'response.output_text.annotation.added') { const seg = segFor(itemFor(ev)); if (seg) applyAnnotations(seg, [ev.annotation], msg); }
+    else if (t === 'response.reasoning_summary_text.delta' || t === 'response.reasoning_text.delta') { const seg = segFor(itemFor(ev)); if (seg) seg.text += ev.delta || ''; }
+    else if (t === 'response.reasoning_summary_part.added') { const seg = segFor(itemFor(ev)); if (seg && seg.text && !seg.text.endsWith('\n\n')) seg.text += '\n\n'; }
+    else if (t === 'response.code_interpreter_call_code.delta') { const seg = segFor(itemFor(ev)); if (seg) seg.code += ev.delta || ''; }
+    else if (t === 'response.code_interpreter_call_code.done') { const seg = segFor(itemFor(ev)); if (seg) seg.code = ev.code || seg.code; }
+    else if (t === 'response.shell_call_output_content.delta') { const seg = segFor(itemFor(ev)); if (seg) seg.output += ev.delta || ''; }
+    else if (t === 'response.completed' || t === 'response.incomplete' || t === 'response.failed') {
+      const r = ev.response || {};
+      msg.native.responseId = r.id || msg.native.responseId;
+      usage = r.usage || usage;
+      msg.stopReason = t === 'response.completed' ? 'end_turn' : (r.incomplete_details?.reason || r.status || t);
+      if (t === 'response.failed') throw new Error(r.error?.message || 'The response failed.');
+    } else if (t === 'error') throw new Error(ev.message || ev.error?.message || 'Stream error');
+    onProgress();
+  });
+
+  if (usage) msg.usage = addUsage(msg.usage, { input: usage.input_tokens || 0, output: usage.output_tokens || 0, cacheRead: usage.input_tokens_details?.cached_tokens || 0, reasoning: usage.output_tokens_details?.reasoning_tokens || 0 });
+  if (conv.openaiContainerId) await store.put('conversations', conv);
+
+  // Discover files the code wrote even when the model forgot to cite them.
+  const ranCode = items.some((it) => it && it.type === 'code_interpreter_call');
+  if (ranCode && conv.openaiContainerId) {
+    try {
+      const list = await openaiListContainerFiles(key, conv.openaiContainerId);
+      for (const cf of list) {
+        if (cf.source !== 'assistant' || (cf.created_at && cf.created_at < turnStart)) continue;
+        const name = (cf.path || cf.id).split('/').pop();
+        if (/^\.|~$|\.(pyc|tmp|log)$/i.test(name)) continue;
+        registerFile(msg, { provider: 'openai', fileId: cf.id, containerId: conv.openaiContainerId, name, size: cf.bytes, mediaType: guessMime(name) });
+      }
+    } catch (e) { console.warn('[openai list files]', e); }
+  }
+  for (const f of msg.files || []) {
+    if (f.status !== 'pending') continue;
+    try {
+      if (f.provider === 'inline' && f._b64) {
+        const blob = base64ToBlob(f._b64, f.mediaType); delete f._b64;
+        await cacheFileBlob(f.key, blob, f.name, f.mediaType); f.size = blob.size; f.status = 'ready';
+      } else if (f.provider === 'openai') {
+        f.name = f.name || f.fileId; f.mediaType = f.mediaType || guessMime(f.name);
+        const blob = await openaiContainerFileContent(key, f.containerId, f.fileId);
+        await cacheFileBlob(f.key, blob, f.name, f.mediaType); f.size = f.size || blob.size; f.status = 'ready';
+      }
+    } catch (e) { console.warn('[openai file]', e); f.status = 'error'; f.error = e.message; }
+    onProgress();
+  }
+  dedupeSources(msg);
+}
+function applyAnnotations(seg, annotations, msg) {
+  for (const a of annotations) {
+    if (!a) continue;
+    if (a.type === 'url_citation' && a.url) { if (!seg.citations.some((c) => c.url === a.url)) seg.citations.push({ url: a.url, title: a.title || a.url }); }
+    else if (a.type === 'container_file_citation' && a.file_id) {
+      const name = a.filename ? a.filename.split('/').pop() : undefined;
+      const f = registerFile(msg, { provider: 'openai', fileId: a.file_id, containerId: a.container_id, name, mediaType: name ? guessMime(name) : undefined });
+      if (name && !f.name) f.name = name;
+    }
+  }
+}
+function dedupeSources(msg) {
+  const srcs = new Map();
+  for (const s of msg.segments || []) if (s.type === 'text') for (const c of s.citations || []) if (c.url && !srcs.has(c.url)) srcs.set(c.url, c.title);
+  msg.sources = [...srcs].map(([url, title]) => ({ url, title }));
+}
+
+/* ───────────────────────────── Shared helpers ───────────────────────────── */
+async function readSse(res, signal, onEvent) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  const dispatch = (chunk) => {
+    const dataLines = chunk.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trimStart());
+    if (!dataLines.length) return;
+    const data = dataLines.join('\n');
+    if (data === '[DONE]') return;
+    const ev = parseJsonLoose(data);
+    if (ev) onEvent(ev);
+  };
+  let ok = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.search(/\r?\n\r?\n/)) !== -1) {
+        const sepLen = buf[idx] === '\r' ? (buf.slice(idx, idx + 4) === '\r\n\r\n' ? 4 : 3) : (buf.slice(idx, idx + 2) === '\n\n' ? 2 : 3);
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx + sepLen);
+        dispatch(chunk);
+      }
+      if (signal?.aborted) break;
+    }
+    buf += decoder.decode();
+    if (buf.trim()) dispatch(buf); // final event without a trailing blank line
+    ok = true;
+  } finally {
+    if (!ok || signal?.aborted) { try { await reader.cancel(); } catch { /* ignore */ } }
+    try { reader.releaseLock(); } catch { /* ignore */ }
+  }
+}
+function addUsage(a = null, b = null) {
+  if (!b) return a;
+  const out = { ...(a || {}) };
+  for (const k of Object.keys(b)) out[k] = (out[k] || 0) + (b[k] || 0);
+  return out;
+}
+async function cacheFileBlob(key, blob, name, mediaType) { await store.put('files', { key, blob, name, mediaType, size: blob.size, createdAt: Date.now() }); }
+async function getCachedFile(key) { return store.get('files', key); }
+async function fileUrl(key) {
+  if (state.fileBlobUrls.has(key)) return state.fileBlobUrls.get(key);
+  const rec = await getCachedFile(key);
+  if (!rec) return null;
+  const url = URL.createObjectURL(rec.blob);
+  state.fileBlobUrls.set(key, url);
+  return url;
+}
+async function getAttachmentBlob(a) {
+  if (a.blobKey) { const rec = await getCachedFile(a.blobKey); if (rec) return rec.blob; }
+  if (a.base64) return base64ToBlob(a.base64, a.mediaType);
+  return null;
+}
+function findFileByName(name) {
+  const base = String(name).split('/').pop();
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const f = (state.messages[i].files || []).find((x) => x.status === 'ready' && (x.name === base || x.name === name));
+    if (f) return f;
+  }
+  return null;
+}
+
+/* ───────────────────────────── Attachment preparation ───────────────────────────── */
+async function prepareAttachment(file) {
+  const name = file.name || 'file';
+  const mediaType = file.type || guessMime(name);
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const att = { id: uid('att'), name, mediaType, size: file.size, kind: 'other' };
+  if (file.size > SPEC.attachmentMaxBytes) throw new Error(`${name} is larger than ${fmtBytes(SPEC.attachmentMaxBytes)}.`);
+
+  if (mediaType.startsWith('image/') && mediaType !== 'image/svg+xml') {
+    const { blob, type } = await compressImage(file);
+    if (!SPEC.imageTypes.has(type)) throw new Error(`${name} could not be converted to a supported image format (JPEG, PNG, GIF, WebP).`);
+    att.kind = 'image'; att.mediaType = type; att.size = blob.size;
+    att.base64 = arrayBufferToBase64(await blob.arrayBuffer());
+    return att;
+  }
+  const buf = await file.arrayBuffer();
+  att.blobKey = `att:${att.id}`;
+  await cacheFileBlob(att.blobKey, new Blob([buf], { type: mediaType }), name, mediaType);
+  if (mediaType === 'application/pdf' || ext === 'pdf') {
+    att.kind = 'pdf'; att.mediaType = 'application/pdf';
+    if (buf.byteLength <= SPEC.anthropic.pdfMaxBytes) att.base64 = arrayBufferToBase64(buf);
+    att.pages = countPdfPages(buf);
+    return att;
+  }
+  try {
+    if (ext === 'docx' && window.mammoth) {
+      let r; try { r = await mammoth.convertToMarkdown({ arrayBuffer: buf }); } catch { r = await mammoth.extractRawText({ arrayBuffer: buf }); }
+      setText(att, r.value || ''); att.kind = 'docx';
+    } else if (['xlsx', 'xls', 'xlsm', 'ods'].includes(ext) && window.XLSX) {
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+      const parts = wb.SheetNames.map((sn) => `### Sheet: ${sn}\n${XLSX.utils.sheet_to_csv(wb.Sheets[sn], { blankrows: false })}`);
+      setText(att, parts.join('\n\n')); att.kind = 'spreadsheet';
+    } else if (ext === 'pptx') {
+      att.kind = 'pptx';
+    } else if (TEXTLIKE_EXT.has(ext) || mediaType.startsWith('text/') || mediaType === 'application/json') {
+      setText(att, new TextDecoder().decode(buf)); att.kind = 'text';
+    }
+  } catch (e) { console.warn('[extract]', name, e); }
+  return att;
+}
+function setText(att, text) {
+  text = (text || '').replace(/\r\n/g, '\n').trim();
+  if (text.length > SPEC.textExtractCap) { att.text = text.slice(0, SPEC.textExtractCap) + `\n\n…[truncated — ${(text.length - SPEC.textExtractCap).toLocaleString()} more characters]`; att.textTruncated = true; }
+  else att.text = text;
+}
+function countPdfPages(buf) {
+  try {
+    const s = new TextDecoder('latin1').decode(new Uint8Array(buf.slice(0, Math.min(buf.byteLength, 4 * 1024 * 1024))));
+    const m = s.match(/\/Type\s*\/Pages[^>]*?\/Count\s+(\d+)/);
+    if (m) return parseInt(m[1], 10);
+    const n = (s.match(/\/Type\s*\/Page[^s]/g) || []).length;
+    return n || undefined;
+  } catch { return undefined; }
+}
+async function compressImage(file) {
+  const bmp = await createImageBitmap(file).catch(() => null);
+  if (!bmp) return { blob: file, type: file.type }; // undecodable (e.g. HEIC) → caller rejects it
+  const big = Math.max(bmp.width, bmp.height) > SPEC.imageMaxDim;
+  const supported = SPEC.imageTypes.has(file.type);
+  if (supported && file.size <= SPEC.imageMaxBytes && !big) { bmp.close?.(); return { blob: file, type: file.type }; }
+  let maxDim = SPEC.imageMaxDim;
+  const keepPng = (file.type === 'image/png' || !supported) && file.size <= SPEC.imageMaxBytes; // BMP/TIFF/AVIF → lossless PNG when small enough
+  for (const q of [0.9, 0.82, 0.72, 0.6, 0.5]) {
+    const out = await drawScaled(bmp, maxDim, keepPng ? 'image/png' : 'image/jpeg', q);
+    if (out.blob.size <= SPEC.imageMaxBytes) { bmp.close?.(); return out; }
+    maxDim = Math.round(maxDim * 0.85);
+  }
+  bmp.close?.();
+  return { blob: file, type: file.type };
+}
+async function drawScaled(bmp, maxDim, type, quality) {
+  const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  const blob = await new Promise((r) => c.toBlob(r, type, quality));
+  return { blob, type };
+}
+
+/* ───────────────────────────── Conversations ───────────────────────────── */
+async function loadConversations() {
+  const all = await store.all('conversations');
+  // Chats started while "Save chat history" was off last only for that session.
+  const keep = [];
+  for (const c of all) { if (c.ephemeral) await purgeConversation(c.id); else keep.push(c); }
+  state.convs = keep.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+async function purgeConversation(id) {
+  const msgs = await store.byIndex('messages', 'conversationId', id);
+  for (const m of msgs) {
+    for (const a of m.attachments || []) if (a.blobKey) await store.del('files', a.blobKey).catch(() => {});
+    for (const f of m.files || []) if (f.key) await store.del('files', f.key).catch(() => {});
+    await store.del('messages', m.id);
+  }
+  await store.del('conversations', id);
+}
+async function createConversation() {
+  const conv = {
+    id: uid('conv'), title: 'New chat', createdAt: Date.now(), updatedAt: Date.now(),
+    provider: settings.provider, model: currentModel(),
+    webSearch: settings.webSearch, codeTools: settings.codeTools,
+    anthropicContainerId: null, anthropicContainerExpiresAt: null, openaiContainerId: null,
+    ephemeral: !settings.saveHistory,
+  };
+  await store.put('conversations', conv);
+  state.convs.unshift(conv);
+  return conv;
+}
+function activeConv() { return state.convs.find((c) => c.id === state.activeConvId) || null; }
+async function selectConversation(id) {
+  state.activeConvId = id;
+  const conv = activeConv();
+  if (conv) {
+    const msgs = await store.byIndex('messages', 'conversationId', id);
+    state.messages = msgs.sort((a, b) => a.createdAt - b.createdAt);
+    setToggle($('#tglWeb'), conv.webSearch);
+    setToggle($('#tglCode'), conv.codeTools);
+  } else {
+    state.messages = [];
+    setToggle($('#tglWeb'), settings.webSearch);
+    setToggle($('#tglCode'), settings.codeTools);
+  }
+  renderConvList();
+  renderMessages();
+  $('#convTitle').textContent = conv?.title || 'New chat';
+  if (window.innerWidth <= 860) collapseSidebar(true);
+}
+async function deleteConversation(id) {
+  state.busy.get(id)?.abort();
+  const msgs = await store.byIndex('messages', 'conversationId', id);
+  for (const m of msgs) {
+    for (const a of m.attachments || []) if (a.blobKey) await store.del('files', a.blobKey).catch(() => {});
+    for (const f of m.files || []) if (f.key) await store.del('files', f.key).catch(() => {});
+    await store.del('messages', m.id);
+  }
+  await store.del('conversations', id);
+  state.convs = state.convs.filter((c) => c.id !== id);
+  if (state.activeConvId === id) await selectConversation(state.convs[0]?.id || null);
+  else renderConvList();
+}
+async function touchConversation(conv) {
+  conv.updatedAt = Date.now();
+  await store.put('conversations', conv);
+  state.convs.sort((a, b) => b.updatedAt - a.updatedAt);
+  renderConvList();
+}
+async function maybeAutoTitle(conv) {
+  if (!conv || (conv.title && conv.title !== 'New chat')) return;
+  const first = state.messages.find((m) => m.conversationId === conv.id && m.role === 'user');
+  if (!first) return;
+  let title = (first.text || first.attachments?.map((a) => a.name).join(', ') || 'New chat').replace(/\s+/g, ' ').trim();
+  title = title.split(/(?<=[.?!])\s/)[0].slice(0, 60);
+  if (title.length === 60) title = title.replace(/\s+\S*$/, '') + '…';
+  conv.title = title || 'New chat';
+  await store.put('conversations', conv);
+  renderConvList();
+  if (state.activeConvId === conv.id) $('#convTitle').textContent = conv.title;
+}
+
+/* ───────────────────────────── Sending ───────────────────────────── */
+function activeChain() { return state.messages.filter((m) => m.conversationId === state.activeConvId); }
+
+async function sendMessage(text, attachments) {
+  const provider = settings.provider;
+  if (!keyFor(provider)) { showBanner('err', `No ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key. Open Settings to add one.`); openSettings(); return; }
+  if (!currentModel()) { await fetchModels(provider); renderModelSelect(); }
+  let conv = activeConv();
+  if (!conv) { conv = await createConversation(); state.activeConvId = conv.id; state.messages = []; renderConvList(); }
+  if (state.busy.has(conv.id)) return;
+  conv.provider = provider; conv.model = currentModel();
+  conv.webSearch = $('#tglWeb').classList.contains('on');
+  conv.codeTools = $('#tglCode').classList.contains('on');
+
+  const userMsg = { id: uid('msg'), conversationId: conv.id, role: 'user', createdAt: Date.now(), text, attachments: attachments.map((a) => ({ ...a })) };
+  await store.put('messages', userMsg);
+  state.messages.push(userMsg);
+  await runAssistantTurn(conv, activeChain());
+}
+
+async function runAssistantTurn(conv, chain) {
+  const provider = settings.provider;
+  const assistant = { id: uid('msg'), conversationId: conv.id, role: 'assistant', createdAt: Date.now(), text: '', segments: [], files: [], provider, model: currentModel(), status: 'streaming' };
+  await store.put('messages', assistant);
+  state.messages.push(assistant);
+  renderMessages();
+  scrollToBottom(true);
+
+  const controller = new AbortController();
+  state.busy.set(conv.id, controller);
+  updateComposerState();
+  renderConvList();
+  await touchConversation(conv);
+
+  let lastPersist = 0;
+  const onProgress = () => {
+    assistant.text = (assistant.segments || []).filter((s) => s.type === 'text').map((s) => s.text).join('\n\n');
+    scheduleRender(assistant);
+    const now = Date.now();
+    if (now - lastPersist > 2000) { lastPersist = now; store.put('messages', assistant).catch(() => {}); }
+  };
+  try {
+    if (provider === 'anthropic') await runAnthropic({ conv, chain, msg: assistant, signal: controller.signal, onProgress });
+    else await runOpenAI({ conv, chain, msg: assistant, signal: controller.signal, onProgress });
+    if (controller.signal.aborted) assistant.stopReason = 'stopped';
+  } catch (e) {
+    if (controller.signal.aborted || e.name === 'AbortError') assistant.stopReason = 'stopped';
+    else { assistant.error = e.message || String(e); console.error(e); }
+  } finally {
+    assistant.status = 'done';
+    assistant.text = (assistant.segments || []).filter((s) => s.type === 'text').map((s) => s.text).join('\n\n');
+    for (const s of assistant.segments || []) if (s.type === 'tool' && s.status === 'running') s.status = assistant.error ? 'error' : 'done';
+    for (const f of assistant.files || []) { delete f._blob; delete f._b64; if (f.status === 'pending') { f.status = 'error'; f.error = f.error || 'not retrieved'; } }
+    state.busy.delete(conv.id);
+    const stillExists = state.convs.some((c) => c.id === conv.id);
+    if (stillExists) await store.put('messages', assistant);
+    updateComposerState();
+    renderMessages();
+    if (stillExists) {
+      await maybeAutoTitle(conv); await touchConversation(conv);
+      const userMsg = [...chain].reverse().find((m) => m.role === 'user');
+      if (!conv.ephemeral) appendHistory(conv, userMsg, assistant);
+    }
+  }
+}
+async function removeFrom(idx) {
+  const removed = state.messages.splice(idx);
+  for (const m of removed) {
+    await store.del('messages', m.id);
+    for (const f of m.files || []) if (f.key) await store.del('files', f.key).catch(() => {});
+    for (const a of m.attachments || []) if (a.blobKey) await store.del('files', a.blobKey).catch(() => {});
+  }
+}
+async function regenerate(assistantMsg) {
+  const conv = activeConv(); if (!conv || state.busy.has(conv.id)) return;
+  const idx = state.messages.findIndex((m) => m.id === assistantMsg.id); if (idx < 0) return;
+  await removeFrom(idx);
+  renderMessages();
+  await runAssistantTurn(conv, activeChain());
+}
+async function editAndResend(userMsg, newText) {
+  const conv = activeConv(); if (!conv || state.busy.has(conv.id)) return;
+  const idx = state.messages.findIndex((m) => m.id === userMsg.id); if (idx < 0) return;
+  // Keep this message's attachments; drop everything after it.
+  const removed = state.messages.splice(idx + 1);
+  for (const m of removed) { await store.del('messages', m.id); for (const f of m.files || []) if (f.key) await store.del('files', f.key).catch(() => {}); for (const a of m.attachments || []) if (a.blobKey) await store.del('files', a.blobKey).catch(() => {}); }
+  userMsg.text = newText; userMsg.editedAt = Date.now();
+  delete userMsg.anthropicContent; delete userMsg.anthropicSystemNote; // re-freeze with the new text
+  await store.put('messages', userMsg);
+  renderMessages();
+  await runAssistantTurn(conv, activeChain());
+}
+async function deleteMessage(msg) {
+  const conv = activeConv(); if (!conv) return;
+  state.busy.get(conv.id)?.abort();
+  const idx = state.messages.findIndex((m) => m.id === msg.id); if (idx < 0) return;
+  await removeFrom(idx);
+  renderMessages();
+}
+function stopGeneration() { const conv = activeConv(); if (conv) state.busy.get(conv.id)?.abort(); }
+
+/* ───────────────────────────── Markdown rendering ───────────────────────────── */
+const mdRenderer = new marked.Renderer();
+mdRenderer.code = function ({ text, lang }) {
+  const language = (lang || '').trim().split(/\s+/)[0];
+  let html;
+  if (language && hljs.getLanguage(language)) { try { html = hljs.highlight(text, { language, ignoreIllegals: true }).value; } catch { html = escapeHtml(text); } }
+  else { try { html = hljs.highlightAuto(text).value; } catch { html = escapeHtml(text); } }
+  return `<div class="codeblock"><div class="cb-head"><span>${escapeHtml(language || 'text')}</span><button type="button" data-copy>Copy</button></div><pre><code class="hljs">${html}</code></pre></div>`;
+};
+marked.setOptions({ gfm: true, breaks: true, renderer: mdRenderer });
+
+/** Stash code and math so marked doesn't touch them; KaTeX renders math after sanitising. */
+function protectMath(src) {
+  const stash = [];
+  const put = (s) => { stash.push(s); return `\u0000M${stash.length - 1}\u0000`; };
+  let out = src.replace(/```[\s\S]*?(```|$)|`[^`\n]*`/g, (m) => put(m));
+  out = out.replace(/\$\$[\s\S]+?\$\$/g, (m) => put(m));
+  out = out.replace(/\\\[[\s\S]+?\\\]/g, (m) => put(m));
+  out = out.replace(/\\\([\s\S]+?\\\)/g, (m) => put(m));
+  out = out.replace(/(^|[^\\$\w])\$(?!\s)([^$\n]{1,400}?)(?<![\s\\])\$(?![\w$])/g, (m, pre, body) => `${pre}${put(`$${body}$`)}`);
+  // Code goes back before parsing (it must be parsed as code); math stays stashed.
+  out = out.replace(/\u0000M(\d+)\u0000/g, (m, i) => (stash[+i].startsWith('`') ? stash[+i] : m));
+  return { out, stash };
+}
+function rewriteFileLinks(src) {
+  // sandbox:/mnt/data/x.docx, /mnt/user-data/outputs/x.docx, attachment:x → #file:x
+  return src.replace(/\]\((?:sandbox:)?(?:\/mnt\/(?:data|user-data\/outputs)\/|attachment:)([^)\s]+)\)/g, (m, name) => {
+    try { return `](#file:${encodeURIComponent(decodeURIComponent(name))})`; } catch { return `](#file:${encodeURIComponent(name)})`; }
+  });
+}
+function renderMarkdown(src) {
+  if (!src) return '';
+  const { out, stash } = protectMath(rewriteFileLinks(src));
+  let html;
+  try { html = marked.parse(out); } catch { html = `<p>${escapeHtml(src)}</p>`; }
+  html = html.replace(/\u0000M(\d+)\u0000/g, (m, i) => escapeHtml(stash[+i]));
+  return DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'data-copy'] });
+}
+function postProcessProse(node) {
+  for (const a of $$('a[href]', node)) {
+    const href = a.getAttribute('href') || '';
+    if (href.startsWith('#file:')) {
+      const name = decodeURIComponent(href.slice(6));
+      a.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const f = findFileByName(name);
+        if (!f) { alert(`"${name}" isn't available for download (it may not have been transferred).`); return; }
+        const rec = await getCachedFile(f.key); if (rec) downloadBlob(rec.blob, f.name);
+      });
+      a.title = `Download ${name}`;
+    } else { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+  }
+  for (const btn of $$('button[data-copy]', node)) {
+    btn.addEventListener('click', async () => {
+      const code = btn.closest('.codeblock')?.querySelector('code')?.innerText || '';
+      try { await navigator.clipboard.writeText(code); btn.textContent = 'Copied'; setTimeout(() => (btn.textContent = 'Copy'), 1500); } catch { /* ignore */ }
+    });
+  }
+  if (window.renderMathInElement) {
+    try {
+      renderMathInElement(node, {
+        delimiters: [{ left: '$$', right: '$$', display: true }, { left: '\\[', right: '\\]', display: true }, { left: '\\(', right: '\\)', display: false }, { left: '$', right: '$', display: false }],
+        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'a'], throwOnError: false,
+      });
+    } catch { /* ignore */ }
+  }
+}
+
+/* ───────────────────────────── Rendering ───────────────────────────── */
+function renderConvList() {
+  const host = $('#convList');
+  host.innerHTML = '';
+  if (!settings.saveHistory) host.append(el('div', { style: { fontSize: '12px', color: 'var(--amber)', padding: '8px 10px 2px' }, text: 'History saving is off — new chats end with this session.' }));
+  if (!state.convs.length) { host.append(el('div', { class: 'conv-group', text: 'No conversations yet' })); return; }
+  const groups = [['Today', 0], ['Yesterday', 1], ['Previous 7 days', 7], ['Previous 30 days', 30], ['Older', Infinity]];
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const today = startOfDay(Date.now());
+  let lastGroup = null;
+  for (const c of state.convs) {
+    const days = Math.floor((today - startOfDay(c.updatedAt)) / 86400000);
+    const g = groups.find(([, n]) => days <= n)[0];
+    if (g !== lastGroup) { host.append(el('div', { class: 'conv-group', text: g })); lastGroup = g; }
+    host.append(el('div', { class: `conv-item${c.id === state.activeConvId ? ' active' : ''}`, onclick: () => selectConversation(c.id) },
+      state.busy.has(c.id) ? el('span', { class: 'busy-dot' }) : null,
+      el('span', { class: 't', text: c.title || 'New chat', title: c.title }),
+      el('button', { class: 'x', title: 'Delete', html: '×', onclick: (e) => { e.stopPropagation(); if (confirm(`Delete "${c.title}"?`)) deleteConversation(c.id); } })));
+  }
+}
+function renderModelSelect() {
+  const sel = $('#modelSel');
+  const provider = settings.provider;
+  const cat = state.models[provider];
+  sel.innerHTML = '';
+  const ids = cat?.ids || SPEC[provider].fallbackModels;
+  const current = currentModel();
+  for (const id of ids) sel.append(el('option', { value: id, text: id, selected: id === current || undefined }));
+  if (current && !ids.includes(current)) sel.append(el('option', { value: current, text: current, selected: true }));
+  sel.title = cat?.live ? 'Models available to your API key' : 'Built-in model list (add a key to fetch the live list)';
+  $('#providerSel').value = provider;
+  const eff = $('#effortSel'); eff.innerHTML = '';
+  for (const [v, label] of EFFORTS) eff.append(el('option', { value: v, text: label, selected: v === settings.effort || undefined }));
+  $('#whoLabel').textContent = `${provider === 'anthropic' ? 'Claude' : 'OpenAI'} · ${current || '—'}`;
+}
+function renderMessages() {
+  const host = $('#msgsInner');
+  const chain = activeChain();
+  host.innerHTML = '';
+  if (!chain.length) {
+    const starters = [
+      'Make a 10-question Year 9 quiz on Python loops with an answer key, as a Word document',
+      'Turn the attached PDF into a one-page student summary handout',
+      'Draft a parent email about an upcoming assessment',
+      'Build a markbook spreadsheet for three classes with weighted totals',
+      'Plan a 60-minute lesson on binary numbers for Year 8 (5E model) as a lesson-plan document',
+      'Create a 12-slide deck introducing the Software Development PSM stages',
+    ];
+    host.append(el('div', { class: 'empty' },
+      el('div', { style: { width: '48px', height: '48px', borderRadius: '14px', fontSize: '20px', background: 'linear-gradient(135deg, var(--accent), #6366f1)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: '800' }, text: 'T' }),
+      el('h1', { text: 'How can I help today?' }),
+      el('p', { text: 'Ask anything, attach files, and request documents — real Word, PowerPoint, Excel and PDF files come back as downloads.' }),
+      el('div', { class: 'chips' }, ...starters.map((s) => el('button', { class: 'chip', text: s, onclick: () => { $('#input').value = s; autosize(); $('#input').focus(); updateComposerState(); } })))));
+    return;
+  }
+  for (const m of chain) host.append(renderMessage(m));
+  scrollToBottom(false);
+}
+function scheduleRender(msg) {
+  if (state.renderTimers.has(msg.id)) return;
+  state.renderTimers.set(msg.id, setTimeout(() => {
+    state.renderTimers.delete(msg.id);
+    const node = $(`[data-msg="${msg.id}"]`);
+    if (node) { const atBottom = isNearBottom(); node.replaceWith(renderMessage(msg)); if (atBottom) scrollToBottom(false); }
+  }, 90));
+}
+function renderMessage(m) {
+  const wrap = el('div', { class: `msg ${m.role}`, 'data-msg': m.id });
+  if (m.role === 'user') {
+    if (m.attachments?.length) wrap.append(el('div', { class: 'attach-row' }, ...m.attachments.map((a) => attachmentPill(a))));
+    wrap.append(el('div', { class: 'bubble', text: m.text || '' }));
+    wrap.append(el('div', { class: 'actions' },
+      el('button', { class: 'btn icon ghost sm', title: 'Edit & resend', html: svgIcon('edit'), onclick: () => startEdit(m, wrap) }),
+      el('button', { class: 'btn icon ghost sm', title: 'Copy', html: svgIcon('copy'), onclick: () => navigator.clipboard.writeText(m.text || '') }),
+      el('button', { class: 'btn icon ghost sm', title: 'Delete from here', html: svgIcon('trash'), onclick: () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); } })));
+    return wrap;
+  }
+  wrap.append(el('div', { class: 'head' }, el('span', { class: 'avatar', text: 'T' }), el('span', { text: 'Teach Assist' }), el('span', { class: 'model', text: m.model || '' })));
+  const body = el('div', { class: 'body' });
+  const segs = m.segments || [];
+  const streaming = m.status === 'streaming';
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    const isLast = i === segs.length - 1;
+    if (s.type === 'thinking') {
+      if (!settings.showThinking && !streaming) continue;
+      if (!s.text && !(streaming && isLast)) continue;
+      body.append(el('details', { class: 'card thinking' },
+        el('summary', {}, el('span', { class: 'ic-sm', html: svgIcon('brain') }), el('span', { text: streaming && isLast ? 'Thinking…' : 'Thought process' }), el('span', { class: 'chev', html: svgIcon('chev') })),
+        el('div', { class: 'card-body', text: s.text || '' })));
+    } else if (s.type === 'text') {
+      if (!s.text && !streaming) continue;
+      const prose = el('div', { class: 'prose', html: renderMarkdown(s.text) });
+      if (streaming && isLast) prose.append(el('span', { class: 'cursor' }));
+      postProcessProse(prose);
+      body.append(prose);
+    } else if (s.type === 'tool') body.append(toolCard(s));
+  }
+  if (streaming && (!segs.length || segs[segs.length - 1].type === 'tool')) body.append(el('div', { class: 'thinking-dots', style: { marginTop: '4px' } }, el('i'), el('i'), el('i'), !segs.length ? el('span', { text: ' Working…', style: { marginLeft: '4px' } }) : null));
+  const files = m.files || [];
+  const imgs = files.filter((f) => f.status === 'ready' && (f.mediaType || '').startsWith('image/'));
+  const others = files.filter((f) => !imgs.includes(f));
+  for (const f of imgs) body.append(imageCard(f));
+  if (others.length) body.append(el('div', { class: 'files' }, ...others.map((f) => fileCard(f))));
+  if (others.some((f) => f.needsRelay)) body.append(el('div', { class: 'err', style: { color: 'var(--amber)', borderColor: 'rgba(251,191,36,.5)', background: 'rgba(251,191,36,.08)' }, html: `Claude created file(s) but the browser cannot download them directly from Anthropic (their Files API blocks browser origins). Add the <b>Claude files relay</b> in Settings — a two-minute Cloudflare Worker — and regenerate, or switch off the relay-free mode by asking Claude to resend the file inline.` }));
+  if (m.sources?.length) body.append(el('div', { class: 'sources' }, el('div', { text: 'Sources' }), el('ol', {}, ...m.sources.slice(0, 25).map((s) => el('li', {}, el('a', { href: s.url, target: '_blank', rel: 'noopener noreferrer', text: s.title || s.url }))))));
+  if (m.error) body.append(el('div', { class: 'err' }, `Error: ${m.error}`, el('div', {}, el('button', { class: 'btn sm', text: 'Retry', onclick: () => regenerate(m) }))));
+  else if (m.stopReason === 'max_tokens' || m.stopReason === 'max_output_tokens') body.append(el('div', { class: 'err', style: { color: 'var(--amber)', borderColor: 'rgba(251,191,36,.5)', background: 'rgba(251,191,36,.08)' } }, 'The reply hit the output-token limit. Raise "Max output tokens" in Settings, or ask it to continue.'));
+  else if (m.stopReason === 'model_context_window_exceeded') body.append(el('div', { class: 'err', style: { color: 'var(--amber)', borderColor: 'rgba(251,191,36,.5)', background: 'rgba(251,191,36,.08)' } }, 'The conversation has filled the model\'s context window; this reply was cut short. Start a new chat (or delete older messages) to continue.'));
+  else if (m.stopReason === 'refusal') body.append(el('div', { class: 'err' }, 'The model declined to continue this response.'));
+  else if (m.stopReason === 'stopped') body.append(el('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' }, text: 'Stopped.' }));
+  if (!streaming && !segs.some((s) => s.type === 'text' && s.text) && !files.length && !m.error && !segs.some((s) => s.type === 'tool')) body.append(el('div', { style: { color: 'var(--text-dim)' }, text: '(empty response)' }));
+  wrap.append(body);
+  if (!streaming) {
+    const u = m.usage;
+    wrap.append(el('div', { class: 'actions' },
+      el('button', { class: 'btn icon ghost sm', title: 'Copy response', html: svgIcon('copy'), onclick: () => navigator.clipboard.writeText(m.text || '') }),
+      el('button', { class: 'btn icon ghost sm', title: 'Regenerate', html: svgIcon('refresh'), onclick: () => regenerate(m) }),
+      el('button', { class: 'btn icon ghost sm', title: 'Delete from here', html: svgIcon('trash'), onclick: () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); } }),
+      u ? el('span', { class: 'usage', style: { alignSelf: 'center', marginLeft: '6px' }, text: `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` }) : null));
+  }
+  return wrap;
+}
+function toolCard(s) {
+  const icon = { search: 'globe', fetch: 'globe', code: 'code', bash: 'terminal', editor: 'file', image: 'image', other: 'code' }[s.kind] || 'code';
+  const status = s.status === 'running' ? el('span', { class: 'status', text: '…' }) : s.status === 'error' ? el('span', { class: 'status err', text: 'failed' }) : el('span', { class: 'status ok', html: svgIcon('check'), style: { display: 'inline-flex', width: '12px' } });
+  const title = s.query ? el('span', {}, `${s.title}: `, el('span', { class: 'q', text: s.query })) : el('span', { text: s.title });
+  const parts = [];
+  if (s.code) {
+    const pre = el('pre');
+    try { pre.innerHTML = s.lang && hljs.getLanguage(s.lang) ? hljs.highlight(s.code, { language: s.lang, ignoreIllegals: true }).value : escapeHtml(s.code); } catch { pre.textContent = s.code; }
+    parts.push(el('div', { class: 'lbl', text: s.kind === 'editor' ? (s.path || 'content') : s.kind === 'other' ? 'input' : 'code' }), pre);
+  }
+  if (s.output) parts.push(el('div', { class: 'lbl', text: 'output' }), el('pre', { text: s.output.length > 6000 ? s.output.slice(0, 6000) + '\n…' : s.output }));
+  if (s.results?.length) parts.push(el('div', { class: 'lbl', text: 'results' }), el('ol', { class: 'results' }, ...s.results.slice(0, 10).map((r) => el('li', {}, el('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer', text: r.title || r.url })))));
+  if (s.images?.length) for (const u of s.images) parts.push(el('img', { class: 'gen-img', src: u, alt: 'chart', style: { borderRadius: '10px', borderBottom: '1px solid var(--border)', margin: '8px 0' }, onerror: (e) => e.target.remove() }));
+  return el('details', { class: 'card' },
+    el('summary', {}, el('span', { class: 'ic-sm', html: svgIcon(icon) }), title, status, el('span', { class: 'chev', html: svgIcon('chev') })),
+    parts.length ? el('div', { class: 'card-body' }, ...parts) : null);
+}
+function fileCard(f) {
+  const [cls, label] = iconClassFor(f.name || '', f.mediaType || '');
+  const meta = f.status === 'pending' ? 'Preparing…' : f.status === 'error' ? `Unavailable — ${f.error || 'download failed'}` : `${fmtBytes(f.size)}${label ? ' · ' + label : ''}`;
+  return el('div', { class: `file-card${f.status !== 'ready' ? ' pending' : ''}`, title: f.status === 'error' ? (f.error || '') : '' },
+    el('div', { class: `ic ${cls}`, text: label }),
+    el('div', { class: 'info' }, el('div', { class: 'nm', text: f.name || f.fileId, title: f.name || '' }), el('div', { class: 'meta', text: meta })),
+    el('button', { class: 'dl', title: 'Download', html: svgIcon('download'), onclick: async () => { const rec = await getCachedFile(f.key); if (rec) downloadBlob(rec.blob, f.name || 'download'); else alert('This file is no longer cached locally.'); } }));
+}
+function imageCard(f) {
+  const wrap = el('div', { class: 'gen-img-wrap' });
+  const img = el('img', { class: 'gen-img', alt: f.name || 'image' });
+  fileUrl(f.key).then((u) => { if (u) img.src = u; });
+  const dl = async () => { const rec = await getCachedFile(f.key); if (rec) downloadBlob(rec.blob, f.name); };
+  wrap.append(img, el('div', { class: 'cap' },
+    el('span', { class: 'nm', text: f.name || 'image', title: f.name || '' }),
+    el('span', { class: 'meta', text: fmtBytes(f.size) }),
+    el('button', { class: 'dl', title: `Download ${f.name}`, html: svgIcon('download'), onclick: dl })));
+  return wrap;
+}
+function attachmentPill(a, removable) {
+  const [cls, label] = iconClassFor(a.name, a.mediaType);
+  const pill = el('div', { class: `att-pill${removable ? ' pending-att' : ''}${a.parsing ? ' parsing' : ''}`, title: a.name });
+  if (a.kind === 'image' && a.base64) pill.append(el('img', { class: 'thumb', src: `data:${a.mediaType};base64,${a.base64}`, alt: a.name }));
+  else pill.append(el('div', { class: `ic ${cls}`, text: label }));
+  const bits = [fmtBytes(a.size)];
+  if (a.pages) bits.push(`${a.pages} pages`);
+  if (a.parsing) bits.push('reading…');
+  if (a.uploading) bits.push('uploading…');
+  if (a.uploadError) bits.push('upload failed');
+  pill.append(el('div', { style: { minWidth: 0 } }, el('div', { class: 'nm', text: a.name }), el('div', { class: 'meta', text: bits.join(' · ') })));
+  if (removable) pill.append(el('button', { class: 'rm', html: '×', title: 'Remove', onclick: () => { state.pending = state.pending.filter((p) => p.id !== a.id); if (a.blobKey) store.del('files', a.blobKey).catch(() => {}); renderPending(); } }));
+  return pill;
+}
+function startEdit(m, wrap) {
+  const ta = el('textarea', { style: { width: 'min(720px, 100%)', minHeight: '80px', border: '1px solid var(--accent)', borderRadius: '12px', padding: '10px 12px', background: 'var(--bg-elev)', resize: 'vertical' } });
+  ta.value = m.text || '';
+  const bar = el('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '6px' } },
+    el('button', { class: 'btn sm', text: 'Cancel', onclick: () => renderMessages() }),
+    el('button', { class: 'btn sm primary', text: 'Save & resend', onclick: () => editAndResend(m, ta.value.trim()) }));
+  wrap.innerHTML = '';
+  wrap.append(ta, bar);
+  ta.focus();
+}
+
+/* ───────────────────────────── Composer ───────────────────────────── */
+function autosize() { const ta = $('#input'); ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + 'px'; }
+function updateComposerState() {
+  const busy = state.activeConvId ? state.busy.has(state.activeConvId) : false;
+  const hasText = $('#input').value.trim().length > 0 || state.pending.some((p) => !p.parsing);
+  $('#sendBtn').disabled = busy || !hasText || state.pending.some((p) => p.parsing);
+  $('#stopBtn').classList.toggle('hidden', !busy);
+  $('#sendBtn').classList.toggle('hidden', busy);
+  const prov = settings.provider === 'anthropic' ? 'Claude' : 'OpenAI';
+  $('#hintLabel').textContent = busy ? `${prov} is working…` : `${prov} · ${currentModel() || 'no model'}`;
+}
+function renderPending() {
+  const bar = $('#attachBar');
+  bar.innerHTML = '';
+  for (const a of state.pending) bar.append(attachmentPill(a, true));
+  updateComposerState();
+}
+async function addFiles(fileList) {
+  for (const f of Array.from(fileList || [])) {
+    const placeholder = { id: uid('att'), name: f.name, size: f.size, mediaType: f.type || guessMime(f.name), parsing: true, kind: 'other' };
+    state.pending.push(placeholder); renderPending();
+    try { Object.assign(placeholder, await prepareAttachment(f), { parsing: false }); }
+    catch (e) { state.pending = state.pending.filter((p) => p !== placeholder); showBanner('err', `Couldn't attach ${escapeHtml(f.name)}: ${escapeHtml(e.message)}`); }
+    renderPending();
+  }
+}
+function setToggle(btn, on) { btn.classList.toggle('on', !!on); }
+function showBanner(kind, html) {
+  const host = $('#bannerHost');
+  host.innerHTML = '';
+  host.append(el('div', { class: `banner ${kind}` }, el('span', { html: svgIcon('alert'), style: { width: '16px', flex: '0 0 auto', display: 'inline-flex' } }), el('span', { html, style: { flex: 1 } }), el('button', { class: 'x', html: '×', onclick: () => (host.innerHTML = '') })));
+}
+function isNearBottom() { const m = $('#messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 160; }
+function scrollToBottom(force) { const m = $('#messages'); if (force || isNearBottom()) m.scrollTop = m.scrollHeight; }
+function collapseSidebar(v) { $('#sidebar').classList.toggle('collapsed', v); $('#scrim').classList.toggle('show', !v && window.innerWidth <= 860); saveSettings({ sidebarCollapsed: v }); }
+
+/* ───────────────────────────── Settings modal ───────────────────────────── */
+function openSettings() {
+  const host = $('#modalHost');
+  host.innerHTML = '';
+  const s = settings;
+  const f = (label, input, help) => el('div', { class: 'field' }, el('label', { text: label }), input, help ? el('div', { class: 'help', html: help }) : null);
+  const anthropicKey = el('input', { type: 'password', value: s.anthropicKey, placeholder: 'sk-ant-…', autocomplete: 'off', spellcheck: 'false' });
+  const openaiKey = el('input', { type: 'password', value: s.openaiKey, placeholder: 'sk-…', autocomplete: 'off', spellcheck: 'false' });
+  const relay = el('input', { type: 'text', value: s.anthropicRelay, placeholder: 'https://your-worker.your-subdomain.workers.dev', spellcheck: 'false' });
+  const aStatus = el('div', { class: 'key-status' }), oStatus = el('div', { class: 'key-status' }), rStatus = el('div', { class: 'key-status' });
+  const testKey = async (provider, input, status) => {
+    const key = input.value.trim();
+    if (!key) { status.textContent = ''; status.className = 'key-status'; return; }
+    status.textContent = 'Checking…'; status.className = 'key-status wait';
+    saveSettings(provider === 'anthropic' ? { anthropicKey: key } : { openaiKey: key });
+    const ids = await fetchModels(provider, true);
+    const cat = state.models[provider];
+    if (cat?.live) { status.textContent = `Key works — ${ids.length} models available.`; status.className = 'key-status ok'; }
+    else { status.textContent = 'Could not list models with this key. Check the key; the built-in model list will be used meanwhile.'; status.className = 'key-status err'; }
+    renderModelSelect();
+  };
+  const testRelay = async () => {
+    const base = relay.value.trim().replace(/\/+$/, '');
+    if (!base) { rStatus.textContent = ''; return; }
+    rStatus.textContent = 'Checking…'; rStatus.className = 'key-status wait';
+    try {
+      const res = await fetch(`${base}/v1/files?limit=1`, { headers: anthropicHeaders(anthropicKey.value.trim() || 'x', { json: false }) });
+      if (res.ok) { rStatus.textContent = 'Relay works — Claude can now upload your files to its sandbox and return generated documents.'; rStatus.className = 'key-status ok'; }
+      else { const t = await res.text(); rStatus.textContent = `Relay reachable but Anthropic replied ${res.status}: ${t.slice(0, 160)}`; rStatus.className = 'key-status err'; }
+    } catch (e) { rStatus.textContent = `Relay not reachable: ${e.message}`; rStatus.className = 'key-status err'; }
+  };
+  const showBtn = (input) => el('button', { class: 'btn sm', text: 'Show', onclick: (e) => { input.type = input.type === 'password' ? 'text' : 'password'; e.target.textContent = input.type === 'password' ? 'Show' : 'Hide'; } });
+  const userName = el('input', { type: 'text', value: s.userName, placeholder: 'e.g. Clarence' });
+  const profile = el('textarea', { placeholder: 'Who you are, what you teach, preferred spelling/curriculum/timezone…' }); profile.value = s.profile;
+  const tz = el('input', { type: 'text', value: s.timezone, placeholder: 'Australia/Melbourne' });
+  const maxTok = el('input', { type: 'number', min: 1024, max: 128000, step: 1024, value: s.maxTokens });
+  const theme = el('select', {}, el('option', { value: 'dark', text: 'Dark' }), el('option', { value: 'light', text: 'Light' })); theme.value = s.theme;
+  const imageModel = el('select', {}, ...SPEC.openai.imageModels.map((m) => el('option', { value: m, text: m }))); imageModel.value = SPEC.openai.imageModels.includes(s.imageModel) ? s.imageModel : 'gpt-image-2';
+  const showThinking = el('input', { type: 'checkbox' }); showThinking.checked = s.showThinking;
+  const defWeb = el('input', { type: 'checkbox' }); defWeb.checked = s.webSearch;
+  const defCode = el('input', { type: 'checkbox' }); defCode.checked = s.codeTools;
+  const imgGen = el('input', { type: 'checkbox' }); imgGen.checked = s.imageGen;
+  const saveHist = el('input', { type: 'checkbox' }); saveHist.checked = s.saveHistory;
+  const trustedOrigin = el('input', { type: 'text', value: s.trustedParentOrigin, placeholder: MAIN.origin || referrerOrigin() || 'https://your-main-program.example', spellcheck: 'false' });
+  const histInfo = el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 8px' }, text: 'Reading history file…' });
+  const refreshHistInfo = async () => {
+    const st = await historyStats();
+    const where = cacheStorageOk() ? 'browser cache (Cache Storage)' : 'browser storage (IndexedDB — Cache Storage is unavailable when the page is opened from disk)';
+    histInfo.textContent = st.entries
+      ? `teach-assist-chat-history.json — ${st.entries} exchange${st.entries === 1 ? '' : 's'} from ${st.convs} chat${st.convs === 1 ? '' : 's'}, ${fmtBytes(st.bytes)}, last updated ${new Date(st.updated).toLocaleString()}. Stored in the ${where}.`
+      : `teach-assist-chat-history.json is empty. It will be kept in the ${where}.`;
+  };
+  refreshHistInfo();
+  const keySourceNote = (provider) => {
+    const src = settings.keySource[provider];
+    if (src === 'main') return el('div', { class: 'key-status ok', text: `Supplied by the main program${MAIN.via ? ` (${MAIN.via === 'postMessage' ? 'frame message' : 'shared api_cache'})` : ''}. Typing a different key here replaces it with your own.` });
+    return null;
+  };
+  const relayCode = el('details', { style: { marginTop: '8px' } }, el('summary', { style: { cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-2)' }, text: 'Show the Cloudflare Worker code (copy → deploy → paste URL above)' }),
+    el('pre', { style: { fontFamily: 'var(--mono)', fontSize: '11.5px', background: 'var(--code-bg)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', overflow: 'auto', maxHeight: '260px', whiteSpace: 'pre' }, text: RELAY_WORKER_SOURCE }),
+    el('button', { class: 'btn sm', text: 'Copy worker code', onclick: (e) => { navigator.clipboard.writeText(RELAY_WORKER_SOURCE); e.target.textContent = 'Copied'; setTimeout(() => (e.target.textContent = 'Copy worker code'), 1500); } }));
+
+  const close = () => { host.innerHTML = ''; };
+  const modal = el('div', { class: 'modal-bg', onclick: (e) => { if (e.target === modal) close(); } },
+    el('div', { class: 'modal' },
+      el('div', { class: 'm-head' }, el('h2', { text: 'Settings' }), el('button', { class: 'btn icon ghost', html: '×', title: 'Close', onclick: close })),
+      el('div', { class: 'm-body' },
+        el('div', { class: 'm-section', style: { borderTop: 0, marginTop: '6px', paddingTop: 0 } }, el('h3', { text: 'API keys' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: 'Keys stay in this browser (localStorage) and go straight to the provider — there is no server in between. Create keys at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>.' }),
+          f('Anthropic (Claude) API key', el('div', { class: 'key-row' }, anthropicKey, showBtn(anthropicKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('anthropic', anthropicKey, aStatus) }))), keySourceNote('anthropic'), aStatus,
+          f('OpenAI API key', el('div', { class: 'key-row' }, openaiKey, showBtn(openaiKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('openai', openaiKey, oStatus) }))), keySourceNote('openai'), oStatus,
+          el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
+            el('button', { class: 'btn sm', text: 'Reload keys from main program', onclick: async (e) => {
+              e.target.textContent = 'Checking…';
+              // Clear the "typed by me" flag so main-program keys may replace them.
+              saveSettings({ keySource: { anthropic: settings.anthropicKey ? 'main' : '', openai: settings.openaiKey ? 'main' : '' } });
+              const local = readLocalApiCache();
+              let got = !!(local.OPENAI_API_KEY || local.CLAUDE_API_KEY);
+              if (got) applyMainKeys(local, 'api_cache');
+              if (await requestParentKeys()) got = true;
+              anthropicKey.value = settings.anthropicKey; openaiKey.value = settings.openaiKey;
+              e.target.textContent = got ? 'Keys loaded from main program' : 'No main program keys found';
+              onKeysChanged();
+            } })),
+          f('Trusted main-program origin (optional)', trustedOrigin, `When Teach Assist runs inside the main program's frame, keys sent by message are accepted only from the parent frame${MAIN.origin ? ` (currently <code>${escapeHtml(MAIN.origin)}</code>)` : ''}. Enter the main program's origin to also reject any other parent. Leave blank to accept your own parent frame.`)),
+        el('div', { class: 'm-section' }, el('h3', { text: 'Claude files relay (recommended for Claude documents)' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: `Anthropic lets browsers call the chat API directly, but <b>blocks browser access to its Files API</b> — which is how Claude's generated DOCX/PPTX/XLSX/PDF files are downloaded and how your Word/Excel attachments reach its sandbox. A tiny Cloudflare Worker (free) forwards just those <code>/v1/files</code> calls with your own key. Without it, Claude still works and small files (under ${SPEC.anthropic.inlineFileMaxKB} KB) are transferred inline; larger ones can't be. OpenAI needs no relay.` }),
+          f('Relay URL', el('div', { class: 'key-row' }, relay, el('button', { class: 'btn sm', text: 'Test', onclick: testRelay }))), rStatus, relayCode),
+        el('div', { class: 'm-section' }, el('h3', { text: 'About you' }),
+          el('div', { class: 'row' }, f('Your name', userName), f('Timezone (IANA)', tz)),
+          f('Profile & standing instructions', profile, 'Sent with every request. Keep it to what changes the answers: subjects, year levels, spelling, curriculum, tone.')),
+        el('div', { class: 'm-section' }, el('h3', { text: 'Generation' }),
+          el('div', { class: 'row' }, f('Max output tokens', maxTok, 'Upper bound per reply (thinking included). The app lowers it automatically if a model allows less.'), f('Theme', theme)),
+          el('label', { class: 'check' }, showThinking, el('span', {}, 'Show the model\'s thought process ', el('span', { class: 'help', text: 'Collapsible "Thought process" cards (Claude: summarised thinking; OpenAI: reasoning summaries).' }))),
+          el('label', { class: 'check' }, defWeb, el('span', {}, 'Web search on for new chats ', el('span', { class: 'help', text: 'Claude: web_search + web_fetch. OpenAI: web_search. Billed by the provider per search (~$10 per 1,000).' }))),
+          el('label', { class: 'check' }, defCode, el('span', {}, 'Code & files on for new chats ', el('span', { class: 'help', text: 'Claude: code-execution sandbox with the docx/pptx/xlsx/pdf Skills. OpenAI: code interpreter container. This is what produces real downloadable documents.' }))),
+          el('label', { class: 'check' }, imgGen, el('span', {}, 'Image generation ', el('span', { class: 'help', text: 'OpenAI: built-in image_generation tool. Claude: a generate_image tool backed by your OpenAI key (needs an OpenAI key).' }))),
+          f('Image model', imageModel)),
+        el('div', { class: 'm-section' }, el('h3', { text: 'Chat history' }),
+          el('label', { class: 'check' }, saveHist, el('span', {}, 'Save chat history ', el('span', { class: 'help', text: 'On: chats stay in the sidebar after you close the tab, and every exchange is appended to teach-assist-chat-history.json in the browser cache. Off: new chats last only for this session and nothing is written to the history file.' }))),
+          histInfo,
+          el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+            el('button', { class: 'btn sm', text: 'Export history (JSON)', onclick: exportHistory }),
+            el('button', { class: 'btn sm', text: 'Import history (JSON)', onclick: () => importAll(refreshHistInfo) }),
+            el('button', { class: 'btn sm danger', text: 'Clear history file', onclick: async () => { if (!confirm('Clear teach-assist-chat-history.json? Chats in the sidebar are not affected.')) return; await clearHistory(); refreshHistInfo(); } }),
+            el('button', { class: 'btn sm danger', text: 'Delete all chats', onclick: async () => { if (!confirm('Delete every conversation and cached file in this browser? The history file is kept unless you clear it too.')) return; for (const sN of ['conversations', 'messages']) await store.clear(sN); const files = await store.all('files'); for (const r of files) if (r.key !== HISTORY.idbKey) await store.del('files', r.key); state.convs = []; state.messages = []; state.activeConvId = null; renderConvList(); renderMessages(); close(); } })),
+          el('div', { class: 'help', style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '8px' }, text: 'Attachments are also uploaded to the provider you use (OpenAI Files API; Anthropic Files API via the relay) so the sandbox can read them; you can delete those from the provider console.' })),
+        el('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' } },
+          el('button', { class: 'btn', text: 'Cancel', onclick: close }),
+          el('button', { class: 'btn primary', text: 'Save', onclick: async () => {
+            const patch = {
+              anthropicKey: anthropicKey.value.trim(), openaiKey: openaiKey.value.trim(), anthropicRelay: relay.value.trim().replace(/\/+$/, ''),
+              userName: userName.value.trim(), profile: profile.value.trim(), timezone: tz.value.trim() || DEFAULT_SETTINGS.timezone,
+              maxTokens: clamp(parseInt(maxTok.value, 10) || 64000, 1024, 128000), theme: theme.value, imageModel: imageModel.value,
+              showThinking: showThinking.checked, webSearch: defWeb.checked, codeTools: defCode.checked, imageGen: imgGen.checked,
+              saveHistory: saveHist.checked, trustedParentOrigin: trustedOrigin.value.trim().replace(/\/+$/, ''),
+            };
+            const keysChanged = patch.anthropicKey !== settings.anthropicKey || patch.openaiKey !== settings.openaiKey;
+            // A key the user typed (different from what the main program supplied) becomes theirs.
+            const src = { ...settings.keySource };
+            if (patch.anthropicKey !== settings.anthropicKey) src.anthropic = patch.anthropicKey ? 'user' : '';
+            if (patch.openaiKey !== settings.openaiKey) src.openai = patch.openaiKey ? 'user' : '';
+            patch.keySource = src;
+            if (patch.saveHistory !== settings.saveHistory) {
+              // Turning saving back on keeps the chats from this session; turning it off affects new chats only.
+              if (patch.saveHistory) for (const c of state.convs) if (c.ephemeral) { c.ephemeral = false; await store.put('conversations', c); }
+            }
+            saveSettings(patch);
+            close();
+            if (keysChanged || !state.models[settings.provider]?.live) await Promise.all([fetchModels('anthropic', keysChanged), fetchModels('openai', keysChanged)]);
+            if (!keyFor(settings.provider)) { if (keyFor('anthropic')) saveSettings({ provider: 'anthropic' }); else if (keyFor('openai')) saveSettings({ provider: 'openai' }); }
+            renderModelSelect(); updateComposerState(); renderMessages();
+            if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = '';
+          } })))));
+  host.append(modal);
+  if (!s.anthropicKey && !s.openaiKey) anthropicKey.focus();
+}
+const RELAY_WORKER_SOURCE = `// Cloudflare Worker: CORS relay for Anthropic's Files API (/v1/files/* only).
+// Forwards your own x-api-key from the browser; stores nothing. Optional env var
+// ALLOWED_ORIGIN (e.g. "https://you.github.io", or "null" for file://) restricts callers.
+const ALLOW_PATH = /^\\/v1\\/files(\\/|$)/;
+const PASS = ['x-api-key','authorization','anthropic-version','anthropic-beta','content-type'];
+const cors = (origin, env) => ({
+  'Access-Control-Allow-Origin': env && env.ALLOWED_ORIGIN ? (origin === env.ALLOWED_ORIGIN ? origin : 'null') : '*',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'x-api-key, authorization, anthropic-version, anthropic-beta, anthropic-dangerous-direct-browser-access, content-type',
+  'Access-Control-Expose-Headers': 'content-type, content-length, content-disposition, request-id',
+  'Access-Control-Max-Age': '86400', 'Vary': 'Origin',
+});
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url), origin = request.headers.get('Origin') || '', h = cors(origin, env);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
+    if (env && env.ALLOWED_ORIGIN && origin !== env.ALLOWED_ORIGIN) return new Response('Origin not allowed', { status: 403, headers: h });
+    if (!ALLOW_PATH.test(url.pathname)) return new Response('Not found', { status: 404, headers: h });
+    if (!request.headers.get('x-api-key') && !request.headers.get('authorization')) return new Response('Missing x-api-key', { status: 401, headers: h });
+    const headers = new Headers();
+    for (const k of PASS) { const v = request.headers.get(k); if (v) headers.set(k, v); }
+    if (!headers.has('anthropic-version')) headers.set('anthropic-version', '2023-06-01');
+    const up = await fetch('https://api.anthropic.com' + url.pathname + url.search, { method: request.method, headers, body: ['GET','HEAD'].includes(request.method) ? undefined : request.body });
+    const out = new Headers();
+    for (const k of ['content-type','content-length','content-disposition','request-id']) { const v = up.headers.get(k); if (v) out.set(k, v); }
+    for (const [k, v] of Object.entries(h)) out.set(k, v);
+    return new Response(up.body, { status: up.status, headers: out });
+  },
+};`;
+async function exportAll() {
+  const convs = await store.all('conversations');
+  const msgs = await store.all('messages');
+  const slim = msgs.map((m) => ({ ...m, attachments: (m.attachments || []).map((a) => ({ ...a, base64: a.kind === 'image' ? a.base64 : undefined })) }));
+  downloadBlob(new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), conversations: convs, messages: slim }, null, 1)], { type: 'application/json' }), `teach-assist-export-${localDateStamp()}.json`);
+}
+/** Import a chat-history JSON (or an older full export): rebuilds the chats and merges into the history file. */
+function importAll(after) {
+  const input = el('input', { type: 'file', accept: 'application/json,.json' });
+  input.onchange = async () => {
+    const f = input.files?.[0]; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      if (Array.isArray(data.entries)) {
+        await historyQueue;
+        const doc = (await readHistory()) || { app: 'Teach Assist', format: 'teach-assist-chat-history', version: 1, created: new Date().toISOString(), entries: [] };
+        const seen = new Set(doc.entries.map((e) => e.id));
+        const existingConvs = new Set(state.convs.map((c) => c.id));
+        const byConv = new Map();
+        let added = 0;
+        for (const e of data.entries) {
+          if (!e || !e.conversationId) continue;
+          if (!seen.has(e.id)) { doc.entries.push(e); seen.add(e.id); added++; }
+          if (!byConv.has(e.conversationId)) byConv.set(e.conversationId, []);
+          byConv.get(e.conversationId).push(e);
+        }
+        let rebuilt = 0;
+        for (const [cid, entries] of byConv) {
+          if (existingConvs.has(cid)) continue; // already in the sidebar
+          entries.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+          const t0 = Date.parse(entries[0].timestamp) || Date.now();
+          const tN = Date.parse(entries[entries.length - 1].timestamp) || Date.now();
+          await store.put('conversations', { id: cid, title: entries[0].conversationTitle || 'Imported chat', createdAt: t0, updatedAt: tN, provider: entries[0].provider, model: entries[0].model, webSearch: settings.webSearch, codeTools: settings.codeTools, imported: true });
+          for (const e of entries) {
+            const ts = Date.parse(e.timestamp) || t0;
+            const names = (e.user?.attachments || []).map((a) => a.name).filter(Boolean);
+            const fileNames = (e.assistant?.files || []).map((x) => x.name).filter(Boolean);
+            await store.put('messages', { id: uid('msg'), conversationId: cid, role: 'user', createdAt: ts - 1, text: (e.user?.text || '') + (names.length ? `\n\n[attachments not included in history: ${names.join(', ')}]` : '') });
+            const text = (e.assistant?.text || '') + (fileNames.length ? `\n\n_Files from this reply are not stored in the history file: ${fileNames.join(', ')}_` : '');
+            await store.put('messages', { id: uid('msg'), conversationId: cid, role: 'assistant', createdAt: ts, text, segments: text ? [{ type: 'text', text, citations: [] }] : [], sources: e.assistant?.sources || [], files: [], provider: e.provider, model: e.model, status: 'done', usage: e.usage || undefined, ...(e.assistant?.error ? { error: e.assistant.error } : {}) });
+          }
+          rebuilt++;
+        }
+        doc.updated = new Date().toISOString();
+        if (added) await writeHistory(doc);
+        await loadConversations(); renderConvList();
+        alert(`Imported ${data.entries.length} exchanges: ${rebuilt} chat${rebuilt === 1 ? '' : 's'} added to the sidebar, ${added} new entr${added === 1 ? 'y' : 'ies'} merged into the history file.`);
+      } else {
+        for (const c of data.conversations || []) await store.put('conversations', c);
+        for (const m of data.messages || []) await store.put('messages', m);
+        await loadConversations(); renderConvList();
+        alert(`Imported ${data.conversations?.length || 0} conversations.`);
+      }
+      if (typeof after === 'function') after();
+    } catch (e) { alert(`Import failed: ${e.message}`); }
+  };
+  input.click();
+}
+
+/* ───────────────────────────── Wiring ───────────────────────────── */
+async function init() {
+  applyTheme();
+  if ((settings.sidebarCollapsed && window.innerWidth > 860) || window.innerWidth <= 860) $('#sidebar').classList.add('collapsed');
+  await loadConversations();
+  renderConvList();
+  renderModelSelect();
+  await selectConversation(state.convs[0]?.id || null);
+  updateComposerState();
+  requestAnimationFrame(() => requestAnimationFrame(() => $('#sidebar').classList.remove('no-anim')));
+
+  const input = $('#input');
+  input.addEventListener('input', () => { autosize(); updateComposerState(); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!$('#sendBtn').disabled) submit(); } });
+  input.addEventListener('paste', (e) => { const files = Array.from(e.clipboardData?.files || []); if (files.length) { e.preventDefault(); addFiles(files); } });
+  $('#sendBtn').addEventListener('click', submit);
+  $('#stopBtn').addEventListener('click', stopGeneration);
+  $('#attachBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#fileInput').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+  const box = $('#composerBox');
+  for (const ev of ['dragenter', 'dragover']) box.addEventListener(ev, (e) => { e.preventDefault(); box.classList.add('drag'); });
+  for (const ev of ['dragleave', 'drop']) box.addEventListener(ev, (e) => { e.preventDefault(); box.classList.remove('drag'); });
+  box.addEventListener('drop', (e) => addFiles(e.dataTransfer?.files));
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => e.preventDefault());
+
+  const persistToggle = (btnSel, field) => async () => { const b = $(btnSel); setToggle(b, !b.classList.contains('on')); const c = activeConv(); if (c) { c[field] = b.classList.contains('on'); await store.put('conversations', c); } };
+  $('#tglWeb').addEventListener('click', persistToggle('#tglWeb', 'webSearch'));
+  $('#tglCode').addEventListener('click', persistToggle('#tglCode', 'codeTools'));
+  $('#newChatBtn').addEventListener('click', async () => { state.activeConvId = null; state.messages = []; await selectConversation(null); $('#input').focus(); });
+  $('#settingsBtn').addEventListener('click', openSettings);
+  $('#sbToggle').addEventListener('click', () => collapseSidebar(!$('#sidebar').classList.contains('collapsed')));
+  $('#scrim').addEventListener('click', () => collapseSidebar(true));
+  $('#providerSel').addEventListener('change', async (e) => { saveSettings({ provider: e.target.value }); if (!state.models[settings.provider]?.live) await fetchModels(settings.provider); renderModelSelect(); updateComposerState(); });
+  $('#modelSel').addEventListener('change', (e) => { saveSettings(settings.provider === 'anthropic' ? { anthropicModel: e.target.value } : { openaiModel: e.target.value }); renderModelSelect(); updateComposerState(); });
+  $('#effortSel').addEventListener('change', (e) => saveSettings({ effort: e.target.value }));
+  window.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); $('#newChatBtn').click(); } });
+
+  // Keys from the main program: shared api_cache first, then the frame handshake.
+  onKeysChanged = async () => {
+    await Promise.all([settings.anthropicKey ? fetchModels('anthropic', true) : null, settings.openaiKey ? fetchModels('openai', true) : null]);
+    if (!keyFor(settings.provider)) { if (keyFor('anthropic')) saveSettings({ provider: 'anthropic' }); else if (keyFor('openai')) saveSettings({ provider: 'openai' }); }
+    if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = '';
+    renderModelSelect(); updateComposerState();
+  };
+  window.addEventListener('message', onParentMessage);
+  window.addEventListener('storage', (e) => { if (['api_cache', 'OPENAI_API_KEY', 'CLAUDE_API_KEY', 'openai_api_key'].includes(e.key) && applyMainKeys(readLocalApiCache(), 'api_cache')) onKeysChanged(); });
+  applyMainKeys(readLocalApiCache(), 'api_cache');
+  if (inFrame() && !(settings.anthropicKey && settings.openaiKey && settings.keySource.anthropic === 'user' && settings.keySource.openai === 'user')) await requestParentKeys();
+
+  if (!settings.anthropicKey && !settings.openaiKey) showBanner('warn', 'Add your Anthropic and/or OpenAI API key in <b>Settings</b> to start.');
+  else {
+    await Promise.all([settings.anthropicKey ? fetchModels('anthropic') : null, settings.openaiKey ? fetchModels('openai') : null]);
+    if (!keyFor(settings.provider)) saveSettings({ provider: settings.anthropicKey ? 'anthropic' : 'openai' });
+    renderModelSelect(); updateComposerState();
+  }
+}
+async function submit() {
+  const text = $('#input').value.trim();
+  const atts = state.pending.filter((p) => !p.parsing);
+  if (!text && !atts.length) return;
+  $('#input').value = ''; autosize();
+  state.pending = []; renderPending();
+  $('#bannerHost').innerHTML = '';
+  try { await sendMessage(text, atts); }
+  catch (e) { showBanner('err', escapeHtml(e.message || String(e))); }
+  updateComposerState();
+}
+init().catch((e) => { console.error(e); showBanner('err', `Startup error: ${escapeHtml(e.message)}`); });
+
+</script>
+</body>
+</html>
