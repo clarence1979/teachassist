@@ -6,7 +6,10 @@ One HTML file. Bring your own Claude and/or OpenAI key. Same machinery the web i
 
 | File | What it is |
 |---|---|
-| `teach-assist.html` | The whole app. Open it in Chrome/Edge/Firefox, or host it anywhere static (GitHub Pages, Netlify). |
+| `index.html` (= `teach-assist.html`) | The whole app — chat, Studio, Tasks, Timetable, Library — in one file, served by GitHub Pages at https://clarence1979.github.io/teachassist/. Open it in Chrome/Edge/Firefox, or host it anywhere static. |
+| `src/` | The source the single file is built from (`node src/build.mjs` rewrites `index.html` and `teach-assist.html`). |
+| `test/` | Headless-Chromium tests with mocked provider APIs (`node test/e2e.mjs`, `node test/keys-history.mjs`). |
+| `bolt-source/` | The original Bolt/Supabase project, for reference. |
 | `anthropic-files-relay.js` | 60-line Cloudflare Worker. Needed for Claude to *return* generated documents and to *receive* your Word/Excel attachments (see "Why a relay?"). OpenAI needs nothing extra. |
 
 ## Setup (5 minutes)
@@ -15,7 +18,7 @@ One HTML file. Bring your own Claude and/or OpenAI key. Same machinery the web i
 2. **Claude users — deploy the relay once:** Cloudflare dashboard → Workers & Pages → Create → "Hello World" → replace the code with `anthropic-files-relay.js` → Deploy → copy the `https://….workers.dev` URL into Settings → "Claude files relay URL" → **Test**. (Optional: set the `ALLOWED_ORIGIN` variable to the origin you open the app from, e.g. `https://you.github.io`, or `null` for `file://`.)
 3. Pick a model (the live list from your key; defaults to `claude-fable-5-1` / `gpt-6-astra`), an effort level, and go.
 
-Everything is stored in the browser's IndexedDB (conversations, attachments, generated files). Export/import from Settings covers the conversations and text (not the binary files — download those from their cards).
+Everything is stored in the browser (IndexedDB): conversations, attachments, generated files, tasks, timetable blocks and the library. There is no account and no server. See "History file, sessions and clearing memory" for how that storage is mirrored into a JSON file and how to clear it.
 
 ## What was wrong with the Bolt project
 
@@ -57,16 +60,40 @@ Without the relay the app still works: Claude is told to print each finished fil
 
 Tokens are billed by the provider as usual; the usage line under each reply shows input/output/reasoning tokens and searches. Web search is about US$10 per 1,000 searches on both providers. Claude's sandbox is free when a web tool is in the request (it is, when Web search is on) and otherwise has 1,550 free hours/month; OpenAI's container is ~US$0.03 per session. A document-building turn at high effort typically runs 50–150k tokens.
 
-## Not carried over
+## The planner: Studio, Tasks, Timetable, Library
 
-The Bolt project's Supabase login/sync, timetable, to-do, library and Studio pages are not in the standalone file (they needed a backend and were not part of the quality problem). The Studio generators are superseded: ask for the document in chat and the model builds it with the real document toolchain.
+The Bolt project's other pages are back, rebuilt on local storage instead of Supabase (left rail, or Alt+1…5):
+
+- **Studio** — twelve resource generators (lesson plan, unit plan, worksheet, quiz/test, slide deck, rubric, exit tickets, differentiate a resource, feedback on student work, letter home, report comments, anything else). A card opens a short form; *Generate now* starts a new chat with the composed request and **Code & files** on, so the model builds the real .docx/.pptx/.xlsx/.pdf with the document toolchain — no second-stage template model. *Open in chat* prefills the request so you can attach files first.
+- **Tasks** — inbox / scheduled / done with priority, due date, estimate and tags. *Prioritise with AI* makes one short call to your current model and re-ranks the open tasks with a one-line rationale each. *Schedule* puts work time for a task on the timetable (the task becomes "scheduled").
+- **Timetable** — day / week / month / agenda views, click a slot to add, click a block to edit. Blocks have a type (class, prep, meeting, duty, PD, personal, custom), location, notes, attached library files and a linked task. Recurrence is an RRULE subset (daily, weekdays, weekly on chosen days, fortnightly, monthly, with an optional end date); one occurrence of a series can be moved or skipped without touching the rest. Overlaps are outlined. *More ▾* has .ics import/export (Outlook/Google/Compass exports), *Import from a photo/PDF* (the model reads your printed timetable and schedules every class as a weekly block) and *Plan my week with AI*.
+- **Library** — every file the assistant produces in any chat is registered here automatically (title, type, size, which chat). Search, download, open the chat, attach to a timetable block, remove.
+
+**The model can use the planner too.** Both providers get the same tool set — `add_task`, `list_tasks`, `update_task`, `delete_task`, `schedule_block`, `list_timetable_blocks`, `update_timetable_block`, `delete_timetable_block`, `clear_timetable_range`, `search_library`, `attach_resource_to_block` — as Claude client tools / OpenAI function tools, with a short system-prompt section (local times, a two-week calendar so it never guesses a weekday, "list before you edit", "clear a range before re-planning"). So "move my Wednesday 9B class to period 3 this week only" or "remind me to book the bus by Friday" just works, and the tool cards in the reply show exactly what changed. Everything the model does lands in the same local stores as what you do by hand.
+
+## History file, sessions and clearing memory
+
+A **session** is one time the app is open in a tab (a reload keeps the same session; a new tab starts a new one). Every chat message, task, timetable block and library file carries the session that created it.
+
+*Settings → History, memory & sessions → Save history* (on by default):
+
+- **On:** everything persists in the browser between visits, and the current session is mirrored into **`teach-assist-history.json`** in the browser's Cache Storage (IndexedDB when the HTML is opened from disk, where Cache Storage isn't available). The file is `{version: 2, sessions: [...]}`; each session holds its exchanges (prompt, reply, attachment and file names, sources, model, token usage, timestamps), tasks, timetable blocks and library entries. The entry is refreshed a couple of seconds after each change and finalised (`endedAt`) when the tab is hidden or closed; if a tab dies before that write lands, the next session that opens notices and closes the entry.
+- **Off:** new chats last only for the current session and nothing new is written to the file.
+- **Memory on for new chats** (and the *Memory* toggle under the message box) gives the model short summaries of your earlier chats so "the quiz we made last week" means something. It is off by default and per chat.
+- **Export history (JSON)** downloads the file; **Import history (JSON)** merges a file back in (rebuilds chats, tasks and blocks that aren't already present — text only; attachments and binary files aren't in the history file).
+- **Clear memory** lists the sessions with what each one created. *Clear this session*, tick-and-*Clear selected*, or *Clear all sessions* remove those sessions' chats, tasks, timetable blocks and files from the browser and from the JSON file. Settings and API keys are never touched.
 
 ## Development
 
 ```
-node build.mjs          # inlines app.js into teach-assist.html → dist/teach-assist.html
-node test/e2e.mjs       # headless Chromium, mocked Anthropic/OpenAI/relay endpoints, 60+ checks
+node src/build.mjs         # inlines app.js, timetable-core.js, tools.js, views.js, main.js into src/teach-assist.html → index.html + teach-assist.html
+node test/e2e.mjs          # headless Chromium, mocked Anthropic/OpenAI/relay endpoints: chat, documents, uploads, self-healing (68 checks)
+node test/keys-history.mjs # main-program keys, history file v2, planner views, model tool loops on both providers, sessions & clearing (68 checks)
 ```
+
+Tests expect Playwright with Chromium installed (`npm i playwright && npx playwright install chromium`) and import it from `/opt/npm-tools/node_modules/playwright/index.js` — change that path to `'playwright'` for a normal install.
+
+Source layout (`src/`): `app.js` (chat, providers, storage, history), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
 
 ## Running from the main program
 
@@ -79,10 +106,3 @@ A key you type in Settings is never overwritten; keys that came from the main pr
 
 **Tighten the main program side too:** it currently replies with `postMessage(..., '*')`, so any page loaded in a program's frame can request and receive the keys. In the main program, check `event.origin` against an allow-list before answering `REQUEST_API_VALUES`, and reply with that origin as the target instead of `'*'`.
 
-## Chat history file
-
-*Settings → Chat history → Save chat history* (on by default):
-
-- **On:** chats stay in the sidebar, and every completed exchange (prompt, reply, attachment and file names, sources, model, token usage, timestamp) is appended to `teach-assist-chat-history.json` in the browser's Cache Storage. Where Cache Storage isn't available (HTML opened from disk), it's kept in IndexedDB instead.
-- **Off:** new chats last only for the current session and nothing is written to the file.
-- **Export history** downloads the JSON; **Import history** merges a JSON back in and rebuilds any chats missing from the sidebar (text only — attachments and generated files are not stored in the history file); **Clear history file** empties it without touching the sidebar; **Delete all chats** clears the sidebar but keeps the file.
