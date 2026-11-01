@@ -128,6 +128,16 @@ function setupDictation(btn) {
   await registerSession();
   await init();
   showView(settings.activeView || 'chat', { remember: false });
+  // On-device AI: load the chosen model from this device in the background; cover for lost connections.
+  setTimeout(warmLocalOnBoot, 800);
+  window.addEventListener('offline', () => {
+    if (settings.provider === 'local' || turnProvider() !== 'local') return;
+    showBanner('info', `You're offline — replies will come from <b>${escapeHtml(localModelName(settings.localModel))}</b> on this device until the connection returns.`);
+    ensureLocalEngine(settings.localModel).catch(() => {});
+  });
+  window.addEventListener('online', () => { if (settings.provider !== 'local' && /offline/.test($('#bannerHost').textContent)) $('#bannerHost').innerHTML = ''; });
+  // Lets the app itself open without a connection (GitHub Pages / any https host).
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || window.TA_FORCE_SW)) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[sw]', e));
   updateRailBadges();
   if (settings.saveHistory) scheduleSessionSync(1500); // re-opens this session's entry after a reload
   finaliseStaleSessions();

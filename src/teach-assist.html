@@ -615,6 +615,47 @@ svg { flex: 0 0 auto; }
 .list-row .ttl { font-weight: 700; }
 .list-row .sub { font-size: 13px; color: var(--text-dim); }
 .list-row > svg { width: 24px; height: 24px; color: var(--accent); }
+/* On-device AI */
+.local-strip { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; padding: 10px 14px; border-radius: 16px; border: 1.5px solid var(--blue-border); background: var(--blue-soft); color: var(--text); box-shadow: var(--shadow-sm); zoom: var(--ts); }
+.local-strip[hidden] { display: none; }
+.local-strip.error { border-color: var(--red-border); background: var(--red-soft); color: var(--red); }
+.local-strip .ls-ic { width: 26px; height: 26px; flex: 0 0 auto; color: var(--blue); display: inline-flex; }
+.local-strip.error .ls-ic { color: var(--red); }
+.local-strip .ls-ic svg { width: 100%; height: 100%; }
+.local-strip .ls-main { flex: 1; min-width: 0; }
+.local-strip .ls-text { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.local-strip .x { border: 0; background: transparent; color: inherit; font-size: 22px; line-height: 1; padding: 2px 6px; border-radius: 8px; }
+.ls-bar { height: 7px; border-radius: 99px; background: rgba(47,107,255,.16); overflow: hidden; margin-top: 6px; }
+.ls-bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--accent)); transition: width .3s ease; }
+.ls-bar i.indet { width: 35% !important; animation: lsIndet 1.2s ease-in-out infinite; }
+@keyframes lsIndet { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+:root.a11y-motion .ls-bar i.indet { animation: none; width: 100% !important; opacity: .5; }
+.toggle.na { opacity: .45; cursor: not-allowed; }
+.local-sheet .lm-intro { font-size: 14px; color: var(--text-2); line-height: 1.5; margin: 2px 0 4px; }
+.lm-dev { display: flex; gap: 10px; align-items: flex-start; font-weight: 600; font-size: 14.5px; margin: 4px 0 8px; }
+.lm-dev svg { width: 22px; height: 22px; flex: 0 0 auto; color: var(--accent); margin-top: 1px; }
+.lm-recline { font-size: 14.5px; padding: 10px 12px; border-radius: 14px; background: var(--accent-soft); color: var(--text); margin-bottom: 6px; }
+.lm-recline.warn { background: var(--amber-soft); color: var(--amber); }
+.lm-row { border: 1.5px solid var(--border); border-radius: 18px; padding: 12px 14px; margin: 10px 0; background: var(--bg-solid); }
+.lm-row.rec { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.lm-row.using { border-color: var(--green); }
+.lm-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lm-name { font-weight: 800; font-size: 16px; }
+.lm-params { font-size: 12px; font-weight: 700; color: var(--text-dim); border: 1px solid var(--border); border-radius: 8px; padding: 1px 6px; }
+.lm-chip { font-size: 12px; font-weight: 700; border-radius: 99px; padding: 3px 9px; background: var(--bg-elev); color: var(--text-2); border: 1px solid var(--border); }
+.lm-chip.rec { background: var(--accent-grad); color: var(--accent-ink); border-color: transparent; }
+.lm-chip.dl { background: var(--blue-soft); color: var(--blue); border-color: var(--blue-border); }
+.lm-chip.fit-good { background: var(--green-soft); color: var(--green); border-color: transparent; }
+.lm-chip.fit-tight { background: var(--amber-soft); color: var(--amber); border-color: var(--amber-border); }
+.lm-chip.fit-too-big, .lm-chip.fit-unavailable { background: var(--red-soft); color: var(--red); border-color: var(--red-border); }
+.lm-blurb { font-size: 14px; color: var(--text-2); margin: 6px 0 2px; }
+.lm-meta { font-size: 12.5px; color: var(--text-dim); }
+.lm-prog { margin-top: 8px; } .lm-prog[hidden] { display: none; }
+.lm-ptext { font-size: 12.5px; color: var(--text-2); margin-top: 4px; }
+.lm-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.lm-actions .btn svg { width: 16px; height: 16px; vertical-align: -3px; }
+.btn.danger-txt { color: var(--red); }
+.lm-more summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--text-2); margin-top: 8px; }
 .a11y-scale { display: flex; align-items: center; gap: 10px; }
 .btn sup { font-size: .72em; position: relative; top: -.35em; vertical-align: baseline; }
 .a11y-scale .val { min-width: 54px; text-align: center; font-weight: 800; font-size: 16px; }
@@ -696,6 +737,10 @@ svg { flex: 0 0 auto; }
   .toggle .l-wide { display: none; } .toggle .l-phone { display: inline; }
   .banner { font-size: 14px; padding: 10px 12px; margin-bottom: 8px; }
   .banner .bi { width: 22px; height: 22px; }
+  .local-strip { padding: 8px 12px; margin-bottom: 8px; border-radius: 14px; }
+  .local-strip .ls-text { font-size: 13px; }
+  .lm-row { padding: 12px; }
+  .lm-actions .btn { flex: 1 1 auto; }
   #rail { margin: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px)); padding: 5px; border-radius: 22px; gap: 2px; }
   #rail button { height: 54px; font-size: 11.5px; gap: 2px; border-radius: 17px; }
   #rail button svg { width: 23px; height: 23px; }
@@ -817,7 +862,7 @@ svg { flex: 0 0 auto; }
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
         <label class="pill-sel p-provider" title="Provider"><svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="4"/><path d="M12 4v4M9 3h6"/><circle cx="9" cy="14" r="1.3" fill="currentColor"/><circle cx="15" cy="14" r="1.3" fill="currentColor"/><path d="M2 13v2M22 13v2"/></svg>
-          <span class="pv" id="providerVal">Claude</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg><select id="providerSel" aria-label="Provider"><option value="anthropic">Claude</option><option value="openai">OpenAI</option></select></label>
+          <span class="pv" id="providerVal">Claude</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg><select id="providerSel" aria-label="Provider"><option value="anthropic">Claude</option><option value="openai">OpenAI</option><option value="local">On-device</option></select></label>
         <label class="pill-sel p-model" title="Model"><svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9.5 5L12 12 2.5 7z"/><path d="m2.5 12 9.5 5 9.5-5"/><path d="m2.5 17 9.5 5 9.5-5"/></svg>
           <span class="pv" id="modelVal"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg><select id="modelSel" aria-label="Model"></select></label>
         <label class="pill-sel p-effort" title="Reasoning effort"><svg class="lead" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor"/></svg>

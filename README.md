@@ -1,15 +1,13 @@
 # Teach Assist — standalone edition
 
-One HTML file. Bring your own Claude and/or OpenAI key. Same machinery the web interfaces use, so the answers — and the Word/PowerPoint/Excel/PDF files — come out the same.
+One HTML file. Bring your own Claude and/or OpenAI key — or use a free **on-device model** that runs inside the browser with no key and keeps working offline. Same machinery the web interfaces use, so the answers — and the Word/PowerPoint/Excel/PDF files — come out the same.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `index.html` (= `teach-assist.html`) | The whole app — chat, Studio, Tasks, Timetable, Library — in one file, served by GitHub Pages at https://clarence1979.github.io/teachassist/. Open it in Chrome/Edge/Firefox, or host it anywhere static. |
-| `src/` | The source the single file is built from (`node src/build.mjs` rewrites `index.html` and `teach-assist.html`). |
-| `test/` | Headless-Chromium tests with mocked provider APIs (`node test/e2e.mjs`, `keys-history.mjs`, `mobile.mjs`, `ui.mjs`). |
-| `bolt-source/` | The original Bolt/Supabase project, for reference. |
+| `teach-assist.html` (in `dist/`) | The whole app — chat, Studio, Tasks, Timetable, Library — in one file. Open it in Chrome/Edge/Firefox, or host it anywhere static (GitHub Pages, Netlify). |
+| `sw.js` | Service worker (served next to the page). Lets the app open without a connection so on-device AI works offline. Optional — everything else works without it. |
 | `anthropic-files-relay.js` | 60-line Cloudflare Worker. Needed for Claude to *return* generated documents and to *receive* your Word/Excel attachments (see "Why a relay?"). OpenAI needs nothing extra. |
 
 ## Setup (5 minutes)
@@ -94,6 +92,26 @@ A light lavender "classroom" design (glass panels over an illustrated background
 - **Messages:** your bubble with avatar and time; replies in cards with a toolbar (**Copy, Cut, Paste, Edit, Regenerate, …**), headings shown as banded sections, tick-list bullets, file cards with download buttons, and 👍/👎 feedback (saved with the history).
 - **Composer:** Add Files, Paste Image, Code, Web Search, Memory and a **microphone** for dictation (where the browser supports speech recognition).
 
+## On-device AI (free, private, offline)
+
+Pick **On-device** in the provider pill (or *Settings → On-device AI*). The app checks the device — phone, tablet or computer; memory (Chrome/Edge/Android report it; on iPhone/iPad/Safari it is estimated, and iOS caps each tab's memory); WebGPU and 16-bit shader support; free storage — and **suggests the largest model that fits comfortably**. Models that would be slow are marked, ones that won't fit are tucked away.
+
+| Model | Size | Suits |
+|---|---|---|
+| SmolLM2 360M | ≈ 270 MB | older or low-memory phones |
+| Qwen3.5 0.8B | ≈ 560 MB | phones, multilingual |
+| Llama 3.2 1B | ≈ 710–810 MB | most phones (the usual phone suggestion) |
+| Qwen3.5 2B | ≈ 1.3 GB | recent phones/tablets, laptops |
+| Llama 3.2 3B | ≈ 1.8 GB | iPads, 8 GB+ devices |
+| Phi-4 mini | ≈ 2.2 GB | laptops — maths and step-by-step reasoning |
+| Qwen3.5 4B | ≈ 2.5 GB | laptops with 8 GB+ (the usual laptop suggestion) |
+| Qwen3.5 9B | ≈ 5.3 GB | 16 GB+ with a strong GPU |
+
+- **Download once, load from the device after that.** With WebGPU (Chrome/Edge on computers, Chrome on Android, Safari 26) models run on the graphics chip via WebLLM and are kept in Cache Storage; without WebGPU they run on the processor via wllama (llama.cpp in WebAssembly, smaller models only) and are kept in the browser's private file system. The engine libraries are cached too, and the app asks for persistent storage so the browser doesn't clear them. Later sessions and prompts load straight from the device — no re-download — and the chosen model warms up in the background when the app opens.
+- **Offline:** with `sw.js` alongside the page (GitHub Pages does this), the app itself opens offline. If you're using Claude or OpenAI and the connection drops, replies come from your downloaded model instead (switch off in the On-device AI sheet).
+- **What they can't do:** web search, code/files, image reading. PDFs, Word, Excel and text files are read on the device and passed to the model as text (trimmed to its 4k-token window). Any reply can be saved as a Word document from its ⋯ menu.
+- Manage models (download, use, delete, storage used) in the **On-device AI** sheet.
+
 ## On a phone
 
 The same file adapts itself when the screen is narrow (≤ 640px): the layout follows the phone mockup — header with the light/dark switch and A− A A+, the provider/model/effort pills, the floating bottom tab bar (safe-area aware, hidden while the keyboard is up), the chat sidebar as a slide-in drawer (≡), forms open as bottom sheets with a sticky Save bar and 16px inputs (no zoom-in on tap), the Timetable's week view becomes a **3-day** view you swipe left/right (month and agenda swipe too), and Studio/Library cards stack. Add it to the home screen (Safari → Share → Add to Home Screen; Chrome → Install) and it runs full-screen like an app. Everything — chats, timetable, tasks, files — stays on that device; use *Export history* to move it.
@@ -101,16 +119,16 @@ The same file adapts itself when the screen is narrow (≤ 640px): the layout fo
 ## Development
 
 ```
-node src/build.mjs         # inlines art.js, app.js, timetable-core.js, tools.js, views.js, main.js into src/teach-assist.html → index.html + teach-assist.html
+node build.mjs            # inlines art.js, app.js, local-ai.js, timetable-core.js, tools.js, views.js, main.js into teach-assist.html → dist/teach-assist.html
 node test/e2e.mjs         # headless Chromium, mocked Anthropic/OpenAI/relay endpoints: chat, documents, uploads, self-healing (68 checks)
 node test/keys-history.mjs# main-program keys, history file v2, planner views, model tool loops on both providers, sessions & clearing (86 checks)
 node test/mobile.mjs      # iPhone emulation: bottom tab bar, 3-day timetable with swipe, bottom-sheet forms, no horizontal overflow (30 checks)
 node test/ui.mjs          # light/dark, text size, accessibility modes, pills, home, sidebar, Prompts/Files, reply toolbar, feedback (37 checks)
+node test/local.mjs       # on-device AI with a stubbed engine: device suggestions for 11 device profiles, sheet, download → reload from storage, offline fallback, PDF text, Word download (45 checks)
+node test/local-real.mjs  # no stubs: downloads SmolLM2-360M via wllama, chats on the CPU, then reloads OFFLINE and answers from the cached model (needs internet; ~300 MB)
 ```
 
-Tests expect Playwright with Chromium installed (`npm i playwright && npx playwright install chromium`) and import it from `/opt/npm-tools/node_modules/playwright/index.js` — change that path to `'playwright'` for a normal install.
-
-Source layout (`src/`): `art.js` (logo, mascot, illustrations, icons), `app.js` (chat, providers, storage, history), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
+Source layout: `art.js` (logo, mascot, illustrations, icons), `app.js` (chat, providers, storage, history), `local-ai.js` (on-device models: device check, catalogue, WebLLM/wllama engines, caching, the On-device AI sheet), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
 
 ## Running from the main program
 
