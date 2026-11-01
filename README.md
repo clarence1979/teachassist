@@ -8,7 +8,7 @@ One HTML file. Bring your own Claude and/or OpenAI key. Same machinery the web i
 |---|---|
 | `index.html` (= `teach-assist.html`) | The whole app — chat, Studio, Tasks, Timetable, Library — in one file, served by GitHub Pages at https://clarence1979.github.io/teachassist/. Open it in Chrome/Edge/Firefox, or host it anywhere static. |
 | `src/` | The source the single file is built from (`node src/build.mjs` rewrites `index.html` and `teach-assist.html`). |
-| `test/` | Headless-Chromium tests with mocked provider APIs (`node test/e2e.mjs`, `node test/keys-history.mjs`). |
+| `test/` | Headless-Chromium tests with mocked provider APIs (`node test/e2e.mjs`, `node test/keys-history.mjs`, `node test/mobile.mjs`). |
 | `bolt-source/` | The original Bolt/Supabase project, for reference. |
 | `anthropic-files-relay.js` | 60-line Cloudflare Worker. Needed for Claude to *return* generated documents and to *receive* your Word/Excel attachments (see "Why a relay?"). OpenAI needs nothing extra. |
 
@@ -83,12 +83,17 @@ A **session** is one time the app is open in a tab (a reload keeps the same sess
 - **Export history (JSON)** downloads the file; **Import history (JSON)** merges a file back in (rebuilds chats, tasks and blocks that aren't already present — text only; attachments and binary files aren't in the history file).
 - **Clear memory** lists the sessions with what each one created. *Clear this session*, tick-and-*Clear selected*, or *Clear all sessions* remove those sessions' chats, tasks, timetable blocks and files from the browser and from the JSON file. Settings and API keys are never touched.
 
+## On a phone
+
+The same file adapts itself when the screen is narrow (≤ 640px) or it's a touch device under 900px: the navigation becomes a bottom tab bar (safe-area aware, so it clears the iPhone home indicator), the chat list is a slide-in drawer, forms open as bottom sheets with a sticky Save bar and 16px inputs (no zoom-in on tap), the Timetable's week view becomes a **3-day** view you swipe left/right (month and agenda swipe too), and Studio/Library cards stack. Add it to the home screen (Safari → Share → Add to Home Screen; Chrome → Install) and it runs full-screen like an app. Everything — chats, timetable, tasks, files — stays on that device; use *Export history* to move it.
+
 ## Development
 
 ```
 node src/build.mjs         # inlines app.js, timetable-core.js, tools.js, views.js, main.js into src/teach-assist.html → index.html + teach-assist.html
-node test/e2e.mjs          # headless Chromium, mocked Anthropic/OpenAI/relay endpoints: chat, documents, uploads, self-healing (68 checks)
-node test/keys-history.mjs # main-program keys, history file v2, planner views, model tool loops on both providers, sessions & clearing (68 checks)
+node test/e2e.mjs         # headless Chromium, mocked Anthropic/OpenAI/relay endpoints: chat, documents, uploads, self-healing (68 checks)
+node test/keys-history.mjs# main-program keys, history file v2, planner views, model tool loops on both providers, sessions & clearing (68 checks)
+node test/mobile.mjs      # iPhone emulation: bottom tab bar, 3-day timetable with swipe, bottom-sheet forms, no horizontal overflow (26 checks)
 ```
 
 Tests expect Playwright with Chromium installed (`npm i playwright && npx playwright install chromium`) and import it from `/opt/npm-tools/node_modules/playwright/index.js` — change that path to `'playwright'` for a normal install.
