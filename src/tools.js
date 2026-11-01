@@ -204,7 +204,7 @@ async function executeClientTool(name, input, ctx = {}) {
    Used by "Prioritise with AI" and similar helpers: a short, non-streaming request to the
    currently selected provider that returns text. */
 async function quickComplete({ system, prompt, maxTokens = 2000 }) {
-  const provider = settings.provider;
+  const provider = ensureUsableProvider() || settings.provider;
   const key = keyFor(provider);
   if (!key) throw new Error(`No ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key`);
   if (provider === 'anthropic') {

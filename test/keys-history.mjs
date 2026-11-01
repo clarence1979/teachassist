@@ -53,7 +53,7 @@ async function newCtx() {
   await ctx.route('https://api.openai.com/**', (route) => route.fulfill({ json: { data: [{ id: 'gpt-6-astra', created: 1 }] } }));
   return ctx;
 }
-const readSettings = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'));
+const readSettings = (page) => page.evaluate(() => ({ ...JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'), ...(JSON.parse(localStorage.getItem('teachassist.keys.v1') || 'null') || JSON.parse(sessionStorage.getItem('teachassist.keys.session') || '{}')) }));
 const histDoc = (page) => page.evaluate(async () => { const c = await caches.open('teach-assist-history'); const keys = await c.keys(); if (!keys.length) return null; return (await c.match(keys[0])).json(); });
 async function send(page, text) {
   const n = await page.$$eval('.msg.assistant .actions', (e) => e.length);
@@ -100,20 +100,20 @@ console.log('\n[2] Cross-origin main program: keys via the REQUEST_API_VALUES / 
   // main.html on origin B frames teach-assist from origin B; make it cross-origin by pointing the iframe at A
   await page.evaluate((a) => { document.getElementById('ta').src = `${a}/teach-assist.html`; }, A);
   const frame = await (await page.waitForSelector('#ta')).contentFrame();
-  await frame.waitForFunction(() => { const s = JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'); return s.anthropicKey === 'sk-ant-from-main'; }, null, { timeout: 10000 });
-  const st = await frame.evaluate(() => JSON.parse(localStorage.getItem('teachassist.settings.v1')));
+  await frame.waitForFunction(() => ({ ...JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'), ...(JSON.parse(localStorage.getItem('teachassist.keys.v1') || 'null') || JSON.parse(sessionStorage.getItem('teachassist.keys.session') || '{}')) }).anthropicKey === 'sk-ant-from-main', null, { timeout: 10000 });
+  const st = await frame.evaluate(() => ({ ...JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'), ...(JSON.parse(localStorage.getItem('teachassist.keys.v1') || 'null') || JSON.parse(sessionStorage.getItem('teachassist.keys.session') || '{}')) }));
   check(st.anthropicKey === 'sk-ant-from-main' && st.openaiKey === 'sk-from-main-openai', 'keys received from the parent frame');
   // A message from something that is NOT the parent frame is ignored
   await frame.evaluate(() => window.postMessage({ type: 'API_VALUES_RESPONSE', data: { CLAUDE_API_KEY: 'sk-ant-EVIL' } }, '*'));
   await frame.waitForTimeout(400);
-  check((await frame.evaluate(() => JSON.parse(localStorage.getItem('teachassist.settings.v1')).anthropicKey)) === 'sk-ant-from-main', 'message from a non-parent window ignored');
+  check((await frame.evaluate(() => ({ ...JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'), ...(JSON.parse(localStorage.getItem('teachassist.keys.v1') || 'null') || JSON.parse(sessionStorage.getItem('teachassist.keys.session') || '{}')) }).anthropicKey)) === 'sk-ant-from-main', 'message from a non-parent window ignored');
   // Trusted origin set to something else → parent's messages rejected
-  await frame.evaluate(() => { const s = JSON.parse(localStorage.getItem('teachassist.settings.v1')); s.trustedParentOrigin = 'https://not-the-parent.example'; s.anthropicKey = ''; s.keySource = { anthropic: '', openai: 'main' }; localStorage.setItem('teachassist.settings.v1', JSON.stringify(s)); });
+  await frame.evaluate(() => { const s = JSON.parse(localStorage.getItem('teachassist.settings.v1')); s.trustedParentOrigin = 'https://not-the-parent.example'; s.keySource = { anthropic: '', openai: 'main' }; localStorage.setItem('teachassist.settings.v1', JSON.stringify(s)); const k = JSON.parse(localStorage.getItem('teachassist.keys.v1')); k.anthropicKey = ''; localStorage.setItem('teachassist.keys.v1', JSON.stringify(k)); });
   await page.evaluate((a) => { document.getElementById('ta').src = `${a}/teach-assist.html?r=1`; }, A);
   const frame2 = await (await page.waitForSelector('#ta')).contentFrame();
   await frame2.waitForFunction(() => document.querySelector('#modelSel option'));
   await frame2.waitForTimeout(3000);
-  check(!(await frame2.evaluate(() => JSON.parse(localStorage.getItem('teachassist.settings.v1')).anthropicKey)), 'keys from a parent outside the trusted origin are rejected');
+  check(!(await frame2.evaluate(() => ({ ...JSON.parse(localStorage.getItem('teachassist.settings.v1') || '{}'), ...(JSON.parse(localStorage.getItem('teachassist.keys.v1') || 'null') || JSON.parse(sessionStorage.getItem('teachassist.keys.session') || '{}')) }).anthropicKey)), 'keys from a parent outside the trusted origin are rejected');
   await ctx.close();
 }
 
@@ -444,6 +444,76 @@ console.log('\n[4] Planner: tasks, timetable, library on local storage; mirrored
   check(await page.$eval('#view-timetable', (e) => !e.classList.contains('hidden')), 'last view restored after reload');
   check(errors.length === 0, `no page errors (${errors.join(' | ').slice(0, 200)})`);
   await ctx.close();
+}
+
+console.log('\n[5] API keys: remember me (30 days), session-only, expiry, legacy migration, one key is enough');
+{
+  const ctx = await newCtx(); const page = await ctx.newPage();
+  await page.goto(`${A}/teach-assist.html`);
+  await page.waitForFunction(() => document.querySelector('#modelSel option'));
+  check(/one is enough/.test(await page.$eval('#bannerHost', (e) => e.textContent)), 'first launch asks for a key and says one is enough');
+  await page.click('#settingsBtn');
+  check(await page.$eval('.modal .check input', (e) => true) && /Remember me — keep my API keys in this browser for 30 days/.test(await page.$eval('.modal', (e) => e.textContent)), 'Settings has the "Remember me (30 days)" checkbox');
+  check(await page.$eval('label.check:has-text("Remember me") input', (e) => e.checked), 'Remember me is ticked by default');
+  // Enter only an OpenAI key and close with × (no Save) — it must be kept, and the app must switch to OpenAI.
+  await page.fill('input[placeholder="sk-…"]', 'sk-openai-only');
+  await page.click('.modal .m-head .btn');
+  const k1 = await page.evaluate(() => JSON.parse(localStorage.getItem('teachassist.keys.v1')));
+  check(k1 && k1.openaiKey === 'sk-openai-only' && !k1.anthropicKey, 'key typed then sheet closed without Save is stored');
+  const days = Math.round((k1.expiresAt - Date.now()) / 86400000);
+  check(days === 30, `stored with a 30-day expiry (${days} days)`);
+  check(!JSON.parse(await page.evaluate(() => localStorage.getItem('teachassist.settings.v1'))).openaiKey, 'keys are not in the settings blob');
+  check((await page.$eval('#providerSel', (e) => e.value)) === 'openai', 'provider switched to OpenAI because that is the only key');
+  check(/Claude \(no key\)/.test(await page.$eval('#providerSel', (e) => e.textContent)), 'provider menu marks Claude as "(no key)"');
+  // Choose Claude anyway and send → goes to OpenAI with a notice instead of an error
+  await page.waitForTimeout(800); // let the model-list refresh triggered by the new key finish
+  await page.selectOption('#providerSel', 'anthropic');
+  await ctx.route('https://api.openai.com/v1/responses', (route) => route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: sse([
+    { type: 'response.created', response: { id: 'r1', status: 'in_progress' } },
+    { type: 'response.output_item.added', output_index: 0, item: { id: 'm1', type: 'message', role: 'assistant', status: 'in_progress', content: [] } },
+    { type: 'response.output_text.delta', item_id: 'm1', output_index: 0, content_index: 0, delta: 'Hello from OpenAI.' },
+    { type: 'response.output_item.done', output_index: 0, item: { id: 'm1', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Hello from OpenAI.', annotations: [] }] } },
+    { type: 'response.completed', response: { id: 'r1', status: 'completed', usage: { input_tokens: 5, output_tokens: 5 } } }]) }));
+  await send(page, 'hi');
+  check(/Hello from OpenAI/.test(await page.$eval('.msg.assistant .prose', (e) => e.textContent)) && /no Claude key, so this was sent with/.test(await page.$eval('#bannerHost', (e) => e.textContent)), 'with only an OpenAI key, a message sent with Claude selected goes to OpenAI with a notice');
+  // Untick Remember me → keys move to sessionStorage
+  await page.click('#settingsBtn');
+  await page.uncheck('label.check:has-text("Remember me") input');
+  check(/cleared when you close this tab/.test(await page.$eval('.modal', (e) => e.textContent)), 'status explains keys last only until the tab closes');
+  await page.click('.modal .btn.primary');
+  check(!(await page.evaluate(() => localStorage.getItem('teachassist.keys.v1'))) && JSON.parse(await page.evaluate(() => sessionStorage.getItem('teachassist.keys.session'))).openaiKey === 'sk-openai-only', 'Remember me off: keys only in sessionStorage');
+  const p2 = await ctx.newPage(); await p2.goto(`${A}/teach-assist.html`); await p2.waitForFunction(() => document.querySelector('#modelSel option'));
+  check(!(await p2.evaluate(() => settings.openaiKey)), 'a new tab (browser reopened) has no keys when Remember me is off');
+  await p2.close();
+  // Tick again → back to localStorage with a fresh 30-day clock
+  await page.click('#settingsBtn');
+  await page.check('label.check:has-text("Remember me") input');
+  check(/Remembered on this device until/.test(await page.$eval('.modal', (e) => e.textContent)), 'status shows the date the keys will be forgotten');
+  await page.click('.modal .m-head .btn');
+  check(!!(await page.evaluate(() => localStorage.getItem('teachassist.keys.v1'))), 'Remember me on again: keys back in localStorage');
+  // Expiry: pretend 31 days have passed
+  await page.evaluate(() => { const k = JSON.parse(localStorage.getItem('teachassist.keys.v1')); k.expiresAt = Date.now() - 1000; localStorage.setItem('teachassist.keys.v1', JSON.stringify(k)); sessionStorage.clear(); });
+  await page.reload(); await page.waitForFunction(() => document.querySelector('#modelSel option'));
+  check(!(await page.evaluate(() => settings.openaiKey)) && !(await page.evaluate(() => localStorage.getItem('teachassist.keys.v1'))), 'expired keys are erased on the next launch');
+  check(/cleared after 30 days/.test(await page.$eval('#bannerHost', (e) => e.textContent)), 'banner explains the keys expired');
+  // Forget keys button
+  await page.click('#settingsBtn');
+  await page.fill('input[placeholder="sk-ant-…"]', 'sk-ant-new');
+  await page.click('.modal .m-head .btn');
+  await page.click('#settingsBtn');
+  page.once('dialog', (d) => d.accept());
+  await page.click('text=Forget keys on this device');
+  check(!(await page.evaluate(() => localStorage.getItem('teachassist.keys.v1'))) && !(await page.evaluate(() => settings.anthropicKey)) && (await page.$eval('input[placeholder="sk-ant-…"]', (e) => e.value)) === '', '"Forget keys on this device" removes them immediately');
+  await page.click('.modal .m-head .btn');
+  await ctx.close();
+  // Legacy: keys inside the old settings blob are migrated to the key store with a 30-day expiry
+  const ctx2 = await newCtx(); const p3 = await ctx2.newPage();
+  await p3.addInitScript(() => { if (!localStorage.getItem('teachassist.settings.v1')) localStorage.setItem('teachassist.settings.v1', JSON.stringify({ anthropicKey: 'sk-ant-legacy', openaiKey: 'sk-legacy', provider: 'anthropic' })); });
+  await p3.goto(`${A}/teach-assist.html`); await p3.waitForFunction(() => document.querySelector('#modelSel option'));
+  const k3 = await p3.evaluate(() => JSON.parse(localStorage.getItem('teachassist.keys.v1')));
+  const blob3 = await p3.evaluate(() => JSON.parse(localStorage.getItem('teachassist.settings.v1')));
+  check(k3?.anthropicKey === 'sk-ant-legacy' && k3?.openaiKey === 'sk-legacy' && !blob3.anthropicKey && !blob3.openaiKey, 'keys saved by the previous version are moved out of the settings blob');
+  await ctx2.close();
 }
 
 await browser.close(); s1.close(); s2.close();
