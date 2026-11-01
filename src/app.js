@@ -55,7 +55,7 @@ const SPEC = {
   textExtractCap: 90000,
   attachmentMaxBytes: 100 * 1024 * 1024,
 };
-const EFFORTS = [['low', 'Effort: low'], ['medium', 'Effort: medium'], ['high', 'Effort: high'], ['xhigh', 'Effort: extra high'], ['max', 'Effort: max']];
+const EFFORTS = [['low', 'Effort: Low'], ['medium', 'Effort: Medium'], ['high', 'Effort: High'], ['xhigh', 'Effort: Extra high'], ['max', 'Effort: Max']];
 const FILE_MARK_BEGIN = /-----BEGIN FILE (.+?) (\d+)-----\s*([A-Za-z0-9+/=\s]*?)\s*-----END FILE-----/g;
 
 /* ───────────────────────────── Utilities ───────────────────────────── */
@@ -85,7 +85,7 @@ function el(tag, attrs = {}, ...children) {
     else if (k === 'html') node.innerHTML = v;
     else if (k === 'text') node.textContent = v;
     else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
-    else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+    else if (k === 'style' && typeof v === 'object') { for (const [sk, sv] of Object.entries(v)) { if (sv === undefined || sv === null) continue; if (sk.startsWith('--')) node.style.setProperty(sk, sv); else node.style[sk] = sv; } }
     else node.setAttribute(k, v === true ? '' : v);
   }
   for (const c of children.flat()) {
@@ -107,9 +107,17 @@ function svgIcon(name) {
     file: '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/>',
     brain: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>',
     chev: '<path d="m6 9 6 6 6-6"/>',
+    chat: '<path d="M21 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-5 4V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/>',
     image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
     alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
+    warn: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+    cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
+    paste: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+    more: '<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>',
+    up: '<path d="M7 10v11"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 7A2 2 0 0 1 17.5 21H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h2.8a2 2 0 0 0 1.8-1.1L12 2a3 3 0 0 1 3 3.9z"/>',
+    down: '<path d="M17 14V3"/><path d="M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-7A2 2 0 0 1 6.5 3H20a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-2.8a2 2 0 0 0-1.8 1.1L12 22a3 3 0 0 1-3-3.9z"/>',
+    user: '<circle cx="12" cy="8" r="4.2" fill="currentColor"/><path d="M4 21c.8-4.2 4-6.5 8-6.5s7.2 2.3 8 6.5z" fill="currentColor"/>',
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
 }
@@ -197,7 +205,6 @@ const DEFAULT_SETTINGS = {
   imageGen: true,
   imageModel: 'gpt-image-2',
   showThinking: true,
-  theme: 'dark',
   userName: '',
   profile: 'I teach Digital Technologies (Years 8–12, including VCE Software Development and Applied Computing) at a Melbourne secondary school. Use Australian English spelling, Australian Curriculum v9 / VCAA terminology by default, and the Australia/Melbourne timezone.',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Australia/Melbourne',
@@ -210,6 +217,9 @@ const DEFAULT_SETTINGS = {
   keySource: { anthropic: '', openai: '' }, // 'main' = supplied by the main program, 'user' = typed in Settings
   trustedParentOrigin: '',    // optional: only accept keys posted from this origin
   rememberKeys: true,         // keep API keys in this browser for 30 days (off: only until the tab is closed)
+  appearance: 'light',        // light | dark | system
+  textScale: 1,               // A− / A / A+ (0.85 – 1.45)
+  a11y: { contrast: false, motion: false, font: false, spacing: false, links: false },
 };
 
 /* ───────────────────────────── API key storage ─────────────────────────────
@@ -293,12 +303,35 @@ function ensureUsableProvider() {
   return null;
 }
 const providerName = (p) => (p === 'anthropic' ? 'Claude' : 'OpenAI');
+const TEXT_SCALES = [0.85, 0.92, 1, 1.1, 1.2, 1.32, 1.45];
+const DARK_MQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : { matches: false, addEventListener() {} };
+function resolvedTheme() { const a = settings.appearance || 'light'; return a === 'system' ? (DARK_MQ.matches ? 'dark' : 'light') : a; }
+/** Appearance (light/dark/system), text size and accessibility modes → classes and variables on <html>. */
 function applyTheme() {
-  const light = settings.theme === 'light';
-  document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  const root = document.documentElement;
+  const theme = resolvedTheme();
+  root.setAttribute('data-theme', theme);
   const d = $('#hljsDark'), l = $('#hljsLight');
-  if (d && l) { d.disabled = light; l.disabled = !light; }
+  if (d && l) { d.disabled = theme !== 'dark'; l.disabled = theme === 'dark'; }
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = theme === 'dark' ? '#120d2f' : '#efe8ff';
+  const tt = $('#themeToggle'); if (tt) { tt.setAttribute('aria-checked', String(theme === 'dark')); tt.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'; }
+  const ts = TEXT_SCALES.includes(+settings.textScale) ? +settings.textScale : 1;
+  root.style.setProperty('--ts', String(ts));
+  const dn = $('#tsDown'), rs = $('#tsReset'), up = $('#tsUp');
+  if (dn) { dn.disabled = ts <= TEXT_SCALES[0]; up.disabled = ts >= TEXT_SCALES[TEXT_SCALES.length - 1]; rs.classList.toggle('on', ts === 1); dn.classList.toggle('on', ts < 1); up.classList.toggle('on', ts > 1); rs.title = `Normal text size (now ${Math.round(ts * 100)}%)`; }
+  const a = settings.a11y || {};
+  root.classList.toggle('a11y-contrast', !!a.contrast);
+  root.classList.toggle('a11y-motion', !!a.motion);
+  root.classList.toggle('a11y-font', !!a.font);
+  root.classList.toggle('a11y-spacing', !!a.spacing);
+  root.classList.toggle('a11y-links', !!a.links);
 }
+function stepTextScale(dir) {
+  const cur = TEXT_SCALES.indexOf(TEXT_SCALES.includes(+settings.textScale) ? +settings.textScale : 1);
+  const next = dir === 0 ? 1 : TEXT_SCALES[clamp(cur + dir, 0, TEXT_SCALES.length - 1)];
+  saveSettings({ textScale: next });
+}
+DARK_MQ.addEventListener?.('change', () => { if (settings.appearance === 'system') applyTheme(); });
 function keyFor(provider) { return String((provider === 'anthropic' ? settings.anthropicKey : settings.openaiKey) || '').trim(); }
 function currentModel() { return settings.provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel; }
 function relayBase() { return (settings.anthropicRelay || '').trim().replace(/\/+$/, ''); }
@@ -451,6 +484,7 @@ function exchangeEntry(conv, userMsg, assistant) {
       ...(assistant.error ? { error: assistant.error } : {}),
     },
     usage: assistant.usage || null,
+    ...(assistant.feedback ? { feedback: assistant.feedback } : {}),
   };
 }
 /** Append one completed exchange to the current session's entry. */
@@ -1897,7 +1931,7 @@ async function selectConversation(id) {
   renderConvList();
   renderMessages();
   $('#convTitle').textContent = conv?.title || 'New chat';
-  if (window.innerWidth <= 860) collapseSidebar(true);
+  if (window.innerWidth < 1024) collapseSidebar(true);
 }
 async function deleteConversation(id) {
   state.busy.get(id)?.abort();
@@ -2055,7 +2089,7 @@ mdRenderer.code = function ({ text, lang }) {
   let html;
   if (language && hljs.getLanguage(language)) { try { html = hljs.highlight(text, { language, ignoreIllegals: true }).value; } catch { html = escapeHtml(text); } }
   else { try { html = hljs.highlightAuto(text).value; } catch { html = escapeHtml(text); } }
-  return `<div class="codeblock"><div class="cb-head"><span>${escapeHtml(language || 'text')}</span><button type="button" data-copy>Copy</button></div><pre><code class="hljs">${html}</code></pre></div>`;
+  return `<div class="codeblock"><div class="cb-head"><span>${escapeHtml(language || '')}</span><button type="button" data-copy>Copy</button></div><pre><code class="hljs">${html}</code></pre></div>`;
 };
 marked.setOptions({ gfm: true, breaks: true, renderer: mdRenderer });
 
@@ -2100,6 +2134,18 @@ function postProcessProse(node) {
       a.title = `Download ${name}`;
     } else { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
   }
+  // Each h2/h3 and what follows it (up to the next heading) becomes a card with a header band.
+  if (!node.querySelector(':scope > .sec')) {
+    const kids = Array.from(node.children);
+    let sec = null;
+    for (const k of kids) {
+      if (/^H[1-3]$/.test(k.tagName)) {
+        sec = el('div', { class: 'sec' }); const b = el('div', { class: 'sec-b' });
+        node.insertBefore(sec, k); k.classList.add('sec-h'); sec.append(k, b); sec._b = b;
+      } else if (sec && !k.classList.contains('cursor')) sec._b.append(k);
+    }
+    for (const sc of $$(':scope > .sec', node)) if (!sc._b.childNodes.length) sc._b.remove();
+  }
   for (const btn of $$('button[data-copy]', node)) {
     btn.addEventListener('click', async () => {
       const code = btn.closest('.codeblock')?.querySelector('code')?.innerText || '';
@@ -2117,24 +2163,21 @@ function postProcessProse(node) {
 }
 
 /* ───────────────────────────── Rendering ───────────────────────────── */
+const CONV_UI = { expanded: false };
 function renderConvList() {
   const host = $('#convList');
   host.innerHTML = '';
-  if (!settings.saveHistory) host.append(el('div', { style: { fontSize: '12px', color: 'var(--amber)', padding: '8px 10px 2px' }, text: 'History saving is off — new chats end with this session.' }));
+  if (!settings.saveHistory) host.append(el('div', { style: { fontSize: '12.5px', color: 'var(--amber)', padding: '4px 8px 6px', fontWeight: 600 }, text: 'History saving is off — new chats end with this session.' }));
   if (!state.convs.length) { host.append(el('div', { class: 'conv-group', text: 'No conversations yet' })); return; }
-  const groups = [['Today', 0], ['Yesterday', 1], ['Previous 7 days', 7], ['Previous 30 days', 30], ['Older', Infinity]];
-  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
-  const today = startOfDay(Date.now());
-  let lastGroup = null;
-  for (const c of state.convs) {
-    const days = Math.floor((today - startOfDay(c.updatedAt)) / 86400000);
-    const g = groups.find(([, n]) => days <= n)[0];
-    if (g !== lastGroup) { host.append(el('div', { class: 'conv-group', text: g })); lastGroup = g; }
-    host.append(el('div', { class: `conv-item${c.id === state.activeConvId ? ' active' : ''}`, onclick: () => selectConversation(c.id) },
-      state.busy.has(c.id) ? el('span', { class: 'busy-dot' }) : null,
+  const LIMIT = 6;
+  const list = CONV_UI.expanded ? state.convs : state.convs.slice(0, LIMIT);
+  for (const c of list) {
+    host.append(el('div', { class: `conv-item${c.id === state.activeConvId ? ' active' : ''}`, role: 'button', tabindex: '0', onclick: () => selectConversation(c.id), onkeydown: (e) => { if (e.key === 'Enter') selectConversation(c.id); } },
+      state.busy.has(c.id) ? el('span', { class: 'busy-dot' }) : el('span', { html: svgIcon('chat'), style: { display: 'inline-flex', width: '18px', color: 'var(--text-2)' } }),
       el('span', { class: 't', text: c.title || 'New chat', title: c.title }),
-      el('button', { class: 'x', title: 'Delete', html: '×', onclick: (e) => { e.stopPropagation(); if (confirm(`Delete "${c.title}"?`)) deleteConversation(c.id); } })));
+      el('button', { class: 'x', title: 'Delete chat', 'aria-label': `Delete ${c.title || 'chat'}`, html: '×', onclick: (e) => { e.stopPropagation(); if (confirm(`Delete "${c.title}"?`)) deleteConversation(c.id); } })));
   }
+  if (state.convs.length > LIMIT) host.append(el('button', { class: 'conv-more', onclick: () => { CONV_UI.expanded = !CONV_UI.expanded; renderConvList(); } }, el('span', { html: svgIcon('more'), style: { display: 'inline-flex', width: '18px' } }), CONV_UI.expanded ? 'Show fewer' : `More… (${state.convs.length - LIMIT})`));
 }
 function renderModelSelect() {
   const sel = $('#modelSel');
@@ -2151,25 +2194,52 @@ function renderModelSelect() {
   const eff = $('#effortSel'); eff.innerHTML = '';
   for (const [v, label] of EFFORTS) eff.append(el('option', { value: v, text: label, selected: v === settings.effort || undefined }));
   $('#whoLabel').textContent = `${provider === 'anthropic' ? 'Claude' : 'OpenAI'} · ${current || '—'}`;
+  syncPillLabels();
+}
+/** The pills show the current choice; the native selects sit invisibly on top of them. */
+function syncPillLabels() {
+  const lbl = (sel) => sel.options[sel.selectedIndex]?.textContent || '';
+  const pv = $('#providerVal'); if (pv) pv.textContent = providerName($('#providerSel').value);
+  // On phones the "claude-" / "Effort: " prefixes are hidden (CSS) so all three pills fit on one row.
+  const split = (text, re) => { const m = text.match(re); return m ? `<span class="pfx">${escapeHtml(m[1])}</span>${escapeHtml(text.slice(m[1].length))}` : escapeHtml(text); };
+  const mv = $('#modelVal'); if (mv) mv.innerHTML = split(lbl($('#modelSel')) || '—', /^(claude-)/);
+  const ev = $('#effortVal'); if (ev) ev.innerHTML = split(lbl($('#effortSel')), /^(Effort: )/);
+}
+const HOME_CARDS = [
+  { cls: 'c-purple', art: 'laptop', text: 'Make a 10-question Year 9 quiz on Python loops', prompt: 'Make a 10-question Year 9 quiz on Python loops with an answer key, as a Word document' },
+  { cls: 'c-teal', art: 'pdf', text: 'Turn the attached PDF into a one-page student summary', prompt: 'Turn the attached PDF into a one-page student summary handout', attach: true },
+  { cls: 'c-peach', art: 'easel', text: 'Create a lesson plan and slides on cybersecurity', prompt: 'Create a 60-minute lesson plan (Word) and a matching 12-slide deck (PowerPoint) introducing cybersecurity — passwords, phishing and staying safe online — for Year 9' },
+];
+const HOME_QUICK = [
+  { cls: 'q-pink', icon: 'target', label: 'Create Quiz', studio: 'quiz' },
+  { cls: 'q-blue', icon: 'book', label: 'Lesson Plan', studio: 'lesson' },
+  { cls: 'q-green', icon: 'clipboard', label: 'Worksheets', studio: 'worksheet' },
+  { cls: 'q-orange', icon: 'slides', label: 'Slides', studio: 'slides' },
+  { cls: 'q-purple', icon: 'grid', label: 'More Tools', studio: null },
+];
+function useStarter(text, attach) {
+  $('#input').value = text; autosize(); updateComposerState();
+  if (attach) $('#fileInput').click(); else if (!(typeof isMobile === 'function' && isMobile())) $('#input').focus();
 }
 function renderMessages() {
   const host = $('#msgsInner');
   const chain = activeChain();
   host.innerHTML = '';
+  document.documentElement.classList.toggle('has-chat', chain.length > 0);
   if (!chain.length) {
-    const starters = [
-      'Make a 10-question Year 9 quiz on Python loops with an answer key, as a Word document',
-      'Turn the attached PDF into a one-page student summary handout',
-      'Draft a parent email about an upcoming assessment',
-      'Build a markbook spreadsheet for three classes with weighted totals',
-      'Plan a 60-minute lesson on binary numbers for Year 8 (5E model) as a lesson-plan document',
-      'Create a 12-slide deck introducing the Software Development PSM stages',
-    ];
-    host.append(el('div', { class: 'empty' },
-      el('div', { style: { width: '48px', height: '48px', borderRadius: '14px', fontSize: '20px', background: 'linear-gradient(135deg, var(--accent), #6366f1)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: '800' }, text: 'T' }),
-      el('h1', { text: 'How can I help today?' }),
-      el('p', { text: 'Ask anything, attach files, and request documents — real Word, PowerPoint, Excel and PDF files come back as downloads.' }),
-      el('div', { class: 'chips' }, ...starters.map((s) => el('button', { class: 'chip', text: s, onclick: () => { $('#input').value = s; autosize(); $('#input').focus(); updateComposerState(); } })))));
+    const hero = el('div', { class: 'hero' },
+      el('div', { class: 'hero-top' },
+        el('div', { class: 'hero-mascot', html: ART.mascot() }),
+        el('div', { class: 'hero-text' },
+          el('h1', { html: `How can I help <span class="last">today?${ART.swoosh}</span>` }),
+          el('p', { text: 'Ask anything, attach files, and request documents — real Word, PowerPoint, Excel and PDF files come back as downloads.' }))),
+      el('div', { class: 'sugg-grid' }, ...HOME_CARDS.map((c) => el('button', { class: `sugg ${c.cls}`, title: c.prompt, onclick: () => useStarter(c.prompt, c.attach) },
+        el('span', { class: 'art', html: ART[c.art] }), el('span', { class: 'txt', text: c.text }), el('span', { class: 'go', html: ART.arrow })))),
+      el('div', { class: 'quick-row', role: 'group', 'aria-label': 'Quick tools' }, ...HOME_QUICK.map((q) => el('button', { class: `quick ${q.cls}`, onclick: () => {
+        if (!q.studio || typeof openStudioForm !== 'function') { showView('studio'); return; }
+        const g = STUDIO.find((x) => x.id === q.studio); if (g) openStudioForm(g); else showView('studio');
+      } }, el('span', { html: icon(q.icon), style: { display: 'inline-flex' } }), q.label))));
+    host.append(hero);
     return;
   }
   for (const m of chain) host.append(renderMessage(m));
@@ -2183,18 +2253,22 @@ function scheduleRender(msg) {
     if (node) { const atBottom = isNearBottom(); node.replaceWith(renderMessage(msg)); if (atBottom) scrollToBottom(false); }
   }, 90));
 }
+const fmtClock = (t) => new Date(t || Date.now()).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).replace(/\s?([ap])\.?m\.?/i, ' $1m').toLowerCase();
 function renderMessage(m) {
   const wrap = el('div', { class: `msg ${m.role}`, 'data-msg': m.id });
   if (m.role === 'user') {
-    if (m.attachments?.length) wrap.append(el('div', { class: 'attach-row' }, ...m.attachments.map((a) => attachmentPill(a))));
-    wrap.append(el('div', { class: 'bubble', text: m.text || '' }));
-    wrap.append(el('div', { class: 'actions' },
-      el('button', { class: 'btn icon ghost sm', title: 'Edit & resend', html: svgIcon('edit'), onclick: () => startEdit(m, wrap) }),
-      el('button', { class: 'btn icon ghost sm', title: 'Copy', html: svgIcon('copy'), onclick: () => navigator.clipboard.writeText(m.text || '') }),
-      el('button', { class: 'btn icon ghost sm', title: 'Delete from here', html: svgIcon('trash'), onclick: () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); } })));
+    const col = el('div', { class: 'ucol' });
+    if (m.attachments?.length) col.append(el('div', { class: 'attach-row' }, ...m.attachments.map((a) => attachmentPill(a))));
+    col.append(el('div', { class: 'ububble' }, el('div', { class: 'bubble', text: m.text || '' }), el('span', { class: 'time', text: fmtClock(m.createdAt) })));
+    col.append(el('div', { class: 'actions' },
+      el('button', { class: 'btn icon ghost sm', title: 'Edit & resend', 'aria-label': 'Edit and resend', html: svgIcon('edit'), onclick: () => startEdit(m, wrap) }),
+      el('button', { class: 'btn icon ghost sm', title: 'Copy', 'aria-label': 'Copy', html: svgIcon('copy'), onclick: () => navigator.clipboard.writeText(m.text || '') }),
+      el('button', { class: 'btn icon ghost sm', title: 'Delete from here', 'aria-label': 'Delete from here', html: svgIcon('trash'), onclick: () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); } })));
+    wrap.append(el('div', { class: 'avatar me', html: svgIcon('user'), 'aria-hidden': 'true' }), col);
     return wrap;
   }
-  wrap.append(el('div', { class: 'head' }, el('span', { class: 'avatar', text: 'T' }), el('span', { text: 'Teach Assist' }), el('span', { class: 'model', text: m.model || '' })));
+  const card = el('div', { class: 'acard' });
+  wrap.append(el('div', { class: 'avatar bot', html: ART.mascot('46 6 168 158'), title: m.model || 'Teach Assist' }), card);
   const body = el('div', { class: 'body' });
   const segs = m.segments || [];
   const streaming = m.status === 'streaming';
@@ -2221,22 +2295,30 @@ function renderMessage(m) {
   const others = files.filter((f) => !imgs.includes(f));
   for (const f of imgs) body.append(imageCard(f));
   if (others.length) body.append(el('div', { class: 'files' }, ...others.map((f) => fileCard(f))));
-  if (others.some((f) => f.needsRelay)) body.append(el('div', { class: 'err', style: { color: 'var(--amber)', borderColor: 'rgba(251,191,36,.5)', background: 'rgba(251,191,36,.08)' }, html: `Claude created file(s) but the browser cannot download them directly from Anthropic (their Files API blocks browser origins). Add the <b>Claude files relay</b> in Settings — a two-minute Cloudflare Worker — and regenerate, or switch off the relay-free mode by asking Claude to resend the file inline.` }));
+  if (others.some((f) => f.needsRelay)) body.append(el('div', { class: 'warnbox', html: `Claude created file(s) but the browser cannot download them directly from Anthropic (their Files API blocks browser origins). Add the <b>Claude files relay</b> in Settings — a two-minute Cloudflare Worker — and regenerate, or switch off the relay-free mode by asking Claude to resend the file inline.` }));
   if (m.sources?.length) body.append(el('div', { class: 'sources' }, el('div', { text: 'Sources' }), el('ol', {}, ...m.sources.slice(0, 25).map((s) => el('li', {}, el('a', { href: s.url, target: '_blank', rel: 'noopener noreferrer', text: s.title || s.url }))))));
   if (m.error) body.append(el('div', { class: 'err' }, `Error: ${m.error}`, el('div', {}, el('button', { class: 'btn sm', text: 'Retry', onclick: () => regenerate(m) }))));
-  else if (m.stopReason === 'max_tokens' || m.stopReason === 'max_output_tokens') body.append(el('div', { class: 'err', style: { color: 'var(--amber)', borderColor: 'rgba(251,191,36,.5)', background: 'rgba(251,191,36,.08)' } }, 'The reply hit the output-token limit. Raise "Max output tokens" in Settings, or ask it to continue.'));
-  else if (m.stopReason === 'model_context_window_exceeded') body.append(el('div', { class: 'err', style: { color: 'var(--amber)', borderColor: 'rgba(251,191,36,.5)', background: 'rgba(251,191,36,.08)' } }, 'The conversation has filled the model\'s context window; this reply was cut short. Start a new chat (or delete older messages) to continue.'));
+  else if (m.stopReason === 'max_tokens' || m.stopReason === 'max_output_tokens') body.append(el('div', { class: 'warnbox' }, 'The reply hit the output-token limit. Raise "Max output tokens" in Settings, or ask it to continue.'));
+  else if (m.stopReason === 'model_context_window_exceeded') body.append(el('div', { class: 'warnbox' }, 'The conversation has filled the model\'s context window; this reply was cut short. Start a new chat (or delete older messages) to continue.'));
   else if (m.stopReason === 'refusal') body.append(el('div', { class: 'err' }, 'The model declined to continue this response.'));
   else if (m.stopReason === 'stopped') body.append(el('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' }, text: 'Stopped.' }));
   if (!streaming && !segs.some((s) => s.type === 'text' && s.text) && !files.length && !m.error && !segs.some((s) => s.type === 'tool')) body.append(el('div', { style: { color: 'var(--text-dim)' }, text: '(empty response)' }));
-  wrap.append(body);
+  card.append(body);
   if (!streaming) {
     const u = m.usage;
-    wrap.append(el('div', { class: 'actions' },
-      el('button', { class: 'btn icon ghost sm', title: 'Copy response', html: svgIcon('copy'), onclick: () => navigator.clipboard.writeText(m.text || '') }),
-      el('button', { class: 'btn icon ghost sm', title: 'Regenerate', html: svgIcon('refresh'), onclick: () => regenerate(m) }),
-      el('button', { class: 'btn icon ghost sm', title: 'Delete from here', html: svgIcon('trash'), onclick: () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); } }),
-      u ? el('span', { class: 'usage', style: { alignSelf: 'center', marginLeft: '6px' }, text: `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` }) : null));
+    const tb = (name, label, fn, extra = {}) => el('button', { class: 'tb', title: label, 'aria-label': label, onclick: fn, ...extra }, el('span', { html: svgIcon(name), style: { display: 'inline-flex' } }), el('span', { class: 'lbl', text: label }));
+    const copyText = async () => { try { await navigator.clipboard.writeText(m.text || ''); toastMsg('Copied'); } catch { toastMsg('Copy failed'); } };
+    card.prepend(el('div', { class: 'actions', role: 'toolbar', 'aria-label': 'Reply actions' },
+      tb('copy', 'Copy', copyText),
+      tb('cut', 'Cut', async () => { if (!confirm('Cut copies this reply and removes it (and anything after it) from the chat. Continue?')) return; try { await navigator.clipboard.writeText(m.text || ''); } catch { /* ignore */ } deleteMessage(m); }),
+      tb('paste', 'Paste', async () => { try { const t = await navigator.clipboard.readText(); if (!t) return; const inp = $('#input'); inp.value = (inp.value ? inp.value + '\n' : '') + t; autosize(); updateComposerState(); inp.focus(); } catch { toastMsg('Clipboard access was blocked — press Ctrl+V / long-press in the message box instead.'); } }),
+      tb('edit', 'Edit', () => { const idx = state.messages.indexOf(m); const prev = [...state.messages.slice(0, idx)].reverse().find((x) => x.role === 'user'); const node = prev && document.querySelector(`.msg[data-msg="${prev.id}"]`); if (prev && node) { startEdit(prev, node); node.scrollIntoView({ block: 'center' }); } }),
+      tb('refresh', 'Regenerate', () => regenerate(m)),
+      el('button', { class: 'tb', title: 'More', 'aria-label': 'More actions', html: svgIcon('more'), onclick: (e) => replyMenu(m, e.currentTarget) })));
+    const fb = (dir) => el('button', { class: `fb${m.feedback === dir ? ' on' : ''}${dir === 'down' ? ' down' : ''}`, title: dir === 'up' ? 'Good response' : 'Bad response', 'aria-label': dir === 'up' ? 'Good response' : 'Bad response', 'aria-pressed': String(m.feedback === dir), html: svgIcon(dir), onclick: () => setFeedback(m, dir) });
+    card.append(el('div', { class: 'msg-foot' }, fb('up'), fb('down'),
+      el('span', { class: 'usage', title: m.model || '', text: `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}` }),
+      el('span', { class: 'time', text: fmtClock(m.createdAt) })));
   }
   return wrap;
 }
@@ -2257,11 +2339,20 @@ function toolCard(s) {
     el('summary', {}, el('span', { class: 'ic-sm', html: svgIcon(icon) }), title, status, el('span', { class: 'chev', html: svgIcon('chev') })),
     parts.length ? el('div', { class: 'card-body' }, ...parts) : null);
 }
+const KIND_NAMES = { doc: 'Word document', xls: 'Excel workbook', ppt: 'PowerPoint deck', pdf: 'PDF', img: 'Image', csv: 'CSV file', zip: 'Archive', md: 'Markdown', html: 'Web page', json: 'JSON', code: 'Code', txt: 'File' };
+/** Illustrated file icon (Word/Excel/PowerPoint/PDF style) for file cards and the library. */
+function fileArt(name = '', mime = '') {
+  const [cls, label] = iconClassFor(name, mime);
+  const C = { doc: ['#2b6cf6', 'W'], xls: ['#1f9d55', 'X'], csv: ['#1f9d55', 'X'], ppt: ['#f26b1d', 'P'], pdf: ['#e5383b', 'PDF'], img: ['#7c5cff', '▲'], zip: ['#b7791f', 'ZIP'], code: ['#0e7490', '</>'], json: ['#6d28d9', '{ }'], html: ['#c2410c', '</>'], md: ['#475569', 'MD'], txt: ['#64748b', label || 'TXT'] }[cls] || ['#64748b', label];
+  const [c, t] = C;
+  const fs = t.length >= 3 ? 9.5 : 16;
+  return `<svg viewBox="0 0 52 52" aria-hidden="true"><path d="M17 5h20l10 10v29a3 3 0 0 1-3 3H17a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z" fill="#fff" stroke="${c}" stroke-opacity=".35" stroke-width="1.5"/><path d="M37 5v10h10" fill="none" stroke="${c}" stroke-opacity=".35" stroke-width="1.5"/><path d="M27 23h14M27 29h14M27 35h10" stroke="${c}" stroke-opacity=".5" stroke-width="2" stroke-linecap="round"/><rect x="3" y="15" width="24" height="24" rx="4" fill="${c}"/><text x="15" y="${fs > 12 ? 32.5 : 30.5}" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="800" font-size="${fs}" fill="#fff">${escapeHtml(t)}</text></svg>`;
+}
 function fileCard(f) {
   const [cls, label] = iconClassFor(f.name || '', f.mediaType || '');
-  const meta = f.status === 'pending' ? 'Preparing…' : f.status === 'error' ? `Unavailable — ${f.error || 'download failed'}` : `${fmtBytes(f.size)}${label ? ' · ' + label : ''}`;
+  const meta = f.status === 'pending' ? 'Preparing…' : f.status === 'error' ? `Unavailable — ${f.error || 'download failed'}` : `${KIND_NAMES[cls] || label || 'File'} · ${fmtBytes(f.size)}`;
   return el('div', { class: `file-card${f.status !== 'ready' ? ' pending' : ''}`, title: f.status === 'error' ? (f.error || '') : '' },
-    el('div', { class: `ic ${cls}`, text: label }),
+    el('div', { class: 'fart', html: fileArt(f.name || '', f.mediaType || '') }),
     el('div', { class: 'info' }, el('div', { class: 'nm', text: f.name || f.fileId, title: f.name || '' }), el('div', { class: 'meta', text: meta })),
     el('button', { class: 'dl', title: 'Download', html: svgIcon('download'), onclick: async () => { const rec = await getCachedFile(f.key); if (rec) downloadBlob(rec.blob, f.name || 'download'); else alert('This file is no longer cached locally.'); } }));
 }
@@ -2327,22 +2418,22 @@ async function addFiles(fileList) {
     renderPending();
   }
 }
-function setToggle(btn, on) { btn.classList.toggle('on', !!on); }
+function setToggle(btn, on) { btn.classList.toggle('on', !!on); btn.setAttribute('aria-pressed', String(!!on)); }
 function showBanner(kind, html) {
   const host = $('#bannerHost');
   host.innerHTML = '';
-  host.append(el('div', { class: `banner ${kind}` }, el('span', { html: svgIcon('alert'), style: { width: '16px', flex: '0 0 auto', display: 'inline-flex' } }), el('span', { html, style: { flex: 1 } }), el('button', { class: 'x', html: '×', onclick: () => (host.innerHTML = '') })));
+  host.append(el('div', { class: `banner ${kind}`, role: kind === 'err' ? 'alert' : 'status' }, el('span', { class: 'bi', html: svgIcon(kind === 'info' ? 'alert' : 'warn') }), el('span', { html, style: { flex: 1 } }), el('button', { class: 'x', html: '×', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: () => (host.innerHTML = '') })));
 }
 function isNearBottom() { const m = $('#messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 160; }
 function scrollToBottom(force) { const m = $('#messages'); if (force || isNearBottom()) m.scrollTop = m.scrollHeight; }
-function collapseSidebar(v) { $('#sidebar').classList.toggle('collapsed', v); $('#scrim').classList.toggle('show', !v && window.innerWidth <= 860); saveSettings({ sidebarCollapsed: v }); }
+function collapseSidebar(v) { $('#sidebar').classList.toggle('collapsed', v); $('#scrim').classList.toggle('show', !v && window.innerWidth < 1024); }
 
 /* ───────────────────────────── Settings modal ───────────────────────────── */
 function openSettings() {
   const host = $('#modalHost');
   host.innerHTML = '';
   // On phones the chat-list drawer sits above the page; close it so the sheet is reachable.
-  if (window.innerWidth <= 860 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true);
+  if (window.innerWidth < 1024 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true);
   const s = settings;
   const f = (label, input, help) => el('div', { class: 'field' }, el('label', { text: label }), input, help ? el('div', { class: 'help', html: help }) : null);
   const anthropicKey = el('input', { type: 'password', value: s.anthropicKey, placeholder: 'sk-ant-…', autocomplete: 'off', spellcheck: 'false' });
@@ -2409,7 +2500,7 @@ function openSettings() {
   const profile = el('textarea', { placeholder: 'Who you are, what you teach, preferred spelling/curriculum/timezone…' }); profile.value = s.profile;
   const tz = el('input', { type: 'text', value: s.timezone, placeholder: 'Australia/Melbourne' });
   const maxTok = el('input', { type: 'number', min: 1024, max: 128000, step: 1024, value: s.maxTokens });
-  const theme = el('select', {}, el('option', { value: 'dark', text: 'Dark' }), el('option', { value: 'light', text: 'Light' })); theme.value = s.theme;
+  const displayBtn = el('button', { class: 'btn sm', type: 'button', text: 'Display & accessibility…', onclick: () => { close(); openA11yPanel(); } });
   const imageModel = el('select', {}, ...SPEC.openai.imageModels.map((m) => el('option', { value: m, text: m }))); imageModel.value = SPEC.openai.imageModels.includes(s.imageModel) ? s.imageModel : 'gpt-image-2';
   const showThinking = el('input', { type: 'checkbox' }); showThinking.checked = s.showThinking;
   const defWeb = el('input', { type: 'checkbox' }); defWeb.checked = s.webSearch;
@@ -2443,7 +2534,7 @@ function openSettings() {
     el('div', { class: 'modal' },
       el('div', { class: 'm-head' }, el('h2', { text: 'Settings' }), el('button', { class: 'btn icon ghost', html: '×', title: 'Close', onclick: close })),
       el('div', { class: 'm-body' },
-        el('div', { class: 'm-section', style: { borderTop: 0, marginTop: '6px', paddingTop: 0 } }, el('h3', { text: 'API keys' }),
+        el('div', { class: 'm-section', style: { marginTop: '8px' } }, el('h3', { text: 'API keys' }),
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: 'Keys stay in this browser (localStorage) and go straight to the provider — there is no server in between. Create keys at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>.' }),
           f('Anthropic (Claude) API key', el('div', { class: 'key-row' }, anthropicKey, showBtn(anthropicKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('anthropic', anthropicKey, aStatus) }))), keySourceNote('anthropic'), aStatus,
           f('OpenAI API key', el('div', { class: 'key-row' }, openaiKey, showBtn(openaiKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('openai', openaiKey, oStatus) }))), keySourceNote('openai'), oStatus,
@@ -2472,7 +2563,7 @@ function openSettings() {
           el('div', { class: 'row' }, f('Your name', userName), f('Timezone (IANA)', tz)),
           f('Profile & standing instructions', profile, 'Sent with every request. Keep it to what changes the answers: subjects, year levels, spelling, curriculum, tone.')),
         el('div', { class: 'm-section' }, el('h3', { text: 'Generation' }),
-          el('div', { class: 'row' }, f('Max output tokens', maxTok, 'Upper bound per reply (thinking included). The app lowers it automatically if a model allows less.'), f('Theme', theme)),
+          el('div', { class: 'row' }, f('Max output tokens', maxTok, 'Upper bound per reply (thinking included). The app lowers it automatically if a model allows less.'), f('Appearance, text size & accessibility', displayBtn, 'Light or dark mode, text size, high contrast, easy-read font, reduced motion.')),
           el('label', { class: 'check' }, showThinking, el('span', {}, 'Show the model\'s thought process ', el('span', { class: 'help', text: 'Collapsible "Thought process" cards (Claude: summarised thinking; OpenAI: reasoning summaries).' }))),
           el('label', { class: 'check' }, defWeb, el('span', {}, 'Web search on for new chats ', el('span', { class: 'help', text: 'Claude: web_search + web_fetch. OpenAI: web_search. Billed by the provider per search (~$10 per 1,000).' }))),
           el('label', { class: 'check' }, defCode, el('span', {}, 'Code & files on for new chats ', el('span', { class: 'help', text: 'Claude: code-execution sandbox with the docx/pptx/xlsx/pdf Skills. OpenAI: code interpreter container. This is what produces real downloadable documents.' }))),
@@ -2495,7 +2586,7 @@ function openSettings() {
             const patch = {
               anthropicKey: anthropicKey.value.trim(), openaiKey: openaiKey.value.trim(), anthropicRelay: relay.value.trim().replace(/\/+$/, ''),
               userName: userName.value.trim(), profile: profile.value.trim(), timezone: tz.value.trim() || DEFAULT_SETTINGS.timezone,
-              maxTokens: clamp(parseInt(maxTok.value, 10) || 64000, 1024, 128000), theme: theme.value, imageModel: imageModel.value,
+              maxTokens: clamp(parseInt(maxTok.value, 10) || 64000, 1024, 128000), imageModel: imageModel.value,
               showThinking: showThinking.checked, webSearch: defWeb.checked, codeTools: defCode.checked, imageGen: imgGen.checked,
               saveHistory: saveHist.checked, memoryEnabled: memDefault.checked, trustedParentOrigin: trustedOrigin.value.trim().replace(/\/+$/, ''),
               rememberKeys: remember.checked,
@@ -2636,7 +2727,7 @@ function importAll(after) {
 /* ───────────────────────────── Wiring ───────────────────────────── */
 async function init() {
   applyTheme();
-  if ((settings.sidebarCollapsed && window.innerWidth > 860) || window.innerWidth <= 860) $('#sidebar').classList.add('collapsed');
+  if (window.innerWidth < 1024) $('#sidebar').classList.add('collapsed');
   await loadConversations();
   renderConvList();
   renderModelSelect();
@@ -2669,7 +2760,7 @@ async function init() {
   $('#scrim').addEventListener('click', () => collapseSidebar(true));
   $('#providerSel').addEventListener('change', async (e) => { saveSettings({ provider: e.target.value }); if (!state.models[settings.provider]?.live) await fetchModels(settings.provider); renderModelSelect(); updateComposerState(); });
   $('#modelSel').addEventListener('change', (e) => { saveSettings(settings.provider === 'anthropic' ? { anthropicModel: e.target.value } : { openaiModel: e.target.value }); renderModelSelect(); updateComposerState(); });
-  $('#effortSel').addEventListener('change', (e) => saveSettings({ effort: e.target.value }));
+  $('#effortSel').addEventListener('change', (e) => { saveSettings({ effort: e.target.value }); syncPillLabels(); });
   window.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); $('#newChatBtn').click(); } });
 
   // Keys from the main program: shared api_cache first, then the frame handshake.

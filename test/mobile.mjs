@@ -30,7 +30,7 @@ console.log('\n[1] Phone chrome');
 check(await page.evaluate(() => document.documentElement.classList.contains('mobile') && isMobile()), 'mobile mode detected (iPhone 14 emulation)');
 const railBox = await page.$eval('#rail', (e) => e.getBoundingClientRect());
 const mainBox = await page.$eval('#main', (e) => e.getBoundingClientRect());
-check(railBox.top >= mainBox.bottom - 1 && railBox.width >= 380, 'nav rail is a full-width bottom tab bar');
+check(railBox.top >= mainBox.bottom - 1 && railBox.width >= 360 && railBox.bottom <= 664, `nav is a floating bottom tab bar (${Math.round(railBox.width)}px wide)`);
 check((await page.$$eval('#rail button', (b) => b.filter((x) => x.getBoundingClientRect().height >= 44).length)) === 6, 'six tabs with ≥44px touch targets');
 check((await page.$eval('#input', (e) => getComputedStyle(e).fontSize)) === '16px', 'message box is 16px (no iOS zoom)');
 check(await noOverflow(), 'chat: no horizontal overflow');

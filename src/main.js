@@ -65,8 +65,59 @@ function wireRail() {
   });
 }
 
+/* ───────────── Header, sidebar and composer extras ───────────── */
+function wireChrome() {
+  $('#brandLogo').innerHTML = ART.logo();
+  $('#brandMascot').innerHTML = ART.mascot();
+  $('#themeToggle').addEventListener('click', () => saveSettings({ appearance: resolvedTheme() === 'dark' ? 'light' : 'dark' }));
+  $('#tsDown').addEventListener('click', () => stepTextScale(-1));
+  $('#tsReset').addEventListener('click', () => stepTextScale(0));
+  $('#tsUp').addEventListener('click', () => stepTextScale(1));
+  $('#a11yBtn').addEventListener('click', openA11yPanel);
+  renderSideNav();
+  $('#addFilesBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#pasteImgBtn').addEventListener('click', pasteImageFromClipboard);
+  setupDictation($('#micBtn'));
+  // On phones the bottom tabs give way to the on-screen keyboard (detected from the visual viewport).
+  const vv = window.visualViewport;
+  if (vv) { const onVV = () => document.documentElement.classList.toggle('typing-mobile', isMobile() && vv.height < window.innerHeight * 0.78); vv.addEventListener('resize', onVV); }
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#sidebar').classList.contains('collapsed') && window.innerWidth < 1024) collapseSidebar(true); });
+}
+async function pasteImageFromClipboard() {
+  try {
+    if (!navigator.clipboard?.read) throw new Error('unsupported');
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const it of items) for (const type of it.types) if (type.startsWith('image/')) { const b = await it.getType(type); files.push(new File([b], `pasted-image-${localDateStamp()}.${type.split('/')[1] || 'png'}`, { type })); }
+    if (!files.length) { toast('No image on the clipboard — copy an image first.'); return; }
+    await addFiles(files);
+  } catch { toast('Your browser blocked clipboard access. Click in the message box and press Ctrl+V (⌘V on Mac) to paste the image.'); $('#input').focus(); }
+}
+/** Speech-to-text into the message box (Web Speech API where the browser offers it). */
+function setupDictation(btn) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, base = '', listening = false;
+  const stop = () => { listening = false; btn.classList.remove('rec'); btn.setAttribute('aria-pressed', 'false'); try { rec?.stop(); } catch { /* ignore */ } };
+  btn.addEventListener('click', () => {
+    if (!SR) { showBanner('info', 'Voice typing isn’t available in this browser. Use your keyboard’s microphone key, or try Chrome, Edge or Safari.'); return; }
+    if (listening) { stop(); return; }
+    rec = new SR();
+    rec.lang = navigator.language || 'en-AU'; rec.continuous = true; rec.interimResults = true;
+    base = $('#input').value ? $('#input').value.replace(/\s*$/, ' ') : '';
+    rec.onresult = (ev) => {
+      let fin = '', interim = '';
+      for (let i = 0; i < ev.results.length; i++) { const t = ev.results[i][0].transcript; if (ev.results[i].isFinal) fin += t; else interim += t; }
+      $('#input').value = base + fin + interim; autosize(); updateComposerState();
+    };
+    rec.onerror = (ev) => { stop(); if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') showBanner('warn', 'Microphone access was blocked. Allow it in your browser’s site settings to dictate.'); };
+    rec.onend = () => { if (listening) stop(); };
+    try { rec.start(); listening = true; btn.classList.add('rec'); btn.setAttribute('aria-pressed', 'true'); } catch { stop(); }
+  });
+}
+
 (async () => {
   applyMobileClass();
+  wireChrome();
   let resizeTimer = null;
   const onLayoutChange = () => { applyMobileClass(); clearTimeout(resizeTimer); resizeTimer = setTimeout(refreshPlannerViews, 150); };
   MOBILE_MQ.addEventListener('change', onLayoutChange);

@@ -1,6 +1,6 @@
 // Inlines the app scripts into teach-assist.html → dist/teach-assist.html (single file).
 import { readFileSync, writeFileSync } from 'node:fs';
-export const SCRIPTS = ['app.js', 'timetable-core.js', 'tools.js', 'views.js', 'main.js'];
+export const SCRIPTS = ['art.js', 'app.js', 'timetable-core.js', 'tools.js', 'views.js', 'main.js'];
 const html = readFileSync(new URL('./teach-assist.html', import.meta.url), 'utf8');
 const js = SCRIPTS.map((f) => `/* ===== ${f} ===== */\n${readFileSync(new URL(`./${f}`, import.meta.url), 'utf8')}`).join('\n\n');
 if (!html.includes('/* PLACEHOLDER_APP_SCRIPT */')) throw new Error('placeholder missing');
