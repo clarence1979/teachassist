@@ -131,6 +131,24 @@ await page.waitForTimeout(300);
 check(/No image on the clipboard|blocked clipboard/.test(await page.evaluate(() => document.querySelector('.toast')?.textContent || '')), 'Paste Image explains when there is no image');
 check(errors.length === 0, `no page errors (${errors.join(' | ').slice(0, 200)})`);
 
+console.log('\n[8] Desktop windows of any height: nothing overlaps');
+for (const [w, h] of [[1800, 800], [1366, 768], [1280, 720], [1100, 700], [1600, 620], [1920, 1080]]) {
+  await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(250);
+  const r = await page.evaluate(() => {
+    const b = (s) => document.querySelector(s).getBoundingClientRect();
+    const hit = (a, c) => a.left < c.right - 1 && c.left < a.right - 1 && a.top < c.bottom - 1 && c.top < a.bottom - 1;
+    const card = b('.side-card'), comp = b('#composerBox'), rail = b('#rail'), chat = b('#chatPanel');
+    const scrolls = getComputedStyle(document.querySelector('.side-card')).overflowY !== 'visible';
+    // What can actually be seen of the sidebar's contents (clipped by the card when it scrolls).
+    const vis = (s) => { const x = b(s); return scrolls ? { left: x.left, right: x.right, top: Math.max(x.top, card.top), bottom: Math.min(x.bottom, card.bottom) } : x; };
+    const shown = [vis('.sb-foot'), vis('#sideNav button:last-child')].filter((x) => x.bottom > x.top);
+    const btn = b('#newChatBtn');
+    return { overlap: shown.some((x) => hit(x, comp) || hit(x, rail)), spill: !scrolls && b('.sb-foot').bottom > card.bottom + 1, squashed: btn.height < 40, chatH: Math.round(chat.height) };
+  });
+  check(!r.overlap && !r.spill && !r.squashed && r.chatH >= (h < 700 ? 240 : 300), `${w}×${h}: sidebar stays in its card, nothing under the message box or tab bar (chat area ${r.chatH}px)`);
+}
+await page.setViewportSize({ width: 1280, height: 950 });
+
 await browser.close(); server.close();
 console.log(`\n${fails.length ? fails.length + ' FAILED' : 'ALL PASSED'}`);
 process.exit(fails.length ? 1 : 0);
