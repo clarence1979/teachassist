@@ -1,0 +1,136 @@
+// Redesign: light/dark, text size, accessibility modes, pills, home screen, sidebar nav, Prompts/Files, reply toolbar.
+import pw from '/opt/npm-tools/node_modules/playwright/index.js';
+const { chromium } = pw;
+import http from 'node:http';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const html = readFileSync(path.join(here, '..', 'index.html'));
+const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(html); });
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const A = `http://127.0.0.1:${server.address().port}`;
+const fails = [];
+const check = (c, m) => { console.log(c ? '  ✓' : '  ✗', m); if (!c) fails.push(m); };
+
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 950 }, colorScheme: 'dark' });
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: A });
+await ctx.route('https://api.anthropic.com/**', (route) => route.fulfill({ json: { data: [{ id: 'claude-fable-5-1', created_at: '2026-09-01T00:00:00Z' }] } }));
+await ctx.route('https://api.openai.com/**', (route) => route.fulfill({ json: { data: [] } }));
+const page = await ctx.newPage();
+const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+await page.addInitScript(() => { if (!localStorage.getItem('teachassist.settings.v1')) localStorage.setItem('teachassist.settings.v1', JSON.stringify({ anthropicKey: 'sk-ant-x', provider: 'anthropic', saveHistory: true })); });
+await page.goto(`${A}/teach-assist.html`);
+await page.waitForFunction(() => document.querySelector('#modelSel option'));
+const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
+
+console.log('\n[1] Light / dark');
+check((await theme()) === 'light', 'light theme by default (even when the device prefers dark)');
+await page.click('#themeToggle');
+check((await theme()) === 'dark' && (await page.$eval('#themeToggle', (e) => e.getAttribute('aria-checked'))) === 'true', 'sun/moon toggle switches to dark');
+check(await page.evaluate(() => document.querySelector('#hljsDark').disabled === false && document.querySelector('#hljsLight').disabled === true), 'code highlighting follows the theme');
+await page.reload(); await page.waitForFunction(() => document.querySelector('#modelSel option'));
+check((await theme()) === 'dark', 'theme choice persists');
+await page.click('#themeToggle');
+check((await theme()) === 'light', 'toggle back to light');
+
+console.log('\n[2] Text size (A− A A+)');
+await page.click('#tsUp'); await page.click('#tsUp');
+check((await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ts').trim())) === '1.2', 'A+ twice → 120%');
+check((await page.$eval('.msgs-inner', (e) => getComputedStyle(e).zoom)) === '1.2', 'chat content is scaled');
+check(await page.$eval('#tsUp', (e) => e.classList.contains('on')), 'A+ highlighted while enlarged');
+for (let i = 0; i < 8; i++) await page.click('#tsDown', { force: true });
+check((await page.evaluate(() => settings.textScale)) === 0.85 && (await page.$eval('#tsDown', (e) => e.disabled)), 'A− stops at the minimum (85%)');
+await page.click('#tsReset');
+check((await page.evaluate(() => settings.textScale)) === 1 && (await page.$eval('#tsReset', (e) => e.classList.contains('on'))), 'A resets to 100%');
+
+console.log('\n[3] Accessibility panel');
+await page.click('#a11yBtn');
+await page.waitForSelector('.modal');
+check(/Accessibility & display/.test(await page.$eval('.modal', (e) => e.textContent)), 'accessibility button opens the panel');
+await page.click('.modal label.check:has-text("High contrast") input');
+await page.click('.modal label.check:has-text("Easy-read font") input');
+check(await page.evaluate(() => document.documentElement.classList.contains('a11y-contrast') && document.documentElement.classList.contains('a11y-font')), 'high contrast and easy-read font apply immediately');
+check(/Atkinson Hyperlegible/.test(await page.evaluate(() => getComputedStyle(document.body).fontFamily)), 'easy-read font is Atkinson Hyperlegible');
+await page.click('.modal .seg button[data-value="system"]');
+check((await page.evaluate(() => settings.appearance)) === 'system' && (await theme()) === 'dark', '"Match device" follows the device (dark here)');
+await page.click('.modal .seg button[data-value="light"]');
+await page.click('.modal label.check:has-text("High contrast") input');
+await page.click('.modal label.check:has-text("Easy-read font") input');
+await page.click('.modal .m-head .btn');
+check(!(await page.evaluate(() => document.documentElement.classList.contains('a11y-contrast'))), 'modes switch off again');
+
+console.log('\n[4] Pills and home screen');
+check((await page.$eval('#providerVal', (e) => e.textContent)) === 'Claude' && (await page.$eval('#modelVal', (e) => e.textContent)) === 'claude-fable-5-1' && (await page.$eval('#effortVal', (e) => e.textContent)) === 'Effort: High', 'pills show Claude · model · Effort: High');
+await page.selectOption('#effortSel', 'max');
+check((await page.$eval('#effortVal', (e) => e.textContent)) === 'Effort: Max', 'changing effort updates the pill');
+await page.selectOption('#effortSel', 'high');
+check((await page.$$('.sugg')).length === 3 && (await page.$$('.quick')).length === 5, 'three suggestion cards and five quick tools');
+check(/How can I help/.test(await page.$eval('.hero h1', (e) => e.textContent)) && !!(await page.$('.hero-mascot svg')), 'hero with mascot and headline');
+await page.click('.sugg.c-purple');
+check(/10-question Year 9 quiz on Python loops/.test(await page.$eval('#input', (e) => e.value)), 'a suggestion card fills the message box');
+await page.fill('#input', '');
+await page.click('.quick:has-text("Create Quiz")');
+await page.waitForSelector('.modal');
+check(/Quiz \/ test/.test(await page.$eval('.modal h2', (e) => e.textContent)), '"Create Quiz" opens the Studio quiz form');
+await page.click('.modal .m-head .btn');
+
+console.log('\n[5] Sidebar: Prompts, Files, Templates, Tools');
+check((await page.$$eval('#sideNav button', (b) => b.map((x) => x.textContent))).join(',') === 'Chats,Prompts,Files,Templates,Tools,Library', 'sidebar has Chats, Prompts, Files, Templates, Tools, Library');
+await page.fill('#input', 'Write exit tickets for fractions');
+await page.click('#sideNav button[data-nav="prompts"]');
+await page.click('.modal >> text=Save what’s in the message box');
+check((await page.evaluate(() => savedPrompts().map((p) => p.text))).includes('Write exit tickets for fractions'), 'Prompts saves the current message');
+await page.fill('#input', '');
+await page.click('.modal .list-row:has-text("Write exit tickets for fractions") >> text=Use');
+check((await page.$eval('#input', (e) => e.value)) === 'Write exit tickets for fractions', '"Use" puts a saved prompt into the message box');
+await page.fill('#input', '');
+await page.click('#sideNav button[data-nav="files"]');
+await page.waitForSelector('#view-library h1');
+check(await page.$eval('#view-library', (e) => !e.classList.contains('hidden')) && /Files/.test(await page.$eval('#view-library h1', (e) => e.textContent)) && /My uploads/.test(await page.$eval('#view-library .seg button.on', (e) => e.textContent)), 'Files opens the library on "My uploads"');
+await page.click('#rail button[data-view="chat"]');
+await page.click('#sideNav button[data-nav="templates"]');
+await page.waitForSelector('#view-studio .tile');
+check(await page.$eval('#view-studio', (e) => !e.classList.contains('hidden')), 'Templates opens Studio');
+check((await page.$$('#view-studio .tile.c-purple, #view-studio .tile.c-teal')).length >= 2, 'Studio tiles use the pastel card styles');
+await page.click('#rail button[data-view="chat"]');
+await page.click('#sideNav button[data-nav="tools"]');
+check(/Import timetable from a photo or PDF/.test(await page.$eval('.modal', (e) => e.textContent)), 'Tools lists the planner tools');
+await page.click('.modal .m-head .btn');
+
+console.log('\n[6] Conversation: bubbles, reply toolbar, section bands, feedback');
+await page.evaluate(async () => {
+  const conv = await createConversation(); conv.title = 'Python Loops Quiz'; await store.put('conversations', conv);
+  const t0 = Date.now() - 60000;
+  await store.put('messages', { id: 'u1', conversationId: conv.id, role: 'user', createdAt: t0, text: 'Make a quiz' });
+  const text = 'Intro line.\n\n## Overview\n- one\n- two\n\n## Preview\nQ1?';
+  await store.put('messages', { id: 'a1', conversationId: conv.id, role: 'assistant', createdAt: t0 + 1000, text, segments: [{ type: 'text', text }], files: [], provider: 'anthropic', model: 'claude-fable-5-1', status: 'done', usage: { input: 10, output: 20 } });
+  await loadConversations(); await selectConversation(conv.id);
+});
+await page.waitForSelector('.msg.assistant .actions');
+check(!!(await page.$('.msg.user .avatar.me')) && /\d{1,2}:\d{2} [ap]m/.test(await page.$eval('.msg.user .time', (e) => e.textContent)), 'user bubble with avatar and time');
+check((await page.$$eval('.msg.assistant .actions .tb', (b) => b.map((x) => x.getAttribute('aria-label')))).join(',') === 'Copy,Cut,Paste,Edit,Regenerate,More actions', 'reply toolbar: Copy, Cut, Paste, Edit, Regenerate, More');
+check((await page.$$eval('.msg.assistant .prose .sec > .sec-h', (h) => h.map((x) => x.textContent))).join('|') === 'Overview|Preview', 'headings become section cards with header bands');
+await page.click('.msg.assistant .actions .tb[aria-label="Copy"]');
+check((await page.evaluate(() => navigator.clipboard.readText())).startsWith('Intro line.'), 'Copy puts the reply on the clipboard');
+await page.click('.msg.assistant .actions .tb[aria-label="Edit"]');
+check(!!(await page.$('.msg.user textarea')), 'Edit opens the prompt that produced the reply for editing');
+await page.evaluate(() => renderMessages());
+await page.click('.msg-foot .fb[aria-label="Good response"]');
+check((await page.evaluate(async () => (await store.get('messages', 'a1')).feedback)) === 'up' && (await page.$eval('.msg-foot .fb[aria-label="Good response"]', (e) => e.getAttribute('aria-pressed'))) === 'true', 'thumbs up is saved and shown');
+await page.click('.msg.assistant .actions .tb[aria-label="More actions"]');
+check(/Download reply as Markdown/.test(await page.$eval('.modal', (e) => e.textContent)), '"…" opens reply options');
+await page.click('.modal .m-head .btn');
+
+console.log('\n[7] Paste image / dictation fallbacks');
+await page.evaluate(() => navigator.clipboard.writeText('just text'));
+await page.click('#pasteImgBtn');
+await page.waitForTimeout(300);
+check(/No image on the clipboard|blocked clipboard/.test(await page.evaluate(() => document.querySelector('.toast')?.textContent || '')), 'Paste Image explains when there is no image');
+check(errors.length === 0, `no page errors (${errors.join(' | ').slice(0, 200)})`);
+
+await browser.close(); server.close();
+console.log(`\n${fails.length ? fails.length + ' FAILED' : 'ALL PASSED'}`);
+process.exit(fails.length ? 1 : 0);

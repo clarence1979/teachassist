@@ -15,7 +15,7 @@ function applyMobileClass() { document.documentElement.classList.toggle('mobile'
 /* ───────────────────────────── Shared UI helpers ───────────────────────────── */
 function openModal(title, body, footer, { wide = false } = {}) {
   const host = $('#modalHost'); host.innerHTML = '';
-  if (window.innerWidth <= 860 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true);
+  if (window.innerWidth < 1024 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true);
   const esc = (e) => { if (e.key === 'Escape') close(); };
   const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
   document.addEventListener('keydown', esc);
@@ -46,6 +46,7 @@ function segmented(options, value, onChange) {
   for (const [v, t] of options) seg.append(el('button', { class: v === value ? 'on' : '', text: t, 'data-value': v, onclick: () => { for (const b of seg.children) b.classList.toggle('on', b.dataset.value === v); onChange(v); } }));
   return seg;
 }
+function toastMsg(text) { toast(text); }
 function toast(text) {
   const host = $('#modalHost');
   const t = el('div', { class: 'toast', text, style: { position: 'fixed', left: '50%', bottom: '28px', transform: 'translateX(-50%)', background: 'var(--bg-elev)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: '9px 14px', fontSize: '13px', zIndex: 200, boxShadow: '0 6px 24px rgba(0,0,0,.3)' } });
@@ -77,7 +78,7 @@ function showView(name, { remember = true } = {}) {
   VIEW.current = name;
   if (remember) saveSettings({ activeView: name });
   if (name === 'tasks') renderTasks(); else if (name === 'timetable') renderTimetable(); else if (name === 'library') renderLibrary(); else if (name === 'studio') renderStudio();
-  else setTimeout(() => $('#input').focus(), 0);
+  else if (!isMobile()) setTimeout(() => $('#input').focus(), 0);
 }
 function refreshPlannerViews() {
   if (VIEW.current === 'tasks') renderTasks();
@@ -294,7 +295,7 @@ function renderGrid(days, occ) {
   grid.append(el('div', { class: 'tt-head' }));
   for (const d of days) {
     const head = el('div', { class: `tt-head${sameDay(d, today) ? ' today' : ''}`, html: `${DOW_LABELS[d.getDay()]}<span class="d">${d.getDate()}</span>` });
-    for (const o of occ.filter((x) => isAllDay(x) && sameDay(x.startISO, d))) head.append(el('div', { class: 'mev', style: { background: typeColor(o.block.type, o.block.color), color: '#fff', borderRadius: '5px', padding: '1px 5px', marginTop: '3px', fontSize: '11px', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, text: o.block.title, onclick: () => openBlockModal({ block: o.block, occurrence: o }) }));
+    for (const o of occ.filter((x) => isAllDay(x) && sameDay(x.startISO, d))) { const ev = el('div', { class: 'mev', style: { borderRadius: '7px', padding: '1px 6px', marginTop: '4px', fontSize: '11px', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }, text: o.block.title, onclick: () => openBlockModal({ block: o.block, occurrence: o }) }); ev.style.setProperty('--c', typeColor(o.block.type, o.block.color)); head.append(ev); }
     grid.append(head);
   }
   const gutter = el('div', { class: 'tt-gutter', style: { height: `${hours * H}px` } });
@@ -304,7 +305,8 @@ function renderGrid(days, occ) {
     const col = el('div', { class: `tt-col${sameDay(d, today) ? ' today' : ''}`, style: { height: `${hours * H}px` } });
     col.addEventListener('click', (e) => {
       if (e.target !== col) return;
-      const mins = h0 * 60 + Math.floor((e.offsetY / H) * 2) * 30;
+      const r = col.getBoundingClientRect(); // works at any text size (the grid may be zoomed)
+      const mins = h0 * 60 + Math.floor(((e.clientY - r.top) / r.height) * hours * 2) * 30;
       openBlockModal({ defaults: { startISO: isoDateTime(addMinutes(startOfDay(d), mins)) } });
     });
     for (const { o, lane, lanes } of layoutLanes(timed.filter((x) => sameDay(x.startISO, d)))) {
@@ -312,7 +314,7 @@ function renderGrid(days, occ) {
       const visibleEnd = sameDay(o.startISO, o.endISO) ? minutesOfDay(o.endISO) : 1440;
       const height = Math.max(20, (visibleEnd - minutesOfDay(o.startISO)) / 60 * H - 2);
       const ev = el('div', { class: `tt-ev${o.conflict ? ' conflict' : ''}`, title: `${o.block.title}\n${fmtTime(o.startISO)}–${fmtTime(o.endISO)}${o.block.location ? '\n' + o.block.location : ''}${o.block.recurrence ? '\n' + describeRRule(o.block.recurrence) : ''}`,
-        style: { top: `${top}px`, height: `${height}px`, background: typeColor(o.block.type, o.block.color), left: `calc(${(lane / lanes) * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)`, right: 'auto', opacity: o.block.status === 'cancelled' ? .45 : 1, textDecoration: o.block.status === 'cancelled' ? 'line-through' : 'none' },
+        style: { top: `${top}px`, height: `${height}px`, '--c': typeColor(o.block.type, o.block.color), left: `calc(${(lane / lanes) * 100}% + 3px)`, width: `calc(${100 / lanes}% - 6px)`, right: 'auto', opacity: o.block.status === 'cancelled' ? .45 : 1, textDecoration: o.block.status === 'cancelled' ? 'line-through' : 'none' },
         onclick: () => openBlockModal({ block: o.block, occurrence: o }) },
         el('div', { class: 't', text: o.block.title }),
         height > 30 ? el('div', { class: 'm', text: `${fmtTime(o.startISO)}–${fmtTime(o.endISO)}${o.block.location ? ' · ' + o.block.location : ''}` }) : null);
@@ -333,7 +335,7 @@ function renderMonth(occ) {
     const dayOcc = occ.filter((o) => sameDay(o.startISO, d));
     const cell = el('div', { class: `month-cell${d.getMonth() !== s.getMonth() ? ' other' : ''}${sameDay(d, today) ? ' today' : ''}`, onclick: () => { TT.anchor = startOfDay(d); TT.view = 'day'; saveSettings({ ttView: 'day' }); renderTimetable(); } },
       el('div', { class: 'dn' }, el('span', { text: d.getDate() }), dayOcc.length ? el('span', { class: 'muted', text: String(dayOcc.length) }) : null));
-    for (const o of dayOcc.slice(0, 3)) cell.append(el('div', { class: 'mev', style: { background: typeColor(o.block.type, o.block.color) }, text: `${isAllDay(o) ? '' : fmtTime(o.startISO) + ' '}${o.block.title}`, onclick: (e) => { e.stopPropagation(); openBlockModal({ block: o.block, occurrence: o }); } }));
+    for (const o of dayOcc.slice(0, 3)) cell.append(el('div', { class: 'mev', style: { '--c': typeColor(o.block.type, o.block.color) }, text: `${isAllDay(o) ? '' : fmtTime(o.startISO) + ' '}${o.block.title}`, onclick: (e) => { e.stopPropagation(); openBlockModal({ block: o.block, occurrence: o }); } }));
     if (dayOcc.length > 3) cell.append(el('div', { class: 'muted small', text: `+${dayOcc.length - 3} more` }));
     grid.append(cell);
   }
@@ -532,45 +534,71 @@ function clearWeekPrompt(blocks) {
 }
 
 /* ═════════════════════════════════ Library ═════════════════════════════════ */
-const LIB = { q: '', kind: '' };
+const LIB = { q: '', kind: '', tab: 'generated' };
 const KIND_LABEL = { document: 'Document', slides: 'Slides', spreadsheet: 'Spreadsheet', pdf: 'PDF', image: 'Image', code: 'Code', archive: 'Archive', other: 'File' };
 async function downloadArtifact(a) { const rec = await getCachedFile(a.fileKey); if (rec) downloadBlob(rec.blob, a.title); else alert('This file is no longer cached in this browser (it was deleted with its chat or session).'); }
+/** Files the teacher attached in chats (newest first), with the chat they came from. */
+async function uploadedFiles() {
+  const [msgs, convs] = await Promise.all([store.all('messages'), store.all('conversations')]);
+  const titles = new Map(convs.map((c) => [c.id, c.title || 'Chat']));
+  const out = [];
+  for (const m of msgs) if (m.role === 'user') for (const a of m.attachments || []) if (a.blobKey || a.base64) out.push({ ...a, conversationId: m.conversationId, conversationTitle: titles.get(m.conversationId) || '', createdAt: m.createdAt });
+  return out.sort((a, b) => b.createdAt - a.createdAt);
+}
 async function renderLibrary() {
   const root = $('#view-library');
-  const arts = (await store.all('artifacts')).sort((a, b) => b.createdAt - a.createdAt);
+  const uploads = LIB.tab === 'uploads';
+  const arts = uploads ? await uploadedFiles() : (await store.all('artifacts')).sort((a, b) => b.createdAt - a.createdAt);
   const q = LIB.q.trim().toLowerCase();
-  const shown = arts.filter((a) => (!LIB.kind || a.kind === LIB.kind) && (!q || `${a.title} ${a.conversationTitle || ''} ${(a.tags || []).join(' ')}`.toLowerCase().includes(q)));
-  const search = el('input', { type: 'search', value: LIB.q, placeholder: 'Search files and chats…', style: { width: '220px' } });
+  const kindOf = (a) => uploads ? artifactKind(a.name, a.mediaType) : a.kind;
+  const nameOf = (a) => uploads ? a.name : a.title;
+  const shown = arts.filter((a) => (!LIB.kind || kindOf(a) === LIB.kind) && (!q || `${nameOf(a)} ${a.conversationTitle || ''} ${(a.tags || []).join(' ')}`.toLowerCase().includes(q)));
+  const search = el('input', { type: 'search', value: LIB.q, placeholder: 'Search files and chats…', 'aria-label': 'Search files' });
   let timer; search.addEventListener('input', () => { LIB.q = search.value; clearTimeout(timer); timer = setTimeout(renderLibrary, 180); });
-  const kinds = [...new Set(arts.map((a) => a.kind))].sort();
+  const kinds = [...new Set(arts.map(kindOf))].sort();
   const kindSel = selectEl([['', 'All types'], ...kinds.map((k) => [k, KIND_LABEL[k] || k])], LIB.kind); kindSel.className = 'sel';
   kindSel.addEventListener('change', () => { LIB.kind = kindSel.value; renderLibrary(); });
   root.innerHTML = '';
-  root.append(viewHead('Library', el('span', { class: 'muted small', text: `${shown.length} of ${arts.length} file${arts.length === 1 ? '' : 's'}` }), search, kindSel));
+  root.append(viewHead(uploads ? 'Files' : 'Library',
+    segmented([['generated', 'Made by AI'], ['uploads', 'My uploads']], LIB.tab, (v) => { LIB.tab = v; LIB.kind = ''; renderLibrary(); }),
+    el('span', { class: 'muted small', text: `${shown.length} of ${arts.length}` }), search, kindSel));
   const body = el('div', { class: 'view-body' });
-  if (!arts.length) body.append(el('div', { class: 'empty-note', html: 'Every file the assistant creates in chat (Word, PowerPoint, Excel, PDF, images) is collected here automatically. Ask for one — e.g. <i>"make a 10-question quiz on fractions as a Word document"</i> — with <b>Code &amp; files</b> on.' }));
+  if (!arts.length) body.append(el('div', { class: 'empty-note', html: uploads ? 'Files you attach in chat (PDFs, Word, Excel, images…) appear here so you can find and download them again.' : 'Every file the assistant creates in chat (Word, PowerPoint, Excel, PDF, images) is collected here automatically. Ask for one — e.g. <i>"make a 10-question quiz on fractions as a Word document"</i> — with <b>Code &amp; files</b> on.' }));
   else if (!shown.length) body.append(el('div', { class: 'empty-note', text: 'No files match.' }));
-  else { const grid = el('div', { class: 'grid-cards' }); for (const a of shown) grid.append(artTile(a)); body.append(grid); }
+  else { const grid = el('div', { class: 'grid-cards' }); for (const a of shown) grid.append(uploads ? uploadTile(a) : artTile(a)); body.append(grid); }
   root.append(body);
   const sel = root.querySelector('input[type=search]'); if (document.activeElement === document.body && LIB.q) { sel.focus(); sel.setSelectionRange(sel.value.length, sel.value.length); }
 }
+function openChatFromFile(convId) {
+  return async () => { if (!state.convs.some((c) => c.id === convId)) { toast('That chat no longer exists.'); return; } showView('chat'); await selectConversation(convId); };
+}
 function artTile(a) {
-  const [cls, label] = iconClassFor(a.title, a.mediaType || '');
   const tile = el('div', { class: 'tile' });
-  if (a.kind === 'image') { const img = el('img', { alt: a.title, style: { width: '100%', height: '120px', objectFit: 'cover', borderRadius: '8px', background: 'var(--bg-elev)' } }); fileUrl(a.fileKey).then((u) => { if (u) img.src = u; }); tile.append(img); }
-  tile.append(el('div', { class: 'ttl' }, el('span', { class: `ic ${cls}`, style: { fontSize: '10px', padding: '2px 5px', borderRadius: '5px' }, text: label }), el('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: a.title, text: a.title })));
+  if (a.kind === 'image') { const img = el('img', { alt: a.title, style: { width: '100%', height: '130px', objectFit: 'cover', borderRadius: '16px', background: 'var(--bg-elev)' } }); fileUrl(a.fileKey).then((u) => { if (u) img.src = u; }); tile.append(img); }
+  tile.append(el('div', { class: 'ttl' }, el('span', { class: 'lib-art', html: fileArt(a.title, a.mediaType || '') }), el('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: a.title, text: a.title })));
   tile.append(el('p', { text: `${KIND_LABEL[a.kind] || 'File'} · ${fmtBytes(a.size)} · ${new Date(a.createdAt).toLocaleDateString()}${a.conversationTitle ? `\nFrom: ${a.conversationTitle}` : ''}`, style: { whiteSpace: 'pre-line' } }));
   tile.append(el('div', { class: 'foot' },
-    el('button', { class: 'btn icon ghost', html: svgIcon('download'), title: 'Download', onclick: () => downloadArtifact(a) }),
-    a.conversationId ? el('button', { class: 'btn sm', text: 'Open chat', onclick: async () => { if (!state.convs.some((c) => c.id === a.conversationId)) { toast('That chat no longer exists.'); return; } showView('chat'); await selectConversation(a.conversationId); } }) : null,
+    el('button', { class: 'btn icon', html: svgIcon('download'), title: 'Download', 'aria-label': `Download ${a.title}`, onclick: () => downloadArtifact(a) }),
+    a.conversationId ? el('button', { class: 'btn sm', text: 'Open chat', onclick: openChatFromFile(a.conversationId) }) : null,
     el('button', { class: 'btn sm', text: 'Attach…', title: 'Attach to a timetable block', onclick: () => attachArtifactPrompt(a) }),
-    el('button', { class: 'btn icon ghost', html: svgIcon('trash'), title: 'Remove from library', onclick: async () => {
+    el('button', { class: 'btn icon ghost', html: svgIcon('trash'), title: 'Remove from library', 'aria-label': `Remove ${a.title}`, onclick: async () => {
       if (!confirm(`Remove "${a.title}" from the library? The file stays available in its chat.`)) return;
       await store.del('artifacts', a.id);
       for (const b of await allBlocks()) if (b.artifactIds?.includes(a.id)) await updateBlock(b.id, { artifactIds: b.artifactIds.filter((x) => x !== a.id) });
       if (!state.convs.some((c) => c.id === a.conversationId)) await store.del('files', a.fileKey).catch(() => {});
       renderLibrary();
     } })));
+  return tile;
+}
+function uploadTile(a) {
+  const tile = el('div', { class: 'tile' });
+  if (a.kind === 'image' && a.base64) tile.append(el('img', { alt: a.name, src: `data:${a.mediaType};base64,${a.base64}`, style: { width: '100%', height: '130px', objectFit: 'cover', borderRadius: '16px' } }));
+  tile.append(el('div', { class: 'ttl' }, el('span', { class: 'lib-art', html: fileArt(a.name, a.mediaType || '') }), el('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: a.name, text: a.name })));
+  tile.append(el('p', { text: `${fmtBytes(a.size)} · ${new Date(a.createdAt).toLocaleDateString()}${a.pages ? ` · ${a.pages} pages` : ''}${a.conversationTitle ? `\nIn: ${a.conversationTitle}` : ''}`, style: { whiteSpace: 'pre-line' } }));
+  tile.append(el('div', { class: 'foot' },
+    el('button', { class: 'btn icon', html: svgIcon('download'), title: 'Download', 'aria-label': `Download ${a.name}`, onclick: async () => { const b = await getAttachmentBlob(a); if (b) downloadBlob(b, a.name); else alert('This file is no longer stored in this browser.'); } }),
+    el('button', { class: 'btn sm', text: 'Open chat', onclick: openChatFromFile(a.conversationId) }),
+    el('button', { class: 'btn sm', text: 'Use in new chat', onclick: async () => { const b = await getAttachmentBlob(a); if (!b) { alert('This file is no longer stored in this browser.'); return; } startChatWith({ files: [new File([b], a.name, { type: a.mediaType || b.type })] }); } })));
   return tile;
 }
 async function attachArtifactPrompt(a) {
@@ -614,7 +642,13 @@ function renderStudio() {
   root.append(viewHead('Studio', el('span', { class: 'muted small', text: 'Pick a resource. The model builds it as a real file in a new chat (Code & files on).' })));
   const body = el('div', { class: 'view-body' });
   const grid = el('div', { class: 'grid-cards' });
-  for (const g of STUDIO) grid.append(el('div', { class: 'tile clickable', onclick: () => openStudioForm(g) }, el('div', { class: 'ttl', html: `${svgIcon(g.icon)}<span>${escapeHtml(g.title)}</span>` }), el('p', { text: g.desc }), el('div', { class: 'foot' }, el('span', { class: 'pill', style: { background: 'var(--accent-soft)', color: 'var(--accent)' }, text: g.needsFiles ? 'attach files' : (OUTPUTS.find((o) => o[0] === g.output)?.[1] || '').replace(/ \(.*/, '') }))));
+  const COLORS = ['c-purple', 'c-teal', 'c-peach', 'c-pink', 'c-blue', 'c-green'];
+  const ICONS = { lesson: 'book', unit: 'layers', worksheet: 'clipboard', quiz: 'target', slides: 'slides', rubric: 'grid', exit: 'check', differentiate: 'sparkle', feedback: 'brain', letter: 'chat', reports: 'clipboard', custom: 'sparkle' };
+  STUDIO.forEach((g, i) => grid.append(el('div', { class: `tile clickable ${COLORS[i % COLORS.length]}`, role: 'button', tabindex: '0', 'aria-label': g.title, onclick: () => openStudioForm(g), onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStudioForm(g); } } },
+    el('div', { class: 'ttl' }, el('span', { class: 'ti', html: icon(ICONS[g.id] || 'sparkle') }), el('span', { text: g.title })),
+    el('p', { text: g.desc }),
+    el('div', { class: 'foot' }, el('span', { class: 'pill', style: { background: 'var(--glass-strong)', color: 'var(--text-2)' }, text: g.needsFiles ? 'attach files' : (OUTPUTS.find((o) => o[0] === g.output)?.[1] || '').replace(/ \(.*/, '') })),
+    el('span', { class: 'go', html: ART.arrow }))));
   body.append(grid);
   root.append(body);
 }
@@ -740,4 +774,118 @@ async function clearAllSessions() {
   await loadConversations();
   await selectConversation(null);
   refreshPlannerViews();
+}
+
+/* ═════════════════════════════════ Chat sidebar navigation ═════════════════════════════════ */
+const SIDE_NAV = [
+  ['chats', 'chat', 'Chats', () => { closeDrawerOnNarrow(); showView('chat'); }],
+  ['prompts', 'sparkle', 'Prompts', () => openPromptsSheet()],
+  ['files', 'folder', 'Files', () => { LIB.tab = 'uploads'; LIB.kind = ''; showView('library'); }],
+  ['templates', 'grid', 'Templates', () => showView('studio')],
+  ['tools', 'wrench', 'Tools', () => openToolsSheet()],
+  ['library', 'library', 'Library', () => { LIB.tab = 'generated'; LIB.kind = ''; showView('library'); }],
+];
+function closeDrawerOnNarrow() { if (window.innerWidth < 1024 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true); }
+function renderSideNav() {
+  const nav = $('#sideNav'); if (!nav) return;
+  nav.innerHTML = '';
+  for (const [id, ic, label, fn] of SIDE_NAV) nav.append(el('button', { class: id === 'chats' ? 'active' : '', 'data-nav': id, onclick: () => { if (id !== 'chats') closeDrawerOnNarrow(); fn(); } }, el('span', { html: icon(ic), style: { display: 'inline-flex' } }), label));
+}
+
+/* ═════════════════════════════════ Prompts ═════════════════════════════════ */
+const PROMPTS_KEY = 'teachassist.prompts.v1';
+const STARTER_PROMPTS = [
+  ...HOME_CARDS.map((c) => c.prompt),
+  'Draft a parent email about an upcoming assessment',
+  'Build a markbook spreadsheet for three classes with weighted totals',
+  'Plan a 60-minute lesson on binary numbers for Year 8 (5E model) as a lesson-plan document',
+  'Create a 12-slide deck introducing the Software Development PSM stages',
+  'Write differentiated success criteria (support / core / extension) for my next lesson',
+];
+function savedPrompts() { return parseJsonLoose(lsGet(PROMPTS_KEY)) || []; }
+function savePrompts(list) { try { localStorage.setItem(PROMPTS_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+function addSavedPrompt(text) { text = (text || '').trim(); if (!text) return false; const list = savedPrompts(); if (list.some((p) => p.text === text)) return false; list.unshift({ id: uid('prm'), text, createdAt: Date.now() }); savePrompts(list); return true; }
+function openPromptsSheet() {
+  const box = el('div');
+  let close = null;
+  const use = (t) => { close(); showView('chat'); useStarter(t); };
+  const row = (text, extra) => el('div', { class: 'list-row' }, el('span', { html: icon('sparkle'), style: { display: 'inline-flex', color: 'var(--accent)' } }),
+    el('div', { class: 'grow' }, el('div', { text, style: { fontWeight: 600 } })),
+    el('button', { class: 'btn sm primary', text: 'Use', onclick: () => use(text) }), extra || null);
+  const paint = () => {
+    box.innerHTML = '';
+    const mine = savedPrompts();
+    const current = $('#input').value.trim();
+    box.append(el('div', { class: 'm-section' }, el('h3', { text: 'My prompts' }),
+      current ? el('button', { class: 'btn sm', style: { margin: '4px 0 6px' }, text: 'Save what’s in the message box', onclick: () => { toast(addSavedPrompt(current) ? 'Prompt saved.' : 'Already saved.'); paint(); } }) : el('div', { class: 'help', text: 'Type a request in the message box, then open Prompts to save it for next time.' }),
+      ...(mine.length ? mine.map((p) => row(p.text, el('button', { class: 'btn icon ghost', title: 'Delete', 'aria-label': 'Delete prompt', html: svgIcon('trash'), onclick: () => { savePrompts(savedPrompts().filter((x) => x.id !== p.id)); paint(); } }))) : [el('div', { class: 'help', text: 'No saved prompts yet.' })])));
+    box.append(el('div', { class: 'm-section' }, el('h3', { text: 'Starter prompts' }), ...STARTER_PROMPTS.map((t) => row(t))));
+  };
+  paint();
+  close = openModal('Prompts', [box], null, { wide: true });
+}
+
+/* ═════════════════════════════════ Tools ═════════════════════════════════ */
+function openToolsSheet() {
+  let close = null;
+  const item = (ic, title, sub, fn) => el('button', { class: 'list-row', style: { width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', font: 'inherit' }, onclick: () => { close(); fn(); } },
+    el('span', { html: icon(ic), style: { display: 'inline-flex', color: 'var(--accent)', width: '26px' } }), el('div', { class: 'grow' }, el('div', { class: 'ttl', text: title }), el('div', { class: 'sub', text: sub })), el('span', { html: ART.arrow, style: { display: 'inline-flex', width: '20px', color: 'var(--accent)' } }));
+  close = openModal('Tools', [
+    item('check', 'Tasks', 'Your to-do list — add, prioritise with AI, schedule onto the timetable.', () => showView('tasks')),
+    item('calendar', 'Timetable', 'Classes, duties, meetings and prep — day, week, month or agenda.', () => showView('timetable')),
+    item('upload', 'Import timetable from a photo or PDF', 'The assistant reads your printed timetable and adds every class.', () => { showView('timetable'); importTimetableFromImage(); }),
+    item('sparkle', 'Plan my week with AI', 'Fits work time for your open tasks into this week’s free slots.', () => { TT.anchor = startOfDay(new Date()); planWeekWithAI(); }),
+    item('calendar', 'Import a calendar (.ics)', 'From Outlook, Google Calendar or Compass.', () => { showView('timetable'); importIcs(); }),
+    item('download', 'Export timetable (.ics)', 'Open it in Outlook or Google Calendar.', () => exportIcs()),
+    item('download', 'Export history (JSON)', 'Every session’s chats, tasks, timetable and files list.', () => exportHistory()),
+    item('gear', 'Settings', 'API keys, memory and sessions, defaults.', () => openSettings()),
+  ], null, { wide: true });
+}
+
+/* ═════════════════════════════════ Accessibility & display ═════════════════════════════════ */
+function openA11yPanel() {
+  const a = { contrast: false, motion: false, font: false, spacing: false, links: false, ...(settings.a11y || {}) };
+  const val = el('span', { class: 'val' });
+  const paintScale = () => { val.textContent = `${Math.round((+settings.textScale || 1) * 100)}%`; };
+  const check = (key, label, help) => { const inp = el('input', { type: 'checkbox' }); inp.checked = !!a[key]; inp.addEventListener('change', () => { a[key] = inp.checked; saveSettings({ a11y: { ...a } }); }); return el('label', { class: 'check' }, inp, el('span', {}, label, el('span', { class: 'help', text: help }))); };
+  paintScale();
+  openModal('Accessibility & display', [
+    el('div', { class: 'm-section' }, el('h3', { text: 'Appearance' }),
+      segmented([['light', 'Light'], ['dark', 'Dark'], ['system', 'Match device']], settings.appearance || 'light', (v) => saveSettings({ appearance: v }))),
+    el('div', { class: 'm-section' }, el('h3', { text: 'Text size' }),
+      el('div', { class: 'a11y-scale' },
+        el('button', { class: 'btn', html: 'A<sup>−</sup>', 'aria-label': 'Smaller text', onclick: () => { stepTextScale(-1); paintScale(); } }), val,
+        el('button', { class: 'btn', html: 'A<sup>+</sup>', 'aria-label': 'Larger text', onclick: () => { stepTextScale(1); paintScale(); } }),
+        el('button', { class: 'btn ghost', text: 'Reset', onclick: () => { stepTextScale(0); paintScale(); } })),
+      el('div', { class: 'help', text: 'Also on the A− A A+ buttons at the top. Applies to chats, forms and all pages.' })),
+    el('div', { class: 'm-section' }, el('h3', { text: 'Reading and motion' }),
+      check('contrast', 'High contrast', 'Darker text, stronger borders and solid panels.'),
+      check('font', 'Easy-read font', 'Atkinson Hyperlegible — designed for low vision and easier letter recognition.'),
+      check('spacing', 'Comfortable spacing', 'More space between lines, words and paragraphs.'),
+      check('links', 'Underline links', 'Makes links stand out without relying on colour.'),
+      check('motion', 'Reduce motion', 'Turns off animations and smooth scrolling.')),
+  ], null);
+}
+
+/* ═════════════════════════════════ Reply menu and feedback ═════════════════════════════════ */
+function replyMenu(m) {
+  let close = null;
+  const idx = state.messages.indexOf(m);
+  const prompt = [...state.messages.slice(0, idx)].reverse().find((x) => x.role === 'user');
+  const item = (ic, title, fn) => el('button', { class: 'list-row', style: { width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', font: 'inherit' }, onclick: () => { close(); fn(); } }, el('span', { html: svgIcon(ic), style: { display: 'inline-flex', width: '22px', color: 'var(--accent)' } }), el('div', { class: 'grow ttl', text: title }));
+  close = openModal('Reply options', [
+    item('download', 'Download reply as Markdown (.md)', () => downloadBlob(new Blob([m.text || ''], { type: 'text/markdown' }), `${(activeConv()?.title || 'reply').replace(/[^\w\- ]+/g, '').slice(0, 50) || 'reply'}.md`)),
+    prompt ? item('copy', 'Save the prompt for this reply', () => toast(addSavedPrompt(prompt.text) ? 'Prompt saved to Prompts.' : 'Already in Prompts.')) : null,
+    item('refresh', 'Regenerate', () => regenerate(m)),
+    item('trash', 'Delete this reply and everything after it', () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); }),
+  ].filter(Boolean), null);
+}
+async function setFeedback(m, dir) {
+  m.feedback = m.feedback === dir ? null : dir;
+  await store.put('messages', m);
+  renderMessages();
+  const conv = state.convs.find((c) => c.id === m.conversationId);
+  const idx = state.messages.indexOf(m);
+  const userMsg = [...state.messages.slice(0, idx)].reverse().find((x) => x.role === 'user');
+  if (conv && !conv.ephemeral && userMsg) appendHistory(conv, userMsg, m);
 }
