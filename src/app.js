@@ -220,6 +220,8 @@ const DEFAULT_SETTINGS = {
   appearance: 'light',        // light | dark | system
   textScale: 1,               // A− / A / A+ (0.85 – 1.45)
   a11y: { contrast: false, motion: false, font: false, spacing: false, links: false },
+  localModel: '',             // on-device model key (see LOCAL_MODELS in local-ai.js)
+  localWhenOffline: true,     // offline + a downloaded model → it answers instead of Claude/OpenAI
 };
 
 /* ───────────────────────────── API key storage ─────────────────────────────
@@ -295,14 +297,17 @@ function saveSettings(patch = {}) {
   if (keyChanged || rememberChanged || 'anthropicKey' in patch || 'openaiKey' in patch) persistKeys(keyChanged || rememberChanged);
   applyTheme();
 }
-/** If the selected provider has no key but the other one does, switch to it. Returns the provider now in use (or null). */
+/** Claude/OpenAI need a key; on-device AI needs a chosen model. */
+function providerReady(p) { return p === 'local' ? !!settings.localModel : !!keyFor(p); }
+/** If the selected provider can't be used but another can, switch to it. Returns the provider now in use (or null). */
 function ensureUsableProvider() {
-  if (keyFor(settings.provider)) return settings.provider;
-  const other = settings.provider === 'anthropic' ? 'openai' : 'anthropic';
-  if (keyFor(other)) { saveSettings({ provider: other }); return other; }
+  if (providerReady(settings.provider)) return settings.provider;
+  const other = ['anthropic', 'openai'].find((p) => p !== settings.provider && keyFor(p));
+  if (other) { saveSettings({ provider: other }); return other; }
+  if (settings.localModel && isLocalDownloaded(settings.localModel)) { saveSettings({ provider: 'local' }); return 'local'; }
   return null;
 }
-const providerName = (p) => (p === 'anthropic' ? 'Claude' : 'OpenAI');
+const providerName = (p) => (p === 'anthropic' ? 'Claude' : p === 'local' ? 'On-device' : 'OpenAI');
 const TEXT_SCALES = [0.85, 0.92, 1, 1.1, 1.2, 1.32, 1.45];
 const DARK_MQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : { matches: false, addEventListener() {} };
 function resolvedTheme() { const a = settings.appearance || 'light'; return a === 'system' ? (DARK_MQ.matches ? 'dark' : 'light') : a; }
@@ -332,8 +337,8 @@ function stepTextScale(dir) {
   saveSettings({ textScale: next });
 }
 DARK_MQ.addEventListener?.('change', () => { if (settings.appearance === 'system') applyTheme(); });
-function keyFor(provider) { return String((provider === 'anthropic' ? settings.anthropicKey : settings.openaiKey) || '').trim(); }
-function currentModel() { return settings.provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel; }
+function keyFor(provider) { return provider === 'local' ? '' : String((provider === 'anthropic' ? settings.anthropicKey : settings.openaiKey) || '').trim(); }
+function currentModel() { return settings.provider === 'anthropic' ? settings.anthropicModel : settings.provider === 'local' ? settings.localModel : settings.openaiModel; }
 function relayBase() { return (settings.anthropicRelay || '').trim().replace(/\/+$/, ''); }
 
 /* ───────────────────────────── Keys from the main program ─────────────────────────────
@@ -646,6 +651,7 @@ const state = {
 
 /* ───────────────────────────── Model catalogs ───────────────────────────── */
 async function fetchModels(provider, force = false) {
+  if (provider === 'local') return LOCAL_MODELS.map((m) => m.key);
   const key = keyFor(provider);
   if (!key) { state.models[provider] = null; return []; }
   if (state.models[provider]?.live && !force) return state.models[provider].ids;
@@ -1971,18 +1977,28 @@ function activeChain() { return state.messages.filter((m) => m.conversationId ==
 
 async function sendMessage(text, attachments) {
   const wanted = settings.provider;
-  const provider = ensureUsableProvider();
-  if (!provider) { showBanner('err', 'No API key yet. Open <b>Settings</b> and add your Claude (Anthropic) or OpenAI key.'); openSettings(); return; }
-  if (provider !== wanted) {
-    if (!state.models[provider]?.live) await fetchModels(provider);
-    renderModelSelect(); updateComposerState();
-    showBanner('warn', `There's no ${providerName(wanted)} key, so this was sent with <b>${providerName(provider)}</b>. Add a ${providerName(wanted)} key in Settings to use ${providerName(wanted)}.`);
+  let provider = ensureUsableProvider();
+  if (!provider) {
+    showBanner('err', wanted === 'local' ? 'Choose an on-device model first.' : 'No AI set up yet. Add a Claude (Anthropic) or OpenAI key in <b>Settings</b> — or <a href="#" data-act="local">use free on-device AI</a>.');
+    if (wanted === 'local') openLocalAISheet(); else openSettings();
+    return;
   }
-  if (!currentModel()) { await fetchModels(provider); renderModelSelect(); }
+  if (provider !== wanted) {
+    if (provider !== 'local' && !state.models[provider]?.live) await fetchModels(provider);
+    renderModelSelect(); updateComposerState();
+    showBanner('warn', wanted === 'local'
+      ? `No on-device model is chosen, so this was sent with <b>${providerName(provider)}</b>. <a href="#" data-act="local">Choose an on-device model</a>.`
+      : `There's no ${providerName(wanted)} key, so this was sent with <b>${providerName(provider)}${provider === 'local' ? ` (${escapeHtml(localModelName(settings.localModel))})` : ''}</b>. Add a ${providerName(wanted)} key in Settings to use ${providerName(wanted)}.`);
+  }
+  if (provider !== 'local' && !currentModel()) { await fetchModels(provider); renderModelSelect(); }
+  const viaProvider = turnProvider();
+  if (viaProvider === 'local' && provider !== 'local') showBanner('info', `You're offline, so this reply comes from <b>${escapeHtml(localModelName(settings.localModel))}</b> on this device. Claude and OpenAI need an internet connection.`);
+  else if (provider !== 'local' && navigator.onLine === false) showBanner('warn', `You're offline — ${providerName(provider)} needs an internet connection. <a href="#" data-act="local">Set up on-device AI</a> while online to keep working offline.`);
+  provider = viaProvider;
   let conv = activeConv();
   if (!conv) { conv = await createConversation(); state.activeConvId = conv.id; state.messages = []; renderConvList(); }
   if (state.busy.has(conv.id)) return;
-  conv.provider = provider; conv.model = currentModel();
+  conv.provider = provider; conv.model = provider === 'local' ? settings.localModel : currentModel();
   conv.webSearch = $('#tglWeb').classList.contains('on');
   conv.codeTools = $('#tglCode').classList.contains('on');
   const wantMemory = $('#tglMemory').classList.contains('on');
@@ -2002,8 +2018,8 @@ function runAssistantTurn(conv, chain) {
   return p;
 }
 async function runAssistantTurnInner(conv, chain) {
-  const provider = settings.provider;
-  const assistant = { id: uid('msg'), conversationId: conv.id, role: 'assistant', createdAt: nowStamp(), text: '', segments: [], files: [], provider, model: currentModel(), status: 'streaming' };
+  const provider = turnProvider();
+  const assistant = { id: uid('msg'), conversationId: conv.id, role: 'assistant', createdAt: nowStamp(), text: '', segments: [], files: [], provider, model: provider === 'local' ? settings.localModel : currentModel(), status: 'streaming' };
   await store.put('messages', assistant);
   state.messages.push(assistant);
   renderMessages();
@@ -2024,6 +2040,7 @@ async function runAssistantTurnInner(conv, chain) {
   };
   try {
     if (provider === 'anthropic') await runAnthropic({ conv, chain, msg: assistant, signal: controller.signal, onProgress });
+    else if (provider === 'local') await runLocal({ conv, chain, msg: assistant, signal: controller.signal, onProgress });
     else await runOpenAI({ conv, chain, msg: assistant, signal: controller.signal, onProgress });
     if (controller.signal.aborted) assistant.stopReason = 'stopped';
   } catch (e) {
@@ -2182,18 +2199,30 @@ function renderConvList() {
 function renderModelSelect() {
   const sel = $('#modelSel');
   const provider = settings.provider;
-  const cat = state.models[provider];
-  sel.innerHTML = '';
-  const ids = cat?.ids || SPEC[provider].fallbackModels;
   const current = currentModel();
-  for (const id of ids) sel.append(el('option', { value: id, text: id, selected: id === current || undefined }));
-  if (current && !ids.includes(current)) sel.append(el('option', { value: current, text: current, selected: true }));
-  sel.title = cat?.live ? 'Models available to your API key' : 'Built-in model list (add a key to fetch the live list)';
+  sel.innerHTML = '';
+  if (provider === 'local') {
+    // On-device: the models that fit this device (✓ = already downloaded), plus the manager.
+    const dev = LOCAL.device;
+    const list = dev ? localCatalog(dev).filter((m) => m.fit === 'good' || m.fit === 'tight' || m.downloaded || m.key === current) : LOCAL_MODELS;
+    if (!current) sel.append(el('option', { value: '', text: 'Choose a model…', selected: true }));
+    for (const m of list) sel.append(el('option', { value: m.key, text: `${m.name}${isLocalDownloaded(m.key) ? ' ✓' : m.recommended ? ' — suggested' : ''}`, selected: m.key === current || undefined }));
+    sel.append(el('option', { value: '__manage', text: 'Manage on-device models…' }));
+    sel.title = 'On-device models — ✓ means already downloaded to this device';
+    if (!dev) detectLocalDevice().then(() => { if (settings.provider === 'local') renderModelSelect(); });
+  } else {
+    const cat = state.models[provider];
+    const ids = cat?.ids || SPEC[provider].fallbackModels;
+    for (const id of ids) sel.append(el('option', { value: id, text: id, selected: id === current || undefined }));
+    if (current && !ids.includes(current)) sel.append(el('option', { value: current, text: current, selected: true }));
+    sel.title = cat?.live ? 'Models available to your API key' : 'Built-in model list (add a key to fetch the live list)';
+  }
   $('#providerSel').value = provider;
-  for (const o of $('#providerSel').options) o.textContent = `${providerName(o.value)}${keyFor(o.value) ? '' : ' (no key)'}`;
+  for (const o of $('#providerSel').options) o.textContent = o.value === 'local' ? `On-device${settings.localModel ? '' : ' (free, offline)'}` : `${providerName(o.value)}${keyFor(o.value) ? '' : ' (no key)'}`;
   const eff = $('#effortSel'); eff.innerHTML = '';
   for (const [v, label] of EFFORTS) eff.append(el('option', { value: v, text: label, selected: v === settings.effort || undefined }));
-  $('#whoLabel').textContent = `${provider === 'anthropic' ? 'Claude' : 'OpenAI'} · ${current || '—'}`;
+  const effPill = $('#effortSel').closest('.pill-sel'); if (effPill) effPill.style.display = provider === 'local' ? 'none' : '';
+  $('#whoLabel').textContent = `${providerName(provider)} · ${provider === 'local' ? (current ? localModelName(current) : '—') : current || '—'}`;
   syncPillLabels();
 }
 /** The pills show the current choice; the native selects sit invisibly on top of them. */
@@ -2202,7 +2231,9 @@ function syncPillLabels() {
   const pv = $('#providerVal'); if (pv) pv.textContent = providerName($('#providerSel').value);
   // On phones the "claude-" / "Effort: " prefixes are hidden (CSS) so all three pills fit on one row.
   const split = (text, re) => { const m = text.match(re); return m ? `<span class="pfx">${escapeHtml(m[1])}</span>${escapeHtml(text.slice(m[1].length))}` : escapeHtml(text); };
-  const mv = $('#modelVal'); if (mv) mv.innerHTML = split(lbl($('#modelSel')) || '—', /^(claude-)/);
+  const mv = $('#modelVal');
+  if (mv && settings.provider === 'local') mv.textContent = settings.localModel ? `${localModelName(settings.localModel)}${isLocalDownloaded(settings.localModel) ? ' ✓' : ''}` : 'Choose a model…';
+  else if (mv) mv.innerHTML = split(lbl($('#modelSel')) || '—', /^(claude-)/);
   const ev = $('#effortVal'); if (ev) ev.innerHTML = split(lbl($('#effortSel')), /^(Effort: )/);
 }
 const HOME_CARDS = [
@@ -2317,7 +2348,7 @@ function renderMessage(m) {
       el('button', { class: 'tb', title: 'More', 'aria-label': 'More actions', html: svgIcon('more'), onclick: (e) => replyMenu(m, e.currentTarget) })));
     const fb = (dir) => el('button', { class: `fb${m.feedback === dir ? ' on' : ''}${dir === 'down' ? ' down' : ''}`, title: dir === 'up' ? 'Good response' : 'Bad response', 'aria-label': dir === 'up' ? 'Good response' : 'Bad response', 'aria-pressed': String(m.feedback === dir), html: svgIcon(dir), onclick: () => setFeedback(m, dir) });
     card.append(el('div', { class: 'msg-foot' }, fb('up'), fb('down'),
-      el('span', { class: 'usage', title: m.model || '', text: `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}` }),
+      el('span', { class: 'usage', title: m.model || '', text: u?.local ? `${m.model || 'On device'}${u.output ? ` · ${fmtTokens(u.output)} out` : ''}${u.tps ? ` · ${u.tps.toFixed(1)} tokens/s` : ''}` : `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}` }),
       el('span', { class: 'time', text: fmtClock(m.createdAt) })));
   }
   return wrap;
@@ -2400,8 +2431,17 @@ function updateComposerState() {
   $('#sendBtn').disabled = busy || !hasText || state.pending.some((p) => p.parsing);
   $('#stopBtn').classList.toggle('hidden', !busy);
   $('#sendBtn').classList.toggle('hidden', busy);
-  const prov = settings.provider === 'anthropic' ? 'Claude' : 'OpenAI';
-  $('#hintLabel').textContent = busy ? `${prov} is working…` : `${prov} · ${currentModel() || 'no model'}`;
+  const local = settings.provider === 'local';
+  const prov = local ? localModelName(settings.localModel) : providerName(settings.provider);
+  $('#hintLabel').textContent = busy ? `${prov} is working…` : `${providerName(settings.provider)} · ${local ? (settings.localModel ? prov : 'no model') : currentModel() || 'no model'}`;
+  // Web search and code/files need the cloud models.
+  for (const id of ['#tglWeb', '#tglCode']) {
+    const b = $(id); if (!b) continue;
+    if (!b.dataset.title) b.dataset.title = b.title || '';
+    b.disabled = local; b.classList.toggle('na', local);
+    b.title = local ? 'Not available with on-device AI — switch to Claude or OpenAI for this' : b.dataset.title;
+  }
+  $('#composerBox')?.classList.toggle('local', local);
 }
 function renderPending() {
   const bar = $('#attachBar');
@@ -2459,6 +2499,8 @@ function openSettings() {
     if (value === (settings[field] || '')) return false;
     const src = { ...settings.keySource, [provider]: value ? 'user' : '' };
     saveSettings({ [field]: value, keySource: src });
+    // Adding a key while on-device AI is in use means the teacher wants that provider now.
+    if (value && settings.provider === 'local') saveSettings({ provider });
     return true;
   };
   const commitKeys = () => {
@@ -2538,7 +2580,7 @@ function openSettings() {
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: 'Keys stay in this browser (localStorage) and go straight to the provider — there is no server in between. Create keys at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>.' }),
           f('Anthropic (Claude) API key', el('div', { class: 'key-row' }, anthropicKey, showBtn(anthropicKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('anthropic', anthropicKey, aStatus) }))), keySourceNote('anthropic'), aStatus,
           f('OpenAI API key', el('div', { class: 'key-row' }, openaiKey, showBtn(openaiKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('openai', openaiKey, oStatus) }))), keySourceNote('openai'), oStatus,
-          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 0' }, text: 'One key is enough — the app uses whichever provider you have a key for.' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 0' }, text: 'One key is enough — the app uses whichever provider you have a key for. No key? Use on-device AI below.' }),
           el('label', { class: 'check', style: { marginTop: '12px' } }, remember, el('span', {}, `Remember me — keep my API keys in this browser for ${KEY_TTL_DAYS} days`, el('span', { class: 'help', text: 'Untick on a shared or school computer: the keys are then cleared when this tab is closed.' }))),
           rememberStatus,
           el('div', { style: { marginTop: '8px' } }, forgetBtn),
@@ -2556,6 +2598,12 @@ function openSettings() {
               onKeysChanged();
             } })),
           f('Trusted main-program origin (optional)', trustedOrigin, `When Teach Assist runs inside the main program's frame, keys sent by message are accepted only from the parent frame${MAIN.origin ? ` (currently <code>${escapeHtml(MAIN.origin)}</code>)` : ''}. Enter the main program's origin to also reject any other parent. Leave blank to accept your own parent frame.`)),
+        el('div', { class: 'm-section', id: 'localSettings' }, el('h3', { text: 'On-device AI (free · private · offline)' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 8px' }, text: 'Smaller AI models that run inside this browser — no API key, nothing leaves the device, and they keep working without internet. A model downloads once, then loads from this device every time.' }),
+          el('div', { class: 'key-status ok', style: { display: settings.localModel && isLocalDownloaded(settings.localModel) ? '' : 'none' }, text: settings.localModel ? `${localModelName(settings.localModel)} is on this device${settings.provider === 'local' ? ' and in use' : ''}.` : '' }),
+          el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
+            el('button', { class: 'btn sm', type: 'button', text: settings.localModel ? 'Manage on-device models…' : 'Choose an on-device model…', onclick: () => { close(); openLocalAISheet(); } }),
+            settings.localModel && isLocalDownloaded(settings.localModel) && settings.provider !== 'local' ? el('button', { class: 'btn sm', type: 'button', text: `Use ${localModelName(settings.localModel)} now`, onclick: () => { close(); useLocalModel(settings.localModel); } }) : null)),
         el('div', { class: 'm-section' }, el('h3', { text: 'Claude files relay (recommended for Claude documents)' }),
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: `Anthropic lets browsers call the chat API directly, but <b>blocks browser access to its Files API</b> — which is how Claude's generated DOCX/PPTX/XLSX/PDF files are downloaded and how your Word/Excel attachments reach its sandbox. A tiny Cloudflare Worker (free) forwards just those <code>/v1/files</code> calls with your own key. Without it, Claude still works and small files (under ${SPEC.anthropic.inlineFileMaxKB} KB) are transferred inline; larger ones can't be. OpenAI needs no relay.` }),
           f('Relay URL', el('div', { class: 'key-row' }, relay, el('button', { class: 'btn sm', text: 'Test', onclick: testRelay }))), rStatus, relayCode),
@@ -2758,8 +2806,31 @@ async function init() {
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#sbToggle').addEventListener('click', () => collapseSidebar(!$('#sidebar').classList.contains('collapsed')));
   $('#scrim').addEventListener('click', () => collapseSidebar(true));
-  $('#providerSel').addEventListener('change', async (e) => { saveSettings({ provider: e.target.value }); if (!state.models[settings.provider]?.live) await fetchModels(settings.provider); renderModelSelect(); updateComposerState(); });
-  $('#modelSel').addEventListener('change', (e) => { saveSettings(settings.provider === 'anthropic' ? { anthropicModel: e.target.value } : { openaiModel: e.target.value }); renderModelSelect(); updateComposerState(); });
+  $('#providerSel').addEventListener('change', async (e) => {
+    const p = e.target.value;
+    if (p === 'local') {
+      // Pick up a model that is already on this device; otherwise help choose one.
+      const have = settings.localModel || LOCAL_MODELS.find((m) => isLocalDownloaded(m.key))?.key || '';
+      saveSettings({ provider: 'local', localModel: have });
+      renderModelSelect(); updateComposerState();
+      if (have && /API key/.test($('#bannerHost').textContent)) $('#bannerHost').innerHTML = '';
+      if (!have) openLocalAISheet(); else if (isLocalDownloaded(have)) ensureLocalEngine(have).catch(() => {});
+      return;
+    }
+    saveSettings({ provider: p }); if (!state.models[settings.provider]?.live) await fetchModels(settings.provider); renderModelSelect(); updateComposerState();
+  });
+  $('#modelSel').addEventListener('change', async (e) => {
+    const v = e.target.value;
+    if (settings.provider === 'local') {
+      if (v === '__manage' || !v) { renderModelSelect(); openLocalAISheet(); return; }
+      renderModelSelect();
+      await useLocalModel(v);
+      renderModelSelect(); updateComposerState();
+      return;
+    }
+    saveSettings(settings.provider === 'anthropic' ? { anthropicModel: v } : { openaiModel: v }); renderModelSelect(); updateComposerState();
+  });
+  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); });
   $('#effortSel').addEventListener('change', (e) => { saveSettings({ effort: e.target.value }); syncPillLabels(); });
   window.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); $('#newChatBtn').click(); } });
 
@@ -2777,9 +2848,10 @@ async function init() {
   if (inFrame() && !(settings.anthropicKey && settings.openaiKey && settings.keySource.anthropic === 'user' && settings.keySource.openai === 'user')) await requestParentKeys();
 
   if (!settings.anthropicKey && !settings.openaiKey) {
-    showBanner('warn', KEYS_STATE.expired
-      ? `Your saved API keys were cleared after ${KEY_TTL_DAYS} days. Add them again in <b>Settings</b> (tick “Remember me” to keep them for another ${KEY_TTL_DAYS} days).`
-      : 'Add your Claude (Anthropic) or OpenAI API key in <b>Settings</b> to start — one is enough.');
+    const local = ensureUsableProvider() === 'local';
+    if (local) { renderModelSelect(); updateComposerState(); }
+    if (KEYS_STATE.expired) showBanner('warn', `Your saved API keys were cleared after ${KEY_TTL_DAYS} days. Add them again in <b>Settings</b> (tick “Remember me” to keep them for another ${KEY_TTL_DAYS} days).${local ? ' Meanwhile your on-device model answers.' : ''}`);
+    else if (!local) showBanner('warn', 'Add your Claude (Anthropic) or OpenAI API key in <b>Settings</b> to start — one is enough. Or <a href="#" data-act="local">use free on-device AI</a> — no key needed, works offline.');
   } else {
     ensureUsableProvider();
     await Promise.all([settings.anthropicKey ? fetchModels('anthropic') : null, settings.openaiKey ? fetchModels('openai') : null]);

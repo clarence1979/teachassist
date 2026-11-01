@@ -63,7 +63,7 @@ async function startChatWith({ text = '', files = null, codeTools = true, webSea
   $('#input').value = text; autosize(); updateComposerState();
   if (files && files.length) await addFiles(files);
   if (send) { ensureUsableProvider(); renderModelSelect(); }
-  if (send && !keyFor(settings.provider)) { showBanner('warn', `Add your ${settings.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key in <b>Settings</b>, then press Enter to send this request.`); openSettings(); return; }
+  if (send && !providerReady(settings.provider)) { showBanner('warn', `Add your Claude (Anthropic) or OpenAI API key in <b>Settings</b> — or <a href="#" data-act="local">choose an on-device model</a> — then press Enter to send this request.`); if (settings.provider === 'local') openLocalAISheet(); else openSettings(); return; }
   if (send) await submit(); else $('#input').focus();
 }
 
@@ -874,11 +874,23 @@ function replyMenu(m) {
   const prompt = [...state.messages.slice(0, idx)].reverse().find((x) => x.role === 'user');
   const item = (ic, title, fn) => el('button', { class: 'list-row', style: { width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', font: 'inherit' }, onclick: () => { close(); fn(); } }, el('span', { html: svgIcon(ic), style: { display: 'inline-flex', width: '22px', color: 'var(--accent)' } }), el('div', { class: 'grow ttl', text: title }));
   close = openModal('Reply options', [
+    item('download', 'Download reply as Word (.doc)', () => downloadReplyAsWord(m)),
     item('download', 'Download reply as Markdown (.md)', () => downloadBlob(new Blob([m.text || ''], { type: 'text/markdown' }), `${(activeConv()?.title || 'reply').replace(/[^\w\- ]+/g, '').slice(0, 50) || 'reply'}.md`)),
     prompt ? item('copy', 'Save the prompt for this reply', () => toast(addSavedPrompt(prompt.text) ? 'Prompt saved to Prompts.' : 'Already in Prompts.')) : null,
     item('refresh', 'Regenerate', () => regenerate(m)),
     item('trash', 'Delete this reply and everything after it', () => { if (confirm('Delete this message and everything after it?')) deleteMessage(m); }),
   ].filter(Boolean), null);
+}
+/** A reply as a Word document: the rendered Markdown in Word-flavoured HTML, which Word opens as a normal document. */
+function downloadReplyAsWord(m) {
+  const title = (activeConv()?.title || 'Teach Assist reply').trim();
+  const div = document.createElement('div');
+  div.innerHTML = renderMarkdown(m.text || '');
+  for (const x of div.querySelectorAll('.cb-head, button')) x.remove();
+  for (const x of div.querySelectorAll('.codeblock')) x.replaceWith(...x.childNodes);
+  const css = 'body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.35}h1{font-size:18pt}h2{font-size:14pt;color:#3b2a8f}h3{font-size:12pt}table{border-collapse:collapse;margin:6pt 0}td,th{border:1px solid #999;padding:4pt 7pt;vertical-align:top}th{background:#efeafc}pre,code{font-family:Consolas,monospace;font-size:10pt}pre{background:#f4f4f6;padding:6pt;border:1px solid #ddd}blockquote{border-left:3px solid #bbb;margin-left:0;padding-left:8pt;color:#444}';
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]--><style>${css}</style></head><body>${div.innerHTML}</body></html>`;
+  downloadBlob(new Blob(['\ufeff', html], { type: 'application/msword' }), `${title.replace(/[^\w\- ]+/g, '').slice(0, 50) || 'reply'}.doc`);
 }
 async function setFeedback(m, dir) {
   m.feedback = m.feedback === dir ? null : dir;

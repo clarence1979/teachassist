@@ -205,6 +205,7 @@ async function executeClientTool(name, input, ctx = {}) {
    currently selected provider that returns text. */
 async function quickComplete({ system, prompt, maxTokens = 2000 }) {
   const provider = ensureUsableProvider() || settings.provider;
+  if (turnProvider() === 'local' || provider === 'local') return localComplete({ system, prompt, maxTokens: Math.min(maxTokens, LOCAL_MAX_OUT) });
   const key = keyFor(provider);
   if (!key) throw new Error(`No ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key`);
   if (provider === 'anthropic') {
