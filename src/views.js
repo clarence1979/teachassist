@@ -4,6 +4,13 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const VIEW = { current: 'chat' };
+/* Phone detection: a narrow viewport, or a coarse pointer on anything tablet-sized or smaller. The CSS
+   breakpoint is 640px; the JS side also treats a touch device under 900px as mobile for behaviour
+   (three-day timetable grid, swipe navigation). */
+const MOBILE_MQ = window.matchMedia('(max-width: 640px)');
+const COARSE_MQ = window.matchMedia('(hover: none) and (pointer: coarse) and (max-width: 900px)');
+function isMobile() { return MOBILE_MQ.matches || COARSE_MQ.matches; }
+function applyMobileClass() { document.documentElement.classList.toggle('mobile', isMobile()); }
 
 /* ───────────────────────────── Shared UI helpers ───────────────────────────── */
 function openModal(title, body, footer, { wide = false } = {}) {
@@ -22,6 +29,16 @@ const field = (label, input, help, cls = '') => el('div', { class: `field ${cls}
 function selectEl(options, value) { const s = el('select', {}, ...options.map(([v, t]) => el('option', { value: v, text: t }))); if (value !== undefined) s.value = value; return s; }
 function roundTo30(d) { d = new Date(parseLocal(d)); d.setSeconds(0, 0); d.setMinutes(Math.ceil(d.getMinutes() / 30) * 30); return d; }
 function fmtHour(h) { h = h % 24; return h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`; }
+/** Horizontal swipe on touch screens → cb(+1) for left, cb(-1) for right. Ignores mostly-vertical drags. */
+function attachSwipe(node, cb) {
+  let x0 = 0, y0 = 0, t0 = 0, active = false;
+  node.addEventListener('touchstart', (e) => { if (e.touches.length !== 1) return; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); active = true; }, { passive: true });
+  node.addEventListener('touchend', (e) => {
+    if (!active) return; active = false;
+    const t = e.changedTouches[0]; const dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Date.now() - t0 < 700 && Math.abs(dx) > 70 && Math.abs(dy) < 50 && Math.abs(dx) > Math.abs(dy) * 1.5) cb(dx < 0 ? 1 : -1);
+  }, { passive: true });
+}
 function viewHead(title, ...controls) { return el('div', { class: 'view-head' }, el('h1', { text: title }), ...controls.flat()); }
 function segmented(options, value, onChange) {
   const seg = el('div', { class: 'seg' });
@@ -124,7 +141,7 @@ function taskRow(t) {
     ...(t.tags || []).map((g) => el('span', { class: 'pill', style: { background: 'var(--accent-soft)', color: 'var(--accent)' }, text: g })));
   const grow = el('div', { class: 'grow' }, el('div', { class: 'ttl', text: t.title }), t.description ? el('div', { class: 'sub', text: t.description }) : null, sub,
     t.aiRationale ? el('div', { class: 'sub', style: { fontStyle: 'italic' }, text: `AI: ${t.aiRationale}` }) : null);
-  const actions = el('div', { style: { display: 'flex', gap: '4px', flex: '0 0 auto' } },
+  const actions = el('div', { class: 'acts' },
     t.status !== 'done' ? el('button', { class: 'btn sm', text: 'Schedule', title: 'Put time for this task on the timetable', onclick: () => openBlockModal({ defaults: { title: t.title, type: 'prep', taskId: t.id, duration: t.estimatedDurationMin || 60 } }) }) : null,
     el('button', { class: 'btn icon ghost', html: svgIcon('edit'), title: 'Edit', onclick: () => openTaskModal(t) }),
     el('button', { class: 'btn icon ghost', html: svgIcon('trash'), title: 'Delete', onclick: async () => { if (!confirm(`Delete "${t.title}"?`)) return; await store.del('tasks', t.id); renderTasks(); } }));
@@ -179,7 +196,10 @@ function ttRange() {
     case 'day': return [startOfDay(TT.anchor), endOfDay(TT.anchor)];
     case 'month': { const g = startOfWeek(startOfMonth(TT.anchor)); return [g, endOfDay(addDays(g, 41))]; }
     case 'agenda': return [startOfDay(TT.anchor), endOfDay(addDays(TT.anchor, 13))];
-    default: { const s = startOfWeek(TT.anchor); return [s, endOfDay(addDays(s, TT.weekend ? 6 : 4))]; }
+    default: {
+      if (isMobile()) { const s = startOfDay(TT.anchor); return [s, endOfDay(addDays(s, 2))]; } // three days from the anchor
+      const s = startOfWeek(TT.anchor); return [s, endOfDay(addDays(s, TT.weekend ? 6 : 4))];
+    }
   }
 }
 function ttTitle() {
@@ -191,7 +211,7 @@ function ttTitle() {
 }
 function ttStep(dir) {
   if (TT.view === 'day') TT.anchor = addDays(TT.anchor, dir);
-  else if (TT.view === 'week') TT.anchor = addDays(TT.anchor, 7 * dir);
+  else if (TT.view === 'week') TT.anchor = addDays(TT.anchor, (isMobile() ? 3 : 7) * dir);
   else if (TT.view === 'month') { const d = new Date(TT.anchor); d.setDate(1); d.setMonth(d.getMonth() + dir); TT.anchor = d; }
   else TT.anchor = addDays(TT.anchor, 14 * dir);
   renderTimetable();
@@ -217,17 +237,20 @@ async function renderTimetable() {
       el('button', { class: 'btn sm', style: { justifyContent: 'flex-start' }, text: 'Export .ics calendar', onclick: exportIcs }),
       el('button', { class: 'btn sm', style: { justifyContent: 'flex-start', color: 'var(--red)' }, text: 'Clear this week…', onclick: () => clearWeekPrompt(blocks) })));
   root.innerHTML = '';
-  root.append(viewHead('Timetable',
-    el('div', { class: 'tt-toolbar' },
-      el('button', { class: 'btn sm', html: '‹', title: 'Previous', onclick: () => ttStep(-1) }),
-      el('button', { class: 'btn sm', text: 'Today', onclick: () => { TT.anchor = startOfDay(new Date()); renderTimetable(); } }),
-      el('button', { class: 'btn sm', html: '›', title: 'Next', onclick: () => ttStep(1) }),
-      el('span', { class: 'tt-title', text: ttTitle() })),
-    segmented([['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'Agenda']], TT.view, (v) => { TT.view = v; saveSettings({ ttView: v }); renderTimetable(); }),
-    TT.view === 'week' ? weekendBtn : null,
-    more,
-    el('button', { class: 'btn sm primary', text: '+ Block', onclick: () => openBlockModal({ defaults: { startISO: isoDateTime(roundTo30(sameDay(TT.anchor, new Date()) ? new Date() : addMinutes(TT.anchor, 9 * 60))) } }) })));
+  const addBtn = el('button', { class: 'btn sm primary', text: isMobile() ? '+' : '+ Block', title: 'Add a block', style: isMobile() ? { marginLeft: 'auto', minWidth: '38px', fontSize: '18px' } : null, onclick: () => openBlockModal({ defaults: { startISO: isoDateTime(roundTo30(sameDay(TT.anchor, new Date()) ? new Date() : addMinutes(TT.anchor, 9 * 60))) } }) });
+  const seg = segmented([['day', 'Day'], ['week', isMobile() ? '3 days' : 'Week'], ['month', 'Month'], ['agenda', 'Agenda']], TT.view, (v) => { TT.view = v; saveSettings({ ttView: v }); renderTimetable(); });
+  const toolbar = el('div', { class: 'tt-toolbar' },
+    el('button', { class: 'btn sm', html: '‹', title: 'Previous', onclick: () => ttStep(-1) }),
+    el('button', { class: 'btn sm', text: 'Today', onclick: () => { TT.anchor = startOfDay(new Date()); renderTimetable(); } }),
+    el('button', { class: 'btn sm', html: '›', title: 'Next', onclick: () => ttStep(1) }),
+    el('span', { class: 'tt-title', text: ttTitle() }),
+    isMobile() ? addBtn : null);
+  root.append(isMobile()
+    ? el('div', { class: 'view-head' }, toolbar, el('div', { style: { display: 'flex', gap: '6px', width: '100%', alignItems: 'center' } }, seg, el('span', { style: { flex: 1 } }), more))
+    : viewHead('Timetable', toolbar, seg, TT.view === 'week' ? weekendBtn : null, more, addBtn));
+  TT.hourH = isMobile() ? 48 : 56;
   const body = el('div', { class: 'view-body' });
+  attachSwipe(body, (dir) => ttStep(dir));
   if (!blocks.length) body.append(el('div', { class: 'empty-note', html: 'Your timetable is empty. Add blocks with <b>+ Block</b>, click a time slot, import an <b>.ics</b> file, or use <b>More → Import from a photo</b> and let the model read your printed timetable. In chat you can also say <i>"I teach 9B Maths Mon/Wed 9–10"</i>.' }));
   if (TT.view === 'month') body.append(renderMonth(occ));
   else if (TT.view === 'agenda') body.append(renderAgenda(occ));
@@ -426,6 +449,10 @@ async function openBlockModal({ block = null, occurrence = null, defaults = {} }
   if (isEdit && recurring) info.push(el('div', { class: 'full small muted', text: `Part of a series: ${describeRRule(base.recurrence)}${occurrence ? ` — you opened ${fmtDateShort(occurrence.occurrenceDate)}` : ''}.` }));
   if (base.overrideOfSeries) info.push(el('div', { class: 'full small muted', text: 'This occurrence was changed from its series; it no longer follows series edits.' }));
   if (base.source === 'ai') info.push(el('div', { class: 'full small muted', text: 'Added by the assistant in chat.' }));
+  const dangerBtns = [
+    isEdit ? el('button', { class: 'btn', style: { color: 'var(--red)', marginRight: isMobile() ? 0 : 'auto' }, text: recurring && occurrence ? 'Skip this occurrence' : 'Delete', onclick: () => del(recurring && occurrence ? 'single' : 'series') }) : null,
+    isEdit && recurring ? el('button', { class: 'btn', style: { color: 'var(--red)' }, text: 'Delete series', onclick: () => del('series') }) : null,
+  ].filter(Boolean);
   const close = openModal(isEdit ? 'Edit block' : 'New block', [
     el('div', { class: 'form-grid' },
       field('Title', title, null, 'full'), field('Type', typeChips, null, 'full'),
@@ -435,9 +462,9 @@ async function openBlockModal({ block = null, occurrence = null, defaults = {} }
       field('Work time for task', taskSel, 'Linking a task marks it as scheduled.'),
       field('Attached resources', el('div', {}, attList, attSel), 'Files from the Library show on this block.'),
       conflictNote, ...info),
+    isMobile() && dangerBtns.length ? el('div', { class: 'danger-row' }, ...dangerBtns) : null,
   ], [
-    isEdit ? el('button', { class: 'btn', style: { color: 'var(--red)', marginRight: 'auto' }, text: recurring && occurrence ? 'Skip this occurrence' : 'Delete', onclick: () => del(recurring && occurrence ? 'single' : 'series') }) : null,
-    isEdit && recurring ? el('button', { class: 'btn', style: { color: 'var(--red)' }, text: 'Delete series', onclick: () => del('series') }) : null,
+    ...(isMobile() ? [] : dangerBtns),
     el('button', { class: 'btn', text: 'Cancel', onclick: () => close() }),
     isEdit && recurring && occurrence ? el('button', { class: 'btn', text: 'Save this occurrence only', onclick: saveSingle }) : null,
     el('button', { class: 'btn primary', text: isEdit ? (recurring ? 'Save whole series' : 'Save') : 'Add block', onclick: saveSeries }),

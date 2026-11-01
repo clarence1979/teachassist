@@ -66,6 +66,12 @@ function wireRail() {
 }
 
 (async () => {
+  applyMobileClass();
+  let resizeTimer = null;
+  const onLayoutChange = () => { applyMobileClass(); clearTimeout(resizeTimer); resizeTimer = setTimeout(refreshPlannerViews, 150); };
+  MOBILE_MQ.addEventListener('change', onLayoutChange);
+  COARSE_MQ.addEventListener('change', onLayoutChange);
+  window.addEventListener('orientationchange', onLayoutChange);
   wireRail();
   onLibraryChanged = () => { if (VIEW.current === 'library') renderLibrary(); };
   await registerSession();
