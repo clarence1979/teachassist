@@ -67,7 +67,7 @@ const cases = [
   { name: 'Android phone, 4 GB, WebGPU', ctx: { ...devices['Pixel 7'] }, cfg: { mem: 4, gpu: { f16: true } }, rec: 'llama3.2-1b', engine: 'webllm', extra: (r) => r.fit['qwen3.5-0.8b'] === 'too-big' },
   { name: 'Android phone, 2 GB', ctx: { ...devices['Pixel 7'] }, cfg: { mem: 2, gpu: { f16: true } }, rec: 'smollm2-360m', engine: 'webllm' },
   { name: 'iPhone with WebGPU (iOS 26)', ctx: { ...devices['iPhone 14'] }, cfg: { mem: null, gpu: { f16: true } }, rec: 'llama3.2-1b', engine: 'webllm', extra: (r) => r.d.os === 'ios' && r.d.ramSource === 'estimated' && r.d.budgetMB === 1800 && r.fit['llama3.2-3b'] === 'too-big' },
-  { name: 'iPhone without WebGPU', ctx: { ...devices['iPhone 14'] }, cfg: { mem: null, gpu: null }, rec: 'smollm2-360m', engine: 'wllama', extra: (r) => r.fit['qwen3.5-0.8b'] === 'tight' },
+  { name: 'iPhone without WebGPU', ctx: { ...devices['iPhone 14'] }, cfg: { mem: null, gpu: null }, rec: 'qwen3.5-0.8b', engine: 'wllama', extra: (r) => r.fit['smollm2-360m'] === 'good' && r.fit['llama3.2-1b'] === 'tight' },
   { name: 'Laptop with little free storage', ctx: { viewport: { width: 1280, height: 900 } }, cfg: { mem: 8, gpu: { f16: true }, quotaMB: 2000 }, rec: 'qwen3.5-2b', engine: 'webllm', extra: (r) => r.fit['qwen3.5-4b'] === 'good' },
   { name: 'iPad', ctx: { ...devices['iPad Pro 11'] }, cfg: { mem: null, gpu: { f16: true } }, rec: 'llama3.2-3b', engine: 'webllm', extra: (r) => r.d.os === 'ipados' && r.d.kind === 'tablet' },
 ];
@@ -102,7 +102,23 @@ console.log('\n[2] Phone: On-device AI sheet');
 console.log('\n[3] Download once, then load from this device');
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
 await ctx.addInitScript(emulate, { mem: 8, gpu: null, fake: true });
-await ctx.route('https://api.anthropic.com/**', (route) => route.fulfill({ json: { data: [{ id: 'claude-fable-5-1', created_at: '2026-09-01T00:00:00Z' }] } }));
+const sse = (events) => events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+const claudeCalls = [];
+await ctx.route('https://api.anthropic.com/**', (route) => {
+  const req = route.request();
+  if (req.method() === 'POST' && req.url().includes('/v1/messages')) {
+    const body = JSON.parse(req.postData()); claudeCalls.push(body);
+    return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: sse([
+      { type: 'message_start', message: { id: 'msg_w', type: 'message', role: 'assistant', content: [], model: body.model, usage: { input_tokens: 50, output_tokens: 1 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Melbourne today: sunny, top of 24°C.' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 12 } },
+      { type: 'message_stop' },
+    ]) });
+  }
+  return route.fulfill({ json: { data: [{ id: 'claude-fable-5-1', created_at: '2026-09-01T00:00:00Z' }] } });
+});
 await ctx.route('https://api.openai.com/**', (route) => route.fulfill({ json: { data: [] } }));
 const page = await ctx.newPage();
 const errors = []; page.on('pageerror', (e) => errors.push(e.message));
@@ -194,6 +210,26 @@ await ctx.setOffline(false);
 await page.evaluate(() => saveSettings({ localWhenOffline: false }));
 check(await page.evaluate(() => turnProvider() === 'anthropic'), 'the offline fallback can be switched off');
 await page.evaluate(() => saveSettings({ localWhenOffline: true }));
+
+console.log('\n[8b] Live questions and "Ask Claude"');
+await page.evaluate(() => { saveSettings({ provider: 'local' }); renderModelSelect(); updateComposerState(); });
+const nLive = await page.evaluate(() => state.messages.length);
+await page.fill('#input', 'Weather today');
+await page.click('#sendBtn');
+await page.waitForFunction((n) => state.messages.length >= n + 2 && state.messages.at(-1).status === 'done', nLive);
+check(/no internet, so they can't check the weather/.test(await page.$eval('#bannerHost', (e) => e.textContent)) && !!(await page.$('#bannerHost [data-act="cloud"]')), 'weather on an on-device model: explains why and offers "Ask Claude with web search"');
+check(/can't check that from this device/.test((await page.evaluate(() => window.__fake.messages))[0].content), 'the on-device model is told it has no live information');
+check((await page.$eval('.msg.assistant:last-child .ask-cloud', (e) => e.textContent)) === 'Ask Claude', 'on-device replies get an "Ask Claude" button when a key exists');
+await page.click('#bannerHost [data-act="cloud"]');
+await page.waitForFunction((n) => state.messages.length === n + 2 && state.messages.at(-1).provider === 'anthropic' && state.messages.at(-1).status === 'done', nLive);
+const cl = claudeCalls.at(-1);
+check(/sunny/.test(await page.evaluate(() => state.messages.at(-1).text)) && cl.model === 'claude-fable-5-1' && cl.tools.some((t) => /web_search/.test(t.type)), 'one tap re-asks Claude with web search, replacing the on-device reply');
+check(await page.evaluate(() => settings.provider === 'local'), 'the provider pill stays On-device (it was a one-off)');
+check(!(await page.$('.msg.assistant:last-child .ask-cloud')), 'Claude replies have no "Ask Claude" button');
+const sheet = await page.evaluate(async () => { await openLocalAISheet(); const rows = [...document.querySelectorAll('.lm-row')]; return { txt: document.querySelector('.modal').textContent, all: rows.length > 0 && rows.every((r) => r.querySelector('.lm-chip.q')), smol: document.querySelector('.lm-row[data-model="smollm2-360m"] .lm-chip.q')?.textContent }; });
+check(/far less capable than Claude or OpenAI/.test(sheet.txt) && sheet.all && sheet.smol === 'Quality: basic', 'sheet sets expectations: quality label on every model (SmolLM2: basic)');
+await page.click('.modal .m-head .btn');
+await page.evaluate(() => saveSettings({ provider: 'anthropic' }));
 
 console.log('\n[9] Settings and delete');
 await page.click('#settingsBtn');

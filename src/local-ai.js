@@ -22,25 +22,25 @@ const LOCAL_MAX_OUT = 1536;        // max new tokens per reply
 /* Catalogue, smallest → largest. vram = WebLLM's own vram_required_MB (0.2.86) for the q4f16 / q4f32
    builds; dl = approximate download in MB; gguf = CPU build (Q4_K_M) for wllama, where one fits. */
 const LOCAL_MODELS = [
-  { key: 'smollm2-360m', name: 'SmolLM2 360M', params: '0.36B', blurb: 'Tiny and quick. Simple questions and short drafts; good for older phones.', low: true, temp: 0.3,
+  { key: 'smollm2-360m', name: 'SmolLM2 360M', params: '0.36B', blurb: 'Tiny and fast but basic — it often misunderstands. Only for very old or low-memory phones.', quality: 'Basic', low: true, temp: 0.3,
     webllm: { f16: 'SmolLM2-360M-Instruct-q4f16_1-MLC', f32: 'SmolLM2-360M-Instruct-q4f32_1-MLC' }, vram: { f16: 376, f32: 580 }, dl: { f16: 270, f32: 300 }, f16Required: true,
     gguf: { url: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf', mb: 271 } },
-  { key: 'qwen3.5-0.8b', name: 'Qwen3.5 0.8B', params: '0.8B', blurb: 'Small, multilingual and surprisingly capable for its size.', low: true, temp: 0.4,
+  { key: 'qwen3.5-0.8b', name: 'Qwen3.5 0.8B', params: '0.8B', blurb: 'Small and multilingual. Short explanations and simple drafts; check its facts.', quality: 'Fair', low: true, temp: 0.4,
     webllm: { f16: 'Qwen3.5-0.8B-q4f16_1-MLC', f32: 'Qwen3.5-0.8B-q4f32_1-MLC' }, vram: { f16: 1629, f32: 1894 }, dl: { f16: 560, f32: 620 },
     gguf: { url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf', mb: 533 } },
-  { key: 'llama3.2-1b', name: 'Llama 3.2 1B', params: '1B', blurb: 'Reliable all-rounder for phones: explanations, emails, quiz questions.', low: true, temp: 0.5,
+  { key: 'llama3.2-1b', name: 'Llama 3.2 1B', params: '1B', blurb: 'Dependable for short explanations, emails and simple quiz questions; check its facts.', quality: 'Fair', low: true, temp: 0.5,
     webllm: { f16: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', f32: 'Llama-3.2-1B-Instruct-q4f32_1-MLC' }, vram: { f16: 879, f32: 1129 }, dl: { f16: 710, f32: 760 },
     gguf: { url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf', mb: 808 } },
-  { key: 'qwen3.5-2b', name: 'Qwen3.5 2B', params: '2B', blurb: 'Noticeably better writing and reasoning; needs a recent phone or a laptop.', low: false,
+  { key: 'qwen3.5-2b', name: 'Qwen3.5 2B', params: '2B', blurb: 'Noticeably better writing and reasoning; needs a recent phone or a laptop.', quality: 'Good', low: false,
     webllm: { f16: 'Qwen3.5-2B-q4f16_1-MLC', f32: 'Qwen3.5-2B-q4f32_1-MLC' }, vram: { f16: 2245, f32: 2592 }, dl: { f16: 1300, f32: 1400 },
     gguf: { url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf', mb: 1280 } },
-  { key: 'llama3.2-3b', name: 'Llama 3.2 3B', params: '3B', blurb: 'Strong general model that still fits high-end phones (8 GB+).', low: true,
+  { key: 'llama3.2-3b', name: 'Llama 3.2 3B', params: '3B', blurb: 'Strong general model that still fits iPads and high-end phones.', quality: 'Good', low: true,
     webllm: { f16: 'Llama-3.2-3B-Instruct-q4f16_1-MLC', f32: 'Llama-3.2-3B-Instruct-q4f32_1-MLC' }, vram: { f16: 2264, f32: 2952 }, dl: { f16: 1800, f32: 1900 }, gguf: null },
-  { key: 'phi4-mini', name: 'Phi-4 mini', params: '3.8B', blurb: 'Good at maths and step-by-step reasoning. Laptops and desktops.', low: false,
+  { key: 'phi4-mini', name: 'Phi-4 mini', params: '3.8B', blurb: 'Good at maths and step-by-step reasoning. Laptops and desktops.', quality: 'Very good', low: false,
     webllm: { f16: 'Phi-4-mini-instruct-q4f16_1-MLC', f32: 'Phi-4-mini-instruct-q4f32_1-MLC' }, vram: { f16: 3438, f32: 4221 }, dl: { f16: 2200, f32: 2300 }, gguf: null },
-  { key: 'qwen3.5-4b', name: 'Qwen3.5 4B', params: '4B', blurb: 'Best quality that runs well on most laptops with 8 GB+ memory.', low: false,
+  { key: 'qwen3.5-4b', name: 'Qwen3.5 4B', params: '4B', blurb: 'Best quality that runs well on most laptops with 8 GB+ memory.', quality: 'Very good', low: false,
     webllm: { f16: 'Qwen3.5-4B-q4f16_1-MLC', f32: 'Qwen3.5-4B-q4f32_1-MLC' }, vram: { f16: 3868, f32: 4680 }, dl: { f16: 2500, f32: 2600 }, gguf: null },
-  { key: 'qwen3.5-9b', name: 'Qwen3.5 9B', params: '9B', blurb: 'Closest to the cloud models. Needs 16 GB+ memory and a strong GPU.', low: false,
+  { key: 'qwen3.5-9b', name: 'Qwen3.5 9B', params: '9B', blurb: 'Closest to the cloud models. Needs 16 GB+ memory and a strong GPU.', quality: 'Best', low: false,
     webllm: { f16: 'Qwen3.5-9B-q4f16_1-MLC', f32: 'Qwen3.5-9B-q4f32_1-MLC' }, vram: { f16: 6433, f32: 7545 }, dl: { f16: 5300, f32: 5500 }, gguf: null },
 ];
 const LOCAL = { device: null, deviceP: null, engine: null, loading: null, libs: {}, blobUrls: {}, pdfText: new Map(), status: { phase: 'idle' } };
@@ -119,7 +119,7 @@ async function detectLocalDevice(force = false) {
     else if (kind === 'tablet') budgetMB = ramGB * 1024 * 0.45;
     else budgetMB = Math.min(ramGB * 1024 * (reported && reported >= 8 ? 0.6 : 0.55), 9000);
     // No WebGPU: models run on the processor (one thread on GitHub Pages), so keep them small enough to be usable.
-    if (engine === 'wllama') budgetMB = Math.min(budgetMB, kind === 'computer' ? 2000 : kind === 'tablet' ? 1400 : 1100);
+    if (engine === 'wllama') budgetMB = Math.min(budgetMB, kind === 'computer' ? 2000 : kind === 'tablet' ? 1600 : 1400);
     const saveData = !!navigator.connection?.saveData;
     const metered = /^(slow-2g|2g|3g)$/.test(navigator.connection?.effectiveType || '') || navigator.connection?.type === 'cellular';
     LOCAL.device = { os, kind, ramGB, ramSource: reported ? 'reported' : 'estimated', gpu, engine, variant: gpu?.f16 ? 'f16' : 'f32', cores: navigator.hardwareConcurrency || null, storageFreeMB, persisted, budgetMB: Math.round(budgetMB), saveData, metered };
@@ -140,8 +140,10 @@ function localCatalog(dev) {
     const noSpace = dev.storageFreeMB != null && downloadMB > dev.storageFreeMB - 300;
     return { ...m, engine, variant, needMB, downloadMB, fit, noSpace, runId: engine === 'webllm' ? m.webllm[variant] : m.gguf?.url, downloaded: isLocalDownloaded(m.key, engine) };
   });
-  const good = out.filter((m) => m.fit === 'good' && !m.noSpace);
-  const rec = good.length ? good[good.length - 1] : out.find((m) => m.fit === 'tight' && !m.noSpace) || null;
+  // Suggest the most capable model that fits comfortably — but never the "basic" one if anything better fits at all.
+  const ok = (m) => !m.noSpace && m.quality !== 'Basic';
+  const good = out.filter((m) => m.fit === 'good' && ok(m));
+  const rec = good.at(-1) || out.find((m) => m.fit === 'tight' && ok(m)) || out.find((m) => (m.fit === 'good' || m.fit === 'tight') && !m.noSpace) || null;
   if (rec) rec.recommended = true;
   return out;
 }
@@ -215,7 +217,8 @@ async function loadWebLLMEngine(m, wasDownloaded) {
   return {
     kind: 'webllm', key: m.key, name: m.name, id: m.runId,
     async *chat(messages, { maxTokens, signal }) {
-      const req = { messages, stream: true, stream_options: { include_usage: true }, temperature: m.temp ?? 0.6, top_p: 0.9, max_tokens: maxTokens };
+      // A light repetition penalty stops small models looping on the same sentence.
+      const req = { messages, stream: true, stream_options: { include_usage: true }, temperature: m.temp ?? 0.6, top_p: 0.9, repetition_penalty: 1.1, max_tokens: maxTokens };
       if (/^Qwen3/i.test(m.runId)) req.extra_body = { enable_thinking: false };
       const onAbort = () => { try { engine.interruptGenerate(); } catch { /* ignore */ } };
       signal?.addEventListener('abort', onAbort);
@@ -257,7 +260,7 @@ async function loadWllamaEngine(m, wasDownloaded) {
     async *chat(messages, { maxTokens, signal }) {
       let n = 0, tFirst = 0, timings = null;
       const iter = await w.createChatCompletion({
-        messages, stream: true, max_tokens: maxTokens, temperature: m.temp ?? 0.6, top_p: 0.9, abortSignal: signal,
+        messages, stream: true, max_tokens: maxTokens, temperature: m.temp ?? 0.6, top_p: 0.9, min_p: 0.05, penalty_repeat: 1.1, penalty_last_n: 256, abortSignal: signal,
         cache_prompt: true, // reuse the processed system prompt and history between turns
         ...(/^qwen3/i.test(m.key) ? { chat_template_kwargs: { enable_thinking: false } } : {}),
       });
@@ -346,7 +349,7 @@ function localSystemPrompt(conv) {
   const mem = conv?.memory && conv.memorySnapshot ? `\nSummaries of the teacher's earlier chats (use only if relevant):\n${conv.memorySnapshot.slice(0, cpu ? 600 : 1200)}` : '';
   return `You are Teach Assist, a helpful assistant for a teacher${name ? ` named ${name}` : ''}. Today is ${todayContext(settings.timezone)}.${profile ? `\nAbout the teacher: ${profile}` : ''}
 Answer accurately and clearly in Markdown; say so if you are unsure. For teaching resources write the complete content, with an answer key.
-You run on the teacher's own device with no internet, so you cannot browse or create files; write documents out in full here.${mem}`;
+You run on the teacher's own device with no internet, so you cannot browse or create files; write documents out in full here. You cannot know the weather, news, prices or anything else live — if asked, say you can't check that from this device.${mem}`;
 }
 /** Newest-first history that fits the small context window (≈3.5 characters per token). */
 async function buildLocalMessages(conv, chain) {
@@ -535,6 +538,7 @@ async function openLocalAISheet() {
       el('div', { class: 'lm-head' }, el('span', { class: 'lm-name', text: m.name }), el('span', { class: 'lm-params', text: m.params }),
         m.recommended ? chip('rec', 'Recommended') : null,
         m.downloaded ? chip('dl', 'On this device') : null,
+        chip(`q q-${m.quality.toLowerCase().replace(' ', '-')}`, `Quality: ${m.quality.toLowerCase()}`),
         chip(`fit-${m.fit}`, localFitLabel(m))),
       el('div', { class: 'lm-blurb', text: m.blurb }),
       el('div', { class: 'lm-meta', text: `${m.downloaded ? 'Downloaded — loads from this device' : `Download ≈ ${fmtMB(m.downloadMB)}, once`} · needs ≈ ${fmtMB(m.needMB)} memory · ${ENGINE_LABEL[m.engine]}${m.noSpace && !m.downloaded ? ' · not enough free storage' : ''}` }),
@@ -555,12 +559,13 @@ async function openLocalAISheet() {
     const cloud = ['anthropic', 'openai'].find((p) => keyFor(p));
     body.innerHTML = '';
     body.append(
-      el('div', { class: 'help lm-intro', html: 'On-device models run <b>entirely on this device</b> — free, private (nothing leaves the device) and they keep working <b>offline</b>. Each model downloads <b>once</b>; after that it loads from this device’s storage for every session and prompt. They are smaller than Claude or OpenAI models: good for drafting, explaining, quizzes and emails, but no web search, file creation or image reading.' }),
+      el('div', { class: 'help lm-intro', html: 'On-device models run <b>entirely on this device</b> — free, private (nothing leaves the device) and they keep working <b>offline</b>. Each model downloads <b>once</b>; after that it loads from this device’s storage for every session and prompt. They are <b>far less capable than Claude or OpenAI</b> — fine for short drafts and explanations, but expect mistakes, and no web search, live information (weather, news), file creation or image reading. On-device replies have an <b>Ask Claude/OpenAI</b> button when you have a key.' }),
       el('div', { class: 'm-section lm-device' }, el('h3', { text: 'This device' }),
         el('div', { class: 'lm-dev', html: `${icon('chip')}<span>${escapeHtml(deviceSummary(dev))}</span>` }),
         rec ? el('div', { class: 'lm-recline', html: `Suggested for this device: <b>${escapeHtml(rec.name)}</b> — the most capable model that fits comfortably in its memory.` })
           : el('div', { class: 'lm-recline warn', text: 'This device doesn’t have enough free memory or storage for on-device models. Claude or OpenAI (with an API key) will work much better here.' }),
         dev.engine === 'wllama' ? el('div', { class: 'help', text: 'This browser has no WebGPU, so models run on the processor — slower, and limited to the smaller models. For faster on-device AI use Chrome or Edge on a computer, Chrome on Android, or Safari on iOS / macOS 26 or later.' }) : null,
+        (dev.os === 'ios' || dev.os === 'ipados') && dev.engine === 'wllama' ? el('div', { class: 'lm-recline warn', text: 'This browser isn’t giving the app access to the graphics chip, so only small, slower models are offered. For faster and smarter on-device models, open Teach Assist in Safari (iOS 26 or later) — other iPhone browsers may not offer WebGPU yet.' }) : null,
         dev.os === 'ios' ? el('div', { class: 'help', text: 'iPhones limit how much memory one browser tab may use, so the larger models are hidden here even on phones with lots of memory.' }) : null,
         dev.metered || dev.saveData ? el('div', { class: 'help', style: { color: 'var(--amber)' }, text: 'You seem to be on mobile data — downloads are large, so Wi-Fi is best.' }) : null),
       el('div', { class: 'm-section' }, el('h3', { text: 'Models for this device' }),

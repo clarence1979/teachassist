@@ -98,7 +98,7 @@ Pick **On-device** in the provider pill (or *Settings → On-device AI*). The ap
 
 | Model | Size | Suits |
 |---|---|---|
-| SmolLM2 360M | ≈ 270 MB | older or low-memory phones |
+| SmolLM2 360M | ≈ 270 MB | very old or low-memory phones only (basic) |
 | Qwen3.5 0.8B | ≈ 560 MB | phones, multilingual |
 | Llama 3.2 1B | ≈ 710–810 MB | most phones (the usual phone suggestion) |
 | Qwen3.5 2B | ≈ 1.3 GB | recent phones/tablets, laptops |
@@ -109,6 +109,8 @@ Pick **On-device** in the provider pill (or *Settings → On-device AI*). The ap
 
 - **Download once, load from the device after that.** With WebGPU (Chrome/Edge on computers, Chrome on Android, Safari 26) models run on the graphics chip via WebLLM and are kept in Cache Storage; without WebGPU they run on the processor via wllama (llama.cpp in WebAssembly, smaller models only) and are kept in the browser's private file system. The engine libraries are cached too, and the app asks for persistent storage so the browser doesn't clear them. Later sessions and prompts load straight from the device — no re-download — and the chosen model warms up in the background when the app opens.
 - **Offline:** with `sw.js` alongside the page (GitHub Pages does this), the app itself opens offline. If you're using Claude or OpenAI and the connection drops, replies come from your downloaded model instead (switch off in the On-device AI sheet).
+- **Set expectations:** these are small models — far less capable than Claude or OpenAI. Each model shows a quality label (basic → best); the suggestion never defaults to the basic SmolLM2 when anything better fits. Every on-device reply has an **Ask Claude / Ask OpenAI** button (when you have a key) that re-asks that one question in the cloud.
+- **Live questions** (weather, news, prices, scores…): on-device models have no internet, so the app says so and offers one tap to ask Claude/OpenAI with web search.
 - **What they can't do:** web search, code/files, image reading. PDFs, Word, Excel and text files are read on the device and passed to the model as text (trimmed to its 4k-token window). Any reply can be saved as a Word document from its ⋯ menu.
 - Manage models (download, use, delete, storage used) in the **On-device AI** sheet.
 
