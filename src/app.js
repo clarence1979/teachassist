@@ -1995,6 +1995,10 @@ async function sendMessage(text, attachments) {
   if (viaProvider === 'local' && provider !== 'local') showBanner('info', `You're offline, so this reply comes from <b>${escapeHtml(localModelName(settings.localModel))}</b> on this device. Claude and OpenAI need an internet connection.`);
   else if (provider !== 'local' && navigator.onLine === false) showBanner('warn', `You're offline — ${providerName(provider)} needs an internet connection. <a href="#" data-act="local">Set up on-device AI</a> while online to keep working offline.`);
   provider = viaProvider;
+  if (provider === 'local' && LIVE_RE.test(text || '')) {
+    const cloud = cloudProvider();
+    showBanner('info', `On-device models have no internet, so they can't check the weather, news or other live information.${cloud ? ` <a href="#" data-act="cloud">Ask ${providerName(cloud)} with web search</a>` : ' Add a Claude or OpenAI key in <a href="#" data-act="settings">Settings</a> to look things up online.'}`);
+  }
   let conv = activeConv();
   if (!conv) { conv = await createConversation(); state.activeConvId = conv.id; state.messages = []; renderConvList(); }
   if (state.busy.has(conv.id)) return;
@@ -2012,14 +2016,15 @@ async function sendMessage(text, attachments) {
   await runAssistantTurn(conv, activeChain());
 }
 
-function runAssistantTurn(conv, chain) {
-  const p = runAssistantTurnInner(conv, chain).finally(() => { if (state.turns.get(conv.id) === p) state.turns.delete(conv.id); });
+function runAssistantTurn(conv, chain, opts = {}) {
+  const p = runAssistantTurnInner(conv, chain, opts).finally(() => { if (state.turns.get(conv.id) === p) state.turns.delete(conv.id); });
   state.turns.set(conv.id, p);
   return p;
 }
-async function runAssistantTurnInner(conv, chain) {
-  const provider = turnProvider();
-  const assistant = { id: uid('msg'), conversationId: conv.id, role: 'assistant', createdAt: nowStamp(), text: '', segments: [], files: [], provider, model: provider === 'local' ? settings.localModel : currentModel(), status: 'streaming' };
+function modelFor(provider) { return provider === 'anthropic' ? settings.anthropicModel : provider === 'local' ? settings.localModel : settings.openaiModel; }
+async function runAssistantTurnInner(conv, chain, opts = {}) {
+  const provider = opts.provider || turnProvider(); // opts.provider: a one-off "Ask Claude instead"
+  const assistant = { id: uid('msg'), conversationId: conv.id, role: 'assistant', createdAt: nowStamp(), text: '', segments: [], files: [], provider, model: modelFor(provider), status: 'streaming' };
   await store.put('messages', assistant);
   state.messages.push(assistant);
   renderMessages();
@@ -2071,12 +2076,31 @@ async function removeFrom(idx) {
     for (const a of m.attachments || []) if (a.blobKey) await store.del('files', a.blobKey).catch(() => {});
   }
 }
-async function regenerate(assistantMsg) {
+async function regenerate(assistantMsg, opts = {}) {
   const conv = activeConv(); if (!conv || state.busy.has(conv.id)) return;
   const idx = state.messages.findIndex((m) => m.id === assistantMsg.id); if (idx < 0) return;
   await removeFrom(idx);
   renderMessages();
-  await runAssistantTurn(conv, activeChain());
+  await runAssistantTurn(conv, activeChain(), opts);
+}
+/* ───── On-device ↔ cloud: live questions and "Ask Claude instead" ───── */
+/** Questions only the internet can answer — an on-device model can't know these. */
+const LIVE_RE = /\b(weather|forecast|temperature (today|tomorrow|now|outside)|(is it|will it) (going to )?rain|news|headlines?|stock price|share price|exchange rate|bitcoin|who won|live score|scores? (today|last night)|traffic|near me|open now|opening hours)\b/i;
+/** The cloud provider to offer: the one used last, else whichever has a key. */
+function cloudProvider() {
+  const order = settings.lastCloud === 'openai' ? ['openai', 'anthropic'] : ['anthropic', 'openai'];
+  return order.find((p) => keyFor(p)) || null;
+}
+/** Re-run one on-device reply with Claude/OpenAI (one-off; the provider pill stays as it is). */
+async function askCloudInstead(m, { web = false } = {}) {
+  const cloud = cloudProvider();
+  if (!cloud) { showBanner('warn', 'Add a Claude (Anthropic) or OpenAI key in <a href="#" data-act="settings">Settings</a> to ask a cloud model.'); return; }
+  if (navigator.onLine === false) { toastMsg(`You're offline — ${providerName(cloud)} needs an internet connection.`); return; }
+  const conv = activeConv(); if (!conv) return;
+  if (!modelFor(cloud) || !state.models[cloud]?.live) await fetchModels(cloud);
+  if (web && !conv.webSearch) { conv.webSearch = true; await store.put('conversations', conv); }
+  $('#bannerHost').innerHTML = '';
+  await regenerate(m, { provider: cloud });
 }
 async function editAndResend(userMsg, newText) {
   const conv = activeConv(); if (!conv || state.busy.has(conv.id)) return;
@@ -2347,7 +2371,9 @@ function renderMessage(m) {
       tb('refresh', 'Regenerate', () => regenerate(m)),
       el('button', { class: 'tb', title: 'More', 'aria-label': 'More actions', html: svgIcon('more'), onclick: (e) => replyMenu(m, e.currentTarget) })));
     const fb = (dir) => el('button', { class: `fb${m.feedback === dir ? ' on' : ''}${dir === 'down' ? ' down' : ''}`, title: dir === 'up' ? 'Good response' : 'Bad response', 'aria-label': dir === 'up' ? 'Good response' : 'Bad response', 'aria-pressed': String(m.feedback === dir), html: svgIcon(dir), onclick: () => setFeedback(m, dir) });
+    const cloud = m.provider === 'local' && !streaming ? cloudProvider() : null;
     card.append(el('div', { class: 'msg-foot' }, fb('up'), fb('down'),
+      cloud ? el('button', { class: 'ask-cloud', title: `Answer this again with ${providerName(cloud)} (sent to ${providerName(cloud)}, not kept on the device)`, onclick: () => askCloudInstead(m, { web: LIVE_RE.test([...state.messages.slice(0, state.messages.indexOf(m))].reverse().find((x) => x.role === 'user')?.text || '') }) }, el('span', { html: svgIcon('refresh'), style: { display: 'inline-flex', width: '16px' } }), `Ask ${providerName(cloud)}`) : null,
       el('span', { class: 'usage', title: m.model || '', text: u?.local ? `${m.model || 'On device'}${u.output ? ` · ${fmtTokens(u.output)} out` : ''}${u.tps ? ` · ${u.tps.toFixed(1)} tokens/s` : ''}` : `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}` }),
       el('span', { class: 'time', text: fmtClock(m.createdAt) })));
   }
@@ -2817,7 +2843,7 @@ async function init() {
       if (!have) openLocalAISheet(); else if (isLocalDownloaded(have)) ensureLocalEngine(have).catch(() => {});
       return;
     }
-    saveSettings({ provider: p }); if (!state.models[settings.provider]?.live) await fetchModels(settings.provider); renderModelSelect(); updateComposerState();
+    saveSettings({ provider: p, lastCloud: p }); if (!state.models[settings.provider]?.live) await fetchModels(settings.provider); renderModelSelect(); updateComposerState();
   });
   $('#modelSel').addEventListener('change', async (e) => {
     const v = e.target.value;
@@ -2830,7 +2856,7 @@ async function init() {
     }
     saveSettings(settings.provider === 'anthropic' ? { anthropicModel: v } : { openaiModel: v }); renderModelSelect(); updateComposerState();
   });
-  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); });
+  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); else if (a.dataset.act === 'cloud') { const last = [...state.messages].reverse().find((x) => x.role === 'assistant' && x.provider === 'local'); if (last) askCloudInstead(last, { web: true }); } });
   $('#effortSel').addEventListener('change', (e) => { saveSettings({ effort: e.target.value }); syncPillLabels(); });
   window.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); $('#newChatBtn').click(); } });
 
