@@ -15,6 +15,7 @@ function applyMobileClass() { document.documentElement.classList.toggle('mobile'
 /* ───────────────────────────── Shared UI helpers ───────────────────────────── */
 function openModal(title, body, footer, { wide = false } = {}) {
   const host = $('#modalHost'); host.innerHTML = '';
+  if (window.innerWidth <= 860 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true);
   const esc = (e) => { if (e.key === 'Escape') close(); };
   const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', esc); };
   document.addEventListener('keydown', esc);
@@ -60,6 +61,7 @@ async function startChatWith({ text = '', files = null, codeTools = true, webSea
   if (webSearch !== null) setToggle($('#tglWeb'), webSearch);
   $('#input').value = text; autosize(); updateComposerState();
   if (files && files.length) await addFiles(files);
+  if (send) { ensureUsableProvider(); renderModelSelect(); }
   if (send && !keyFor(settings.provider)) { showBanner('warn', `Add your ${settings.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key in <b>Settings</b>, then press Enter to send this request.`); openSettings(); return; }
   if (send) await submit(); else $('#input').focus();
 }
@@ -167,12 +169,12 @@ function openTaskModal(t = null) {
       await store.put('tasks', rec); close(); renderTasks();
     } }),
   ]);
-  title.focus();
+  if (!isMobile()) title.focus();
 }
 async function prioritiseWithAI(btn) {
   const open = TASKS.list.filter((t) => t.status !== 'done');
   if (!open.length) { toast('No open tasks to prioritise.'); return; }
-  if (!keyFor(settings.provider)) { openSettings(); return; }
+  if (!ensureUsableProvider()) { openSettings(); return; }
   const label = btn.textContent; btn.disabled = true; btn.textContent = 'Thinking…';
   try {
     const payload = open.map((t) => ({ id: t.id, title: t.title, description: t.description || '', deadline: t.deadline ? isoDateTime(new Date(t.deadline)) : null, estimatedDurationMin: t.estimatedDurationMin, currentPriority: PRIORITY_LABEL[t.priority], tags: t.tags || [] }));
@@ -469,7 +471,7 @@ async function openBlockModal({ block = null, occurrence = null, defaults = {} }
     isEdit && recurring && occurrence ? el('button', { class: 'btn', text: 'Save this occurrence only', onclick: saveSingle }) : null,
     el('button', { class: 'btn primary', text: isEdit ? (recurring ? 'Save whole series' : 'Save') : 'Add block', onclick: saveSeries }),
   ], { wide: true });
-  if (!isEdit) title.focus();
+  if (!isEdit && !isMobile()) title.focus();
 }
 function importIcs() {
   const input = el('input', { type: 'file', accept: '.ics,text/calendar' });
@@ -635,7 +637,7 @@ function openStudioForm(g) {
     el('button', { class: 'btn', text: g.needsFiles ? 'Open in chat & attach files' : 'Open in chat to edit', onclick: () => { close(); startChatWith({ text: prompt(), codeTools: out.value !== 'chat', send: false }); } }),
     g.needsFiles ? null : el('button', { class: 'btn primary', text: 'Generate now', onclick: () => { close(); startChatWith({ text: prompt(), codeTools: out.value !== 'chat', send: true }); } }),
   ], { wide: true });
-  (inputs.subject || inputs.topic || inputs.audience || inputs.extras)?.focus();
+  if (!isMobile()) (inputs.subject || inputs.topic || inputs.audience || inputs.extras)?.focus();
 }
 function composeStudioPrompt(g, f, output) {
   const ctx = [f.subject && `Subject: ${f.subject}`, f.year && `Year level: ${f.year}`, f.topic && `Topic: ${f.topic}`].filter(Boolean).join('. ');

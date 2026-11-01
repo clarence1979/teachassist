@@ -84,6 +84,16 @@ check(sb.left === 0 && sb.width < 390 && !(await page.$eval('#sidebar', (e) => e
 await page.mouse.click(380, 400); await page.waitForTimeout(350);
 check(await page.$eval('#sidebar', (e) => e.classList.contains('collapsed')), 'tapping outside closes the drawer');
 
+console.log('\n[3b] Settings from the drawer on a phone');
+await page.click('#sbToggle'); await page.waitForTimeout(350);
+await page.click('#settingsBtn'); await page.waitForSelector('.modal'); await page.waitForTimeout(350);
+check(await page.$eval('#sidebar', (e) => e.classList.contains('collapsed')), 'opening Settings from the drawer closes the drawer');
+const topEl = await page.evaluate(() => { const r = document.querySelector('.modal input[type=password]').getBoundingClientRect(); const el = document.elementFromPoint(r.left + 20, r.top + r.height / 2); return el && el.closest('.modal') ? 'modal' : (el?.id || el?.className || 'other'); });
+check(topEl === 'modal', `the API key field is on top and tappable (${topEl})`);
+check(!(await page.evaluate(() => document.activeElement && document.activeElement.matches('.modal input'))), 'no field is auto-focused (keyboard stays down)');
+check(/Remember me/.test(await page.$eval('.modal', (e) => e.textContent)), 'Remember me option visible on the phone sheet');
+await page.click('.modal .m-head .btn');
+
 console.log('\n[4] Desktop is unchanged after resizing');
 await page.setViewportSize({ width: 1280, height: 900 }); await page.waitForTimeout(400);
 await page.click('#rail button[data-view="timetable"]'); await page.waitForTimeout(300);

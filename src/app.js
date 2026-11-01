@@ -209,21 +209,97 @@ const DEFAULT_SETTINGS = {
   ttWeekend: false,
   keySource: { anthropic: '', openai: '' }, // 'main' = supplied by the main program, 'user' = typed in Settings
   trustedParentOrigin: '',    // optional: only accept keys posted from this origin
+  rememberKeys: true,         // keep API keys in this browser for 30 days (off: only until the tab is closed)
 };
-let settings = { ...DEFAULT_SETTINGS, ...(parseJsonLoose(localStorage.getItem(SETTINGS_KEY)) || {}) };
+
+/* ───────────────────────────── API key storage ─────────────────────────────
+   Keys are kept apart from the other settings:
+     • "Remember me" on  → localStorage `teachassist.keys.v1` with an expiry 30 days after the keys
+                           were last entered; on the first launch after that date they are erased.
+     • "Remember me" off → sessionStorage only, so they are gone when the tab/browser is closed.
+   Older versions kept the keys inside the settings blob; they are moved on first load. */
+const KEYS_LS = 'teachassist.keys.v1';
+const KEYS_SS = 'teachassist.keys.session';
+const KEY_TTL_DAYS = 30;
+const KEY_TTL_MS = KEY_TTL_DAYS * 24 * 60 * 60 * 1000;
+const KEYS_STATE = { expired: false };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+function readStoredKeys() {
+  const rec = parseJsonLoose(lsGet(KEYS_LS));
+  if (rec && (rec.anthropicKey || rec.openaiKey)) {
+    if (rec.expiresAt && Date.now() > rec.expiresAt) { try { localStorage.removeItem(KEYS_LS); } catch { /* ignore */ } KEYS_STATE.expired = true; }
+    else return { anthropicKey: rec.anthropicKey || '', openaiKey: rec.openaiKey || '', expiresAt: rec.expiresAt || null, remembered: true };
+  }
+  const ses = parseJsonLoose(ssGet(KEYS_SS));
+  if (ses && (ses.anthropicKey || ses.openaiKey)) return { anthropicKey: ses.anthropicKey || '', openaiKey: ses.openaiKey || '', expiresAt: null, remembered: false };
+  return null;
+}
+function persistKeys(resetClock = false) {
+  const anthropicKey = settings.anthropicKey || '', openaiKey = settings.openaiKey || '';
+  const has = !!(anthropicKey || openaiKey);
+  try {
+    if (settings.rememberKeys && has) {
+      if (resetClock || !settings.keysExpireAt || settings.keysExpireAt < Date.now()) settings.keysExpireAt = Date.now() + KEY_TTL_MS;
+      localStorage.setItem(KEYS_LS, JSON.stringify({ anthropicKey, openaiKey, savedAt: Date.now(), expiresAt: settings.keysExpireAt }));
+      sessionStorage.removeItem(KEYS_SS);
+    } else {
+      localStorage.removeItem(KEYS_LS);
+      settings.keysExpireAt = null;
+      if (has) sessionStorage.setItem(KEYS_SS, JSON.stringify({ anthropicKey, openaiKey })); else sessionStorage.removeItem(KEYS_SS);
+    }
+  } catch (e) { console.warn('[keys] could not store keys', e); }
+}
+function forgetKeys() {
+  try { localStorage.removeItem(KEYS_LS); sessionStorage.removeItem(KEYS_SS); } catch { /* ignore */ }
+  settings.anthropicKey = ''; settings.openaiKey = ''; settings.keysExpireAt = null;
+  settings.keySource = { anthropic: '', openai: '' };
+  saveSettings({});
+}
+
+let settings = { ...DEFAULT_SETTINGS, ...(parseJsonLoose(lsGet(SETTINGS_KEY)) || {}) };
 settings.keySource = { anthropic: '', openai: '', ...(settings.keySource || {}) };
+(function loadKeys() {
+  const legacy = { anthropicKey: settings.anthropicKey || '', openaiKey: settings.openaiKey || '' };
+  const stored = readStoredKeys();
+  if (stored) {
+    Object.assign(settings, { anthropicKey: stored.anthropicKey, openaiKey: stored.openaiKey, keysExpireAt: stored.expiresAt, rememberKeys: stored.remembered });
+  } else if ((legacy.anthropicKey || legacy.openaiKey) && !KEYS_STATE.expired) {
+    Object.assign(settings, legacy, { keysExpireAt: null }); // moved out of the settings blob below
+    persistKeys(true);
+  } else {
+    Object.assign(settings, { anthropicKey: '', openaiKey: '', keysExpireAt: null });
+    if (KEYS_STATE.expired) settings.keySource = { anthropic: '', openai: '' };
+  }
+  writeSettingsBlob();
+})();
+function writeSettingsBlob() {
+  const { anthropicKey, openaiKey, keysExpireAt, ...rest } = settings; // keys never go in the settings blob
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(rest)); } catch { /* ignore */ }
+}
 function saveSettings(patch = {}) {
+  const keyChanged = ['anthropicKey', 'openaiKey'].some((k) => k in patch && (patch[k] || '') !== (settings[k] || ''));
+  const rememberChanged = 'rememberKeys' in patch && !!patch.rememberKeys !== !!settings.rememberKeys;
   settings = { ...settings, ...patch };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  writeSettingsBlob();
+  if (keyChanged || rememberChanged || 'anthropicKey' in patch || 'openaiKey' in patch) persistKeys(keyChanged || rememberChanged);
   applyTheme();
 }
+/** If the selected provider has no key but the other one does, switch to it. Returns the provider now in use (or null). */
+function ensureUsableProvider() {
+  if (keyFor(settings.provider)) return settings.provider;
+  const other = settings.provider === 'anthropic' ? 'openai' : 'anthropic';
+  if (keyFor(other)) { saveSettings({ provider: other }); return other; }
+  return null;
+}
+const providerName = (p) => (p === 'anthropic' ? 'Claude' : 'OpenAI');
 function applyTheme() {
   const light = settings.theme === 'light';
   document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
   const d = $('#hljsDark'), l = $('#hljsLight');
   if (d && l) { d.disabled = light; l.disabled = !light; }
 }
-function keyFor(provider) { return provider === 'anthropic' ? settings.anthropicKey.trim() : settings.openaiKey.trim(); }
+function keyFor(provider) { return String((provider === 'anthropic' ? settings.anthropicKey : settings.openaiKey) || '').trim(); }
 function currentModel() { return settings.provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel; }
 function relayBase() { return (settings.anthropicRelay || '').trim().replace(/\/+$/, ''); }
 
@@ -1860,8 +1936,14 @@ async function maybeAutoTitle(conv) {
 function activeChain() { return state.messages.filter((m) => m.conversationId === state.activeConvId); }
 
 async function sendMessage(text, attachments) {
-  const provider = settings.provider;
-  if (!keyFor(provider)) { showBanner('err', `No ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key. Open Settings to add one.`); openSettings(); return; }
+  const wanted = settings.provider;
+  const provider = ensureUsableProvider();
+  if (!provider) { showBanner('err', 'No API key yet. Open <b>Settings</b> and add your Claude (Anthropic) or OpenAI key.'); openSettings(); return; }
+  if (provider !== wanted) {
+    if (!state.models[provider]?.live) await fetchModels(provider);
+    renderModelSelect(); updateComposerState();
+    showBanner('warn', `There's no ${providerName(wanted)} key, so this was sent with <b>${providerName(provider)}</b>. Add a ${providerName(wanted)} key in Settings to use ${providerName(wanted)}.`);
+  }
   if (!currentModel()) { await fetchModels(provider); renderModelSelect(); }
   let conv = activeConv();
   if (!conv) { conv = await createConversation(); state.activeConvId = conv.id; state.messages = []; renderConvList(); }
@@ -2065,6 +2147,7 @@ function renderModelSelect() {
   if (current && !ids.includes(current)) sel.append(el('option', { value: current, text: current, selected: true }));
   sel.title = cat?.live ? 'Models available to your API key' : 'Built-in model list (add a key to fetch the live list)';
   $('#providerSel').value = provider;
+  for (const o of $('#providerSel').options) o.textContent = `${providerName(o.value)}${keyFor(o.value) ? '' : ' (no key)'}`;
   const eff = $('#effortSel'); eff.innerHTML = '';
   for (const [v, label] of EFFORTS) eff.append(el('option', { value: v, text: label, selected: v === settings.effort || undefined }));
   $('#whoLabel').textContent = `${provider === 'anthropic' ? 'Claude' : 'OpenAI'} · ${current || '—'}`;
@@ -2258,6 +2341,8 @@ function collapseSidebar(v) { $('#sidebar').classList.toggle('collapsed', v); $(
 function openSettings() {
   const host = $('#modalHost');
   host.innerHTML = '';
+  // On phones the chat-list drawer sits above the page; close it so the sheet is reachable.
+  if (window.innerWidth <= 860 && !$('#sidebar').classList.contains('collapsed')) collapseSidebar(true);
   const s = settings;
   const f = (label, input, help) => el('div', { class: 'field' }, el('label', { text: label }), input, help ? el('div', { class: 'help', html: help }) : null);
   const anthropicKey = el('input', { type: 'password', value: s.anthropicKey, placeholder: 'sk-ant-…', autocomplete: 'off', spellcheck: 'false' });
@@ -2268,12 +2353,26 @@ function openSettings() {
     const key = input.value.trim();
     if (!key) { status.textContent = ''; status.className = 'key-status'; return; }
     status.textContent = 'Checking…'; status.className = 'key-status wait';
-    saveSettings(provider === 'anthropic' ? { anthropicKey: key } : { openaiKey: key });
+    commitKey(provider, key);
     const ids = await fetchModels(provider, true);
     const cat = state.models[provider];
     if (cat?.live) { status.textContent = `Key works — ${ids.length} models available.`; status.className = 'key-status ok'; }
     else { status.textContent = 'Could not list models with this key. Check the key; the built-in model list will be used meanwhile.'; status.className = 'key-status err'; }
-    renderModelSelect();
+    ensureUsableProvider(); renderModelSelect(); updateComposerState();
+  };
+  // A key is stored the moment it is entered (Test, leaving the field, or closing this sheet) —
+  // closing without pressing Save never loses it.
+  const commitKey = (provider, value) => {
+    const field = provider === 'anthropic' ? 'anthropicKey' : 'openaiKey';
+    value = (value || '').trim();
+    if (value === (settings[field] || '')) return false;
+    const src = { ...settings.keySource, [provider]: value ? 'user' : '' };
+    saveSettings({ [field]: value, keySource: src });
+    return true;
+  };
+  const commitKeys = () => {
+    const a = commitKey('anthropic', anthropicKey.value), o = commitKey('openai', openaiKey.value);
+    if (a || o) { ensureUsableProvider(); renderModelSelect(); updateComposerState(); paintRemember(); if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = ''; onKeysChanged(); }
   };
   const testRelay = async () => {
     const base = relay.value.trim().replace(/\/+$/, '');
@@ -2286,6 +2385,26 @@ function openSettings() {
     } catch (e) { rStatus.textContent = `Relay not reachable: ${e.message}`; rStatus.className = 'key-status err'; }
   };
   const showBtn = (input) => el('button', { class: 'btn sm', text: 'Show', onclick: (e) => { input.type = input.type === 'password' ? 'text' : 'password'; e.target.textContent = input.type === 'password' ? 'Show' : 'Hide'; } });
+  for (const [inp, prov] of [[anthropicKey, 'anthropic'], [openaiKey, 'openai']]) inp.addEventListener('change', () => { if (commitKey(prov, inp.value)) { ensureUsableProvider(); renderModelSelect(); updateComposerState(); paintRemember(); onKeysChanged(); } });
+  const remember = el('input', { type: 'checkbox' }); remember.checked = s.rememberKeys !== false;
+  const rememberStatus = el('div', { class: 'help', style: { fontSize: '12px', color: 'var(--text-dim)', margin: '2px 0 0 26px' } });
+  const forgetBtn = el('button', { class: 'btn sm', style: { color: 'var(--red)' }, text: 'Forget keys on this device', onclick: () => {
+    if (!confirm('Remove both API keys from this browser now?')) return;
+    forgetKeys(); anthropicKey.value = ''; openaiKey.value = '';
+    aStatus.textContent = ''; oStatus.textContent = '';
+    renderModelSelect(); updateComposerState(); paintRemember();
+    showBanner('warn', 'API keys removed from this device. Add a key in <b>Settings</b> to continue.');
+  } });
+  const paintRemember = () => {
+    const has = !!(settings.anthropicKey || settings.openaiKey);
+    forgetBtn.style.display = has ? '' : 'none';
+    if (!has) { rememberStatus.textContent = remember.checked ? `Keys you enter will be kept on this device for ${KEY_TTL_DAYS} days.` : 'Keys you enter will be kept only until this tab is closed.'; return; }
+    rememberStatus.textContent = settings.rememberKeys && settings.keysExpireAt
+      ? `Remembered on this device until ${new Date(settings.keysExpireAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}. After that you'll be asked for them again.`
+      : 'Not remembered: the keys are cleared when you close this tab or browser.';
+  };
+  remember.addEventListener('change', () => { commitKeys(); saveSettings({ rememberKeys: remember.checked }); paintRemember(); });
+  paintRemember();
   const userName = el('input', { type: 'text', value: s.userName, placeholder: 'e.g. Clarence' });
   const profile = el('textarea', { placeholder: 'Who you are, what you teach, preferred spelling/curriculum/timezone…' }); profile.value = s.profile;
   const tz = el('input', { type: 'text', value: s.timezone, placeholder: 'Australia/Melbourne' });
@@ -2319,7 +2438,7 @@ function openSettings() {
     el('pre', { style: { fontFamily: 'var(--mono)', fontSize: '11.5px', background: 'var(--code-bg)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', overflow: 'auto', maxHeight: '260px', whiteSpace: 'pre' }, text: RELAY_WORKER_SOURCE }),
     el('button', { class: 'btn sm', text: 'Copy worker code', onclick: (e) => { navigator.clipboard.writeText(RELAY_WORKER_SOURCE); e.target.textContent = 'Copied'; setTimeout(() => (e.target.textContent = 'Copy worker code'), 1500); } }));
 
-  const close = () => { host.innerHTML = ''; };
+  const close = () => { commitKeys(); host.innerHTML = ''; };
   const modal = el('div', { class: 'modal-bg', onclick: (e) => { if (e.target === modal) close(); } },
     el('div', { class: 'modal' },
       el('div', { class: 'm-head' }, el('h2', { text: 'Settings' }), el('button', { class: 'btn icon ghost', html: '×', title: 'Close', onclick: close })),
@@ -2328,6 +2447,10 @@ function openSettings() {
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: 'Keys stay in this browser (localStorage) and go straight to the provider — there is no server in between. Create keys at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> and <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>.' }),
           f('Anthropic (Claude) API key', el('div', { class: 'key-row' }, anthropicKey, showBtn(anthropicKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('anthropic', anthropicKey, aStatus) }))), keySourceNote('anthropic'), aStatus,
           f('OpenAI API key', el('div', { class: 'key-row' }, openaiKey, showBtn(openaiKey), el('button', { class: 'btn sm', text: 'Test', onclick: () => testKey('openai', openaiKey, oStatus) }))), keySourceNote('openai'), oStatus,
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 0' }, text: 'One key is enough — the app uses whichever provider you have a key for.' }),
+          el('label', { class: 'check', style: { marginTop: '12px' } }, remember, el('span', {}, `Remember me — keep my API keys in this browser for ${KEY_TTL_DAYS} days`, el('span', { class: 'help', text: 'Untick on a shared or school computer: the keys are then cleared when this tab is closed.' }))),
+          rememberStatus,
+          el('div', { style: { marginTop: '8px' } }, forgetBtn),
           el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
             el('button', { class: 'btn sm', text: 'Reload keys from main program', onclick: async (e) => {
               e.target.textContent = 'Checking…';
@@ -2375,6 +2498,7 @@ function openSettings() {
               maxTokens: clamp(parseInt(maxTok.value, 10) || 64000, 1024, 128000), theme: theme.value, imageModel: imageModel.value,
               showThinking: showThinking.checked, webSearch: defWeb.checked, codeTools: defCode.checked, imageGen: imgGen.checked,
               saveHistory: saveHist.checked, memoryEnabled: memDefault.checked, trustedParentOrigin: trustedOrigin.value.trim().replace(/\/+$/, ''),
+              rememberKeys: remember.checked,
             };
             const keysChanged = patch.anthropicKey !== settings.anthropicKey || patch.openaiKey !== settings.openaiKey;
             // A key the user typed (different from what the main program supplied) becomes theirs.
@@ -2389,12 +2513,13 @@ function openSettings() {
             saveSettings(patch);
             close();
             if (keysChanged || !state.models[settings.provider]?.live) await Promise.all([fetchModels('anthropic', keysChanged), fetchModels('openai', keysChanged)]);
-            if (!keyFor(settings.provider)) { if (keyFor('anthropic')) saveSettings({ provider: 'anthropic' }); else if (keyFor('openai')) saveSettings({ provider: 'openai' }); }
+            ensureUsableProvider();
             renderModelSelect(); updateComposerState(); renderMessages();
             if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = '';
           } })))));
   host.append(modal);
-  if (!s.anthropicKey && !s.openaiKey) anthropicKey.focus();
+  // Focusing a field on a phone pops the keyboard over half the sheet; only do it on desktop.
+  if (!s.anthropicKey && !s.openaiKey && !(typeof isMobile === 'function' && isMobile())) anthropicKey.focus();
 }
 const RELAY_WORKER_SOURCE = `// Cloudflare Worker: CORS relay for Anthropic's Files API (/v1/files/* only).
 // Forwards your own x-api-key from the browser; stores nothing. Optional env var
@@ -2549,8 +2674,9 @@ async function init() {
 
   // Keys from the main program: shared api_cache first, then the frame handshake.
   onKeysChanged = async () => {
+    ensureUsableProvider(); renderModelSelect();
     await Promise.all([settings.anthropicKey ? fetchModels('anthropic', true) : null, settings.openaiKey ? fetchModels('openai', true) : null]);
-    if (!keyFor(settings.provider)) { if (keyFor('anthropic')) saveSettings({ provider: 'anthropic' }); else if (keyFor('openai')) saveSettings({ provider: 'openai' }); }
+    ensureUsableProvider();
     if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = '';
     renderModelSelect(); updateComposerState();
   };
@@ -2559,10 +2685,13 @@ async function init() {
   applyMainKeys(readLocalApiCache(), 'api_cache');
   if (inFrame() && !(settings.anthropicKey && settings.openaiKey && settings.keySource.anthropic === 'user' && settings.keySource.openai === 'user')) await requestParentKeys();
 
-  if (!settings.anthropicKey && !settings.openaiKey) showBanner('warn', 'Add your Anthropic and/or OpenAI API key in <b>Settings</b> to start.');
-  else {
+  if (!settings.anthropicKey && !settings.openaiKey) {
+    showBanner('warn', KEYS_STATE.expired
+      ? `Your saved API keys were cleared after ${KEY_TTL_DAYS} days. Add them again in <b>Settings</b> (tick “Remember me” to keep them for another ${KEY_TTL_DAYS} days).`
+      : 'Add your Claude (Anthropic) or OpenAI API key in <b>Settings</b> to start — one is enough.');
+  } else {
+    ensureUsableProvider();
     await Promise.all([settings.anthropicKey ? fetchModels('anthropic') : null, settings.openaiKey ? fetchModels('openai') : null]);
-    if (!keyFor(settings.provider)) saveSettings({ provider: settings.anthropicKey ? 'anthropic' : 'openai' });
     renderModelSelect(); updateComposerState();
   }
 }
