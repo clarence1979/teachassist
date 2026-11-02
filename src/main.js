@@ -115,8 +115,39 @@ function setupDictation(btn) {
   });
 }
 
+/* Desktop: the section tabs move up into the header so the conversation gets the full height.
+   If the header can't fit them with labels, they show icons only (each has a tooltip). */
+const DESKTOP_MQ = window.matchMedia('(min-width: 1024px)');
+function placeRail() {
+  const rail = $('#rail'), bar = $('#appbar');
+  if (DESKTOP_MQ.matches) { if (rail.parentElement !== bar) bar.querySelector('.appbar-ctl').before(rail); }
+  else if (rail.parentElement === bar) $('#main').after(rail);
+  fitRail();
+}
+function fitRail() {
+  const root = document.documentElement, bar = $('#appbar');
+  root.classList.remove('rail-icons');
+  const rail = $('#rail'); if (rail.parentElement !== bar) return;
+  // Natural widths of logo/title, tabs and controls versus the room in the header.
+  const cs = getComputedStyle(bar), gap = parseFloat(cs.columnGap) || 14;
+  const need = bar.querySelector('.brand').scrollWidth + rail.scrollWidth + bar.querySelector('.appbar-ctl').scrollWidth + gap * 2 + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 24;
+  if (need > bar.clientWidth) root.classList.add('rail-icons');
+}
+function applyExpanded() {
+  const on = !!settings.chatExpanded;
+  document.documentElement.classList.toggle('chat-expanded', on);
+  const b = $('#expandBtn'); if (!b) return;
+  b.setAttribute('aria-pressed', String(on));
+  b.title = on ? 'Show the header and sidebar again' : 'Expand the conversation (hide the header and sidebar)';
+  b.setAttribute('aria-label', on ? 'Restore the normal layout' : 'Expand the conversation');
+}
 (async () => {
   applyMobileClass();
+  placeRail();
+  DESKTOP_MQ.addEventListener('change', placeRail);
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => fitRail()); ro.observe($('#appbar')); ro.observe($('.brand')); }
+  applyExpanded();
+  $('#expandBtn').addEventListener('click', () => { saveSettings({ chatExpanded: !settings.chatExpanded }); applyExpanded(); requestAnimationFrame(() => scrollToBottom(true)); });
   wireChrome();
   let resizeTimer = null;
   const onLayoutChange = () => { applyMobileClass(); clearTimeout(resizeTimer); resizeTimer = setTimeout(refreshPlannerViews, 150); };

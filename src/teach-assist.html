@@ -690,6 +690,90 @@ svg { flex: 0 0 auto; }
   .side-card { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .side-card > *:not(#convList) { flex-shrink: 0; } /* scroll rather than squash the buttons */
 }
+/* Desktop: the section tabs sit in the header (moved there by main.js), so the chat gets the full height. */
+#appbar #rail { margin: 0 auto; width: auto; max-width: none; flex: 0 1 auto; min-width: 0; padding: 4px; gap: 2px; border-radius: 18px; box-shadow: var(--shadow-sm); position: relative; z-index: 4; }
+#appbar #rail button { flex: 0 0 auto; height: 44px; flex-direction: row; gap: 7px; padding: 0 13px; font-size: 14.5px; font-weight: 600; border-radius: 14px; white-space: nowrap; }
+#appbar #rail button svg { width: 21px; height: 21px; }
+#appbar #rail button.active { box-shadow: 0 6px 14px rgba(93,64,234,.3); }
+#appbar #rail button .badge { top: -5px; right: -4px; left: auto; }
+:root.rail-icons #appbar #rail button { font-size: 0; gap: 0; padding: 0 12px; }
+:root.rail-icons #appbar #rail button .badge { font-size: 10px; }
+@media (min-width: 1600px) { #app { max-width: 1560px; } }
+@media (min-width: 1024px) { #main { margin-bottom: 12px; } }
+@media (min-width: 1024px) { #appbar .brand { flex-shrink: 0; } }
+/* The message-box buttons drop their labels (icons keep tooltips) rather than wrap onto a second row. */
+#composerBox { container-type: inline-size; }
+@container (max-width: 900px) {
+  :root:not(.mobile) #addFilesBtn, :root:not(.mobile) #pasteImgBtn { font-size: 0; gap: 0; padding: 0 12px; }
+}
+@container (max-width: 700px) {
+  :root:not(.mobile) .toggle { padding: 0 12px; gap: 7px; }
+  :root:not(.mobile) #composerFoot { gap: 8px; }
+}
+@container (max-width: 600px) {
+  :root:not(.mobile) .toggle { font-size: 0; gap: 0; }
+}
+@media (min-width: 1024px) {
+  /* Denser conversation: more of it fits on screen. */
+  .msgs-inner { max-width: 1080px; padding: 20px 26px 12px; }
+  .msg { margin-bottom: 16px; gap: 12px; }
+  .msg .avatar { width: 40px; height: 40px; }
+  .msg .avatar.me { margin-top: 2px; } .msg .avatar.me svg { width: 21px; height: 21px; }
+  .msg .avatar.bot { width: 50px; height: 50px; border-width: 2px; }
+  .msg.assistant .acard { margin-top: 20px; padding: 16px 20px 6px; border-radius: 22px; }
+  .msg.assistant .actions { top: -19px; right: 14px; padding: 3px; border-radius: 12px; }
+  .msg.assistant .actions .tb { height: 30px; padding: 0 9px; font-size: 13px; }
+  .msg.user .ububble { padding: 10px 16px 6px; border-radius: 18px; }
+  .msg.user .bubble { font-size: 16px; }
+  .prose { font-size: 16px; line-height: 1.55; }
+  .prose li { margin: .18em 0; }
+  .prose .sec { margin: 10px 0; }
+  .msg-foot { margin-top: 2px; padding-top: 2px; }
+  .msg-foot .fb { width: 32px; height: 32px; } .msg-foot .fb svg { width: 19px; height: 19px; }
+}
+/* Expanded conversation: header, tabs and sidebar out of the way (button at the end of the pill row). */
+#expandBtn { margin-left: auto; width: 44px; height: 44px; }
+#expandBtn svg { width: 20px; height: 20px; }
+#expandBtn .i-min { display: none; }
+:root.chat-expanded #expandBtn .i-min { display: block; }
+:root.chat-expanded #expandBtn .i-max { display: none; }
+:root.chat-expanded #expandBtn { background: var(--accent-soft); color: var(--accent-2); border-color: var(--accent); }
+@media (min-width: 641px) {
+  :root.chat-expanded.in-chat #appbar, :root.chat-expanded.in-chat #rail { display: none; }
+  :root.chat-expanded.in-chat #topbar { padding-top: 12px; }
+}
+@media (min-width: 1024px) {
+  :root.chat-expanded.in-chat #sidebar { display: none !important; }
+  :root.chat-expanded.in-chat #view-chat { grid-template-columns: minmax(0, 1fr); }
+  :root.chat-expanded.in-chat #topbar, :root.chat-expanded.in-chat #chatPanel, :root.chat-expanded.in-chat #composerWrap { grid-column: 1; }
+  :root.chat-expanded.in-chat #app { max-width: 1600px; }
+}
+@media (max-width: 640px) { #expandBtn { display: none; } }
+.m-section.flash { animation: secFlash 1.6s ease; }
+@keyframes secFlash { 0%, 40% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: none; } }
+/* Memory manager & GitHub approval */
+.mem-intro { font-size: 14px; color: var(--text-2); line-height: 1.5; }
+.mem-sheet textarea, .mem-import { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--bg-solid); color: var(--text); font: inherit; resize: vertical; }
+.mem-topic, .mem-search { border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; background: var(--bg-solid); color: var(--text); font: inherit; }
+.mem-search { width: 100%; margin: 8px 0 4px; }
+.mem-group { margin-top: 12px; }
+.mem-gh { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent-2); }
+:root[data-theme="dark"] .mem-gh { color: #c4b8ff; }
+.mem-gh .btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.mem-count { font-size: 11.5px; font-weight: 700; color: var(--text-dim); border: 1px solid var(--border); border-radius: 99px; padding: 0 7px; }
+.mem-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 14px; margin: 6px 0; background: var(--bg-solid); }
+.mem-row.inprompt { border-left: 4px solid var(--accent); }
+.mem-row .mem-text, .mem-row .mem-edit { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mem-pin { width: 30px; height: 30px; border: 0; background: transparent; color: var(--text-dim); border-radius: 9px; display: grid; place-items: center; flex: 0 0 auto; }
+.mem-pin svg { width: 17px; height: 17px; }
+.mem-pin.on { color: var(--accent); background: var(--accent-soft); }
+.mem-topic-row { align-items: flex-start; }
+.mem-preview { max-height: 46vh; overflow: auto; }
+.about-json { width: 100%; min-height: 120px; font-family: var(--mono); font-size: 13px; line-height: 1.5; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--bg-solid); color: var(--text); resize: vertical; }
+.gh-confirm .gh-ttl { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
+.gh-confirm ul { margin: 6px 0 10px; padding-left: 1.2em; font-family: var(--mono); font-size: 13px; }
+.gh-confirm li { margin: 2px 0; overflow-wrap: anywhere; }
+
 /* ═════════════════════════ Short desktop windows (laptops, embedded in another site) ═════════════════════════ */
 @media (min-width: 1024px) and (max-height: 920px) {
   #appbar { padding: 8px 4px 4px; gap: 12px; }
@@ -925,6 +1009,7 @@ svg { flex: 0 0 auto; }
         <label class="pill-sel p-effort" title="Reasoning effort"><svg class="lead" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor"/></svg>
           <span class="pv" id="effortVal"></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg><select id="effortSel" aria-label="Reasoning effort"></select></label>
         <div id="convTitle">New chat</div>
+        <button class="round-btn" id="expandBtn" title="Expand the conversation (hide the header and sidebar)" aria-label="Expand the conversation" aria-pressed="false"><svg class="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><svg class="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg></button>
       </header>
 
       <aside id="sidebar" class="no-anim" aria-label="Chats and tools">
@@ -962,7 +1047,8 @@ svg { flex: 0 0 auto; }
             <button class="tool-btn" id="pasteImgBtn" title="Paste an image from the clipboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Paste Image</button>
             <button class="toggle on" id="tglCode" title="Allow the model to run code and create downloadable files (DOCX, PPTX, XLSX, PDF, charts)" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span class="l-wide">Code</span><span class="l-phone">Code &amp; files</span></button>
             <button class="toggle on" id="tglWeb" title="Allow the model to search and read the web" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span class="l-wide">Web Search</span><span class="l-phone">Web search</span></button>
-            <button class="toggle" id="tglMemory" title="Give the model a brief memory of your earlier chats (titles, what you asked, what it answered)" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/></svg>Memory</button>
+            <button class="toggle hidden" id="tglGithub" title="GitHub tools for Claude: read and change your repositories (add a GitHub token in Settings)" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8v8"/><path d="M18 10.5c0 4.5-6 3.5-11.2 6.6"/></svg><span class="l-wide">GitHub</span><span class="l-phone">GitHub</span></button>
+            <button class="toggle" id="tglMemory" title="Also give the model short summaries of your recent chats. Saved memory notes are always remembered — manage them in Settings → Memory." aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/></svg>Memory</button>
             <button id="micBtn" title="Dictate (speech to text)" aria-label="Dictate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3" fill="currentColor" fill-opacity=".9"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg></button>
             <span class="hint sr-only" id="hintLabel" aria-live="polite"></span>
           </div>
