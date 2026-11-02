@@ -347,9 +347,12 @@ function localSystemPrompt(conv) {
   const cpu = LOCAL.engine?.kind === 'wllama';
   const profile = (settings.profile || '').trim().slice(0, cpu ? 300 : 600);
   const mem = conv?.memory && conv.memorySnapshot ? `\nSummaries of the teacher's earlier chats (use only if relevant):\n${conv.memorySnapshot.slice(0, cpu ? 600 : 1200)}` : '';
+  // Saved memory notes (pinned first), trimmed to what a small context can afford.
+  const notesText = memOn() && conv?.notesSnapshot?.text ? conv.notesSnapshot.text.replace(/^- \[[^\]]+\] /gm, '- ').slice(0, cpu ? 1200 : 2500) : '';
+  const notes = notesText ? `\nWhat you remember about the teacher (saved notes):\n${notesText}` : '';
   return `You are Teach Assist, a helpful assistant for a teacher${name ? ` named ${name}` : ''}. Today is ${todayContext(settings.timezone)}.${profile ? `\nAbout the teacher: ${profile}` : ''}
 Answer accurately and clearly in Markdown; say so if you are unsure. For teaching resources write the complete content, with an answer key.
-You run on the teacher's own device with no internet, so you cannot browse or create files; write documents out in full here. You cannot know the weather, news, prices or anything else live — if asked, say you can't check that from this device.${mem}`;
+You run on the teacher's own device with no internet, so you cannot browse or create files; write documents out in full here. You cannot know the weather, news, prices or anything else live — if asked, say you can't check that from this device.${notes}${mem}`;
 }
 /** Newest-first history that fits the small context window (≈3.5 characters per token). */
 async function buildLocalMessages(conv, chain) {

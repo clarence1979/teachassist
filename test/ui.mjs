@@ -149,6 +149,21 @@ for (const [w, h] of [[1800, 800], [1366, 768], [1280, 720], [1100, 700], [1600,
 }
 await page.setViewportSize({ width: 1280, height: 950 });
 
+console.log('\n[9] More room for the conversation');
+await page.setViewportSize({ width: 1366, height: 768 }); await page.waitForTimeout(300);
+check(await page.evaluate(() => document.querySelector('#rail').parentElement.id === 'appbar'), 'desktop: section tabs sit in the header, not a bottom bar');
+const h0 = await page.$eval('#chatPanel', (e) => e.getBoundingClientRect().height);
+await page.click('#expandBtn'); await page.waitForTimeout(200);
+const ex = await page.evaluate(() => ({ bar: getComputedStyle(document.querySelector('#appbar')).display, side: getComputedStyle(document.querySelector('#sidebar')).display, h: document.querySelector('#chatPanel').getBoundingClientRect().height, w: document.querySelector('#chatPanel').getBoundingClientRect().width, saved: settings.chatExpanded }));
+check(ex.bar === 'none' && ex.side === 'none' && ex.h > h0 + 40 && ex.w > 1200 && ex.saved, `Expand hides the header and sidebar (chat ${Math.round(h0)} → ${Math.round(ex.h)}px tall, ${Math.round(ex.w)}px wide) and is remembered`);
+await page.click('#rail button[data-view="tasks"]', { force: true }).catch(() => {});
+await page.click('#expandBtn'); await page.waitForTimeout(200);
+check(await page.evaluate(() => getComputedStyle(document.querySelector('#appbar')).display !== 'none' && !settings.chatExpanded), 'the same button restores the normal layout');
+await page.setViewportSize({ width: 1100, height: 720 }); await page.waitForTimeout(300);
+const fit = await page.evaluate(() => { const b = (s) => document.querySelector(s).getBoundingClientRect(); const rail = b('#rail'), brand = b('.brand-text'), ctl = b('.appbar-ctl'); return rail.left >= brand.right - 1 && rail.right <= ctl.left + 1; });
+check(fit, '1100px: header tabs fit between the title and the controls (icons only if needed)');
+await page.setViewportSize({ width: 1280, height: 950 });
+
 await browser.close(); server.close();
 console.log(`\n${fails.length ? fails.length + ' FAILED' : 'ALL PASSED'}`);
 process.exit(fails.length ? 1 : 0);

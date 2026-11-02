@@ -72,6 +72,7 @@ function showView(name, { remember = true } = {}) {
   if (name === 'settings') { openSettings(); return; }
   if (!['chat', 'studio', 'tasks', 'timetable', 'library'].includes(name)) name = 'chat';
   for (const sec of document.querySelectorAll('#main .view')) sec.classList.toggle('hidden', sec.id !== `view-${name}`);
+  document.documentElement.classList.toggle('in-chat', name === 'chat');
   for (const b of document.querySelectorAll('#rail button')) b.classList.toggle('active', b.dataset.view === name);
   $('#sidebar').classList.toggle('off', name !== 'chat');
   if (name !== 'chat') $('#scrim').classList.remove('show');
@@ -838,6 +839,7 @@ function openToolsSheet() {
     item('calendar', 'Import a calendar (.ics)', 'From Outlook, Google Calendar or Compass.', () => { showView('timetable'); importIcs(); }),
     item('download', 'Export timetable (.ics)', 'Open it in Outlook or Google Calendar.', () => exportIcs()),
     item('download', 'Export history (JSON)', 'Every session’s chats, tasks, timetable and files list.', () => exportHistory()),
+    item('brain', 'Memory', 'What the assistant remembers about you — view, pin, edit, import or forget notes.', () => openMemorySheet()),
     item('gear', 'Settings', 'API keys, memory and sessions, defaults.', () => openSettings()),
   ], null, { wide: true });
 }

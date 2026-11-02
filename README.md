@@ -92,6 +92,16 @@ A light lavender "classroom" design (glass panels over an illustrated background
 - **Messages:** your bubble with avatar and time; replies in cards with a toolbar (**Copy, Cut, Paste, Edit, Regenerate, …**), headings shown as banded sections, tick-list bullets, file cards with download buttons, and 👍/👎 feedback (saved with the history).
 - **Composer:** Add Files, Paste Image, Code, Web Search, Memory and a **microphone** for dictation (where the browser supports speech recognition).
 
+## About me, memory and GitHub
+
+- **About me (JSON)** — Settings → API keys. Paste (or load) a JSON object with your standing details and instructions. It's validated, saved in this browser next to the API keys (kept with *Remember me*, otherwise only for the tab; it doesn't expire with the keys) and sent with every Claude and OpenAI request. The plain-text *Profile & standing instructions* box under *About you* still works too.
+- **Saved memory** — the assistant keeps notes about you on this device and uses them in every new chat (Claude, OpenAI and on-device). Say “remember that…” and it saves them with its memory tools; it can also search, correct and delete them. Pinned notes plus the newest go with each new chat (up to ~9,000 characters); older ones are searched when relevant. Clearing chats or sessions never removes notes — only deleting them, or *Forget everything*, does. Manage them in Settings → Memory (or Tools → Memory): add, pin, edit, delete, export, and **import** an export from another assistant, with each section shown so you can untick anything personal before importing.
+- **GitHub tools for Claude** — add a GitHub token in Settings → GitHub (fine-grained: pick the repositories and give Contents, Issues and Pull requests read and write; a classic token with `repo` also works). The token stays in the browser and goes only to api.github.com. With the **GitHub** button on under the message box, Claude can list repositories, browse and read files, search code, read commits, issues and pull requests, and — with your approval each time (or “Allow for this chat”) — commit several files in one commit (including documents it generated or files you attached), create branches and repositories, open pull requests and issues, and comment. Committing to a GitHub Pages repository republishes the site.
+
+## More room for the conversation (desktop)
+
+On a computer the section tabs sit in the header (icons only when the window is narrow), the sidebar runs the full height beside the chat, messages are denser and wider, and the **Expand** button (top right of the chat) hides the header and sidebar for a full-window conversation — remembered until you press it again.
+
 ## On-device AI (free, private, offline)
 
 Pick **On-device** in the provider pill (or *Settings → On-device AI*). The app checks the device — phone, tablet or computer; memory (Chrome/Edge/Android report it; on iPhone/iPad/Safari it is estimated, and iOS caps each tab's memory); WebGPU and 16-bit shader support; free storage — and **suggests the largest model that fits comfortably**. Models that would be slow are marked, ones that won't fit are tucked away.
@@ -121,16 +131,17 @@ The same file adapts itself when the screen is narrow (≤ 640px): the layout fo
 ## Development
 
 ```
-node build.mjs            # inlines art.js, app.js, local-ai.js, timetable-core.js, tools.js, views.js, main.js into teach-assist.html → dist/teach-assist.html
+node build.mjs            # inlines art.js, app.js, local-ai.js, memory.js, github.js, timetable-core.js, tools.js, views.js, main.js into teach-assist.html → dist/teach-assist.html
 node test/e2e.mjs         # headless Chromium, mocked Anthropic/OpenAI/relay endpoints: chat, documents, uploads, self-healing (68 checks)
 node test/keys-history.mjs# main-program keys, history file v2, planner views, model tool loops on both providers, sessions & clearing (86 checks)
 node test/mobile.mjs      # iPhone emulation: bottom tab bar, 3-day timetable with swipe, bottom-sheet forms, no horizontal overflow (30 checks)
-node test/ui.mjs          # light/dark, text size, accessibility modes, pills, home, sidebar, Prompts/Files, reply toolbar, feedback (37 checks)
+node test/ui.mjs          # light/dark, text size, accessibility modes, pills, home, sidebar, Prompts/Files, reply toolbar, feedback, desktop layout at 6 sizes, header tabs, Expand (47 checks)
 node test/local.mjs       # on-device AI with a stubbed engine: device suggestions for 11 device profiles, sheet, download → reload from storage, offline fallback, PDF text, Word download (45 checks)
+node test/github-memory.mjs # GitHub tools against a mocked GitHub API (approval, multi-file commits, branches, PRs, empty repos), saved memory, About me JSON (41 checks)
 node test/local-real.mjs  # no stubs: downloads SmolLM2-360M via wllama, chats on the CPU, then reloads OFFLINE and answers from the cached model (needs internet; ~300 MB)
 ```
 
-Source layout: `art.js` (logo, mascot, illustrations, icons), `app.js` (chat, providers, storage, history), `local-ai.js` (on-device models: device check, catalogue, WebLLM/wllama engines, caching, the On-device AI sheet), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
+Source layout: `art.js` (logo, mascot, illustrations, icons), `app.js` (chat, providers, storage, history), `local-ai.js` (on-device models: device check, catalogue, WebLLM/wllama engines, caching, the On-device AI sheet), `memory.js` (saved memory, its tools and manager), `github.js` (GitHub tools for Claude), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
 
 ## Running from the main program
 

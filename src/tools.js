@@ -23,18 +23,26 @@ const CLIENT_TOOLS = [
   { name: 'attach_resource_to_block', kind: 'library', title: 'Attaching a resource', description: 'Attach a library file to a timetable block so it shows on that lesson.', input_schema: { type: 'object', properties: { blockId: { type: 'string' }, artifactId: { type: 'string' } }, required: ['blockId', 'artifactId'] } },
 ];
 
-function clientToolDefs({ imageTool }) {
+function clientToolDefs({ imageTool, github = false }) {
   const defs = CLIENT_TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
+  if (memOn()) for (const t of MEMORY_TOOLS) defs.push({ name: t.name, description: t.description, input_schema: t.input_schema });
+  if (github) defs.push(...githubToolDefs());
   if (imageTool) defs.push(IMAGE_TOOL_DEF);
   return defs;
 }
 function clientToolMeta(name) {
+  if (isGithubTool(name)) return githubToolMeta(name);
+  const mt = MEMORY_TOOLS.find((x) => x.name === name); if (mt) return { kind: 'memory', title: mt.title };
   const t = CLIENT_TOOLS.find((x) => x.name === name);
   if (name === 'generate_image') return { kind: 'image', title: 'Generating an image' };
   return t ? { kind: t.kind, title: t.title } : { kind: 'other', title: name || 'Tool' };
 }
 function clientToolQuery(name, input = {}) {
+  if (isGithubTool(name)) return githubToolQuery(name, input);
   switch (name) {
+    case 'memory_save': return (input.notes || [input]).map((n) => n?.text || '').filter(Boolean).join(' · ').slice(0, 140);
+    case 'memory_search': return input.query || '';
+    case 'memory_update': case 'memory_delete': return [].concat(input.id || input.ids || []).join(', ');
     case 'add_task': case 'update_task': return input.title || input.taskId || '';
     case 'delete_task': return input.taskId || '';
     case 'schedule_block': return `${input.title || ''}${input.startISO ? ' · ' + fmtDateShort(input.startISO) + ' ' + fmtTime(input.startISO) : ''}`;
@@ -66,6 +74,8 @@ function occView(o) { return { blockId: o.block.id, title: o.block.title, type: 
 
 async function executeClientTool(name, input, ctx = {}) {
   input = input || {};
+  if (typeof name === 'string' && name.startsWith('memory_')) return executeMemoryTool(name, input);
+  if (isGithubTool(name)) return executeGithubTool(name, input, ctx);
   switch (name) {
     case 'add_task': {
       const title = asStr(input.title).trim(); if (!title) throw new Error('title is required');
@@ -206,6 +216,7 @@ async function executeClientTool(name, input, ctx = {}) {
 async function quickComplete({ system, prompt, maxTokens = 2000 }) {
   const provider = ensureUsableProvider() || settings.provider;
   if (turnProvider() === 'local' || provider === 'local') return localComplete({ system, prompt, maxTokens: Math.min(maxTokens, LOCAL_MAX_OUT) });
+  system = `${system}${aboutMeBlock()}`; // the teacher's About me goes with every Claude/OpenAI request
   const key = keyFor(provider);
   if (!key) throw new Error(`No ${provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key`);
   if (provider === 'anthropic') {

@@ -110,6 +110,8 @@ function svgIcon(name) {
     chat: '<path d="M21 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-5 4V5.5A2.5 2.5 0 0 1 5.5 3h13A2.5 2.5 0 0 1 21 5.5z"/>',
     image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
+    git: '<circle cx="6" cy="5.5" r="2.5"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8v8"/><path d="M18 10.5c0 4.5-6 3.5-11.2 6.6"/>',
+    brain: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/>',
     alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
     warn: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
@@ -239,32 +241,34 @@ const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return nu
 const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
 function readStoredKeys() {
   const rec = parseJsonLoose(lsGet(KEYS_LS));
-  if (rec && (rec.anthropicKey || rec.openaiKey)) {
+  if (rec && (rec.anthropicKey || rec.openaiKey || rec.githubToken)) {
     if (rec.expiresAt && Date.now() > rec.expiresAt) { try { localStorage.removeItem(KEYS_LS); } catch { /* ignore */ } KEYS_STATE.expired = true; }
-    else return { anthropicKey: rec.anthropicKey || '', openaiKey: rec.openaiKey || '', expiresAt: rec.expiresAt || null, remembered: true };
+    else return { anthropicKey: rec.anthropicKey || '', openaiKey: rec.openaiKey || '', githubToken: rec.githubToken || '', expiresAt: rec.expiresAt || null, remembered: true };
   }
   const ses = parseJsonLoose(ssGet(KEYS_SS));
-  if (ses && (ses.anthropicKey || ses.openaiKey)) return { anthropicKey: ses.anthropicKey || '', openaiKey: ses.openaiKey || '', expiresAt: null, remembered: false };
+  if (ses && (ses.anthropicKey || ses.openaiKey || ses.githubToken)) return { anthropicKey: ses.anthropicKey || '', openaiKey: ses.openaiKey || '', githubToken: ses.githubToken || '', expiresAt: null, remembered: false };
   return null;
 }
 function persistKeys(resetClock = false) {
-  const anthropicKey = settings.anthropicKey || '', openaiKey = settings.openaiKey || '';
-  const has = !!(anthropicKey || openaiKey);
+  const anthropicKey = settings.anthropicKey || '', openaiKey = settings.openaiKey || '', githubToken = settings.githubToken || '';
+  const has = !!(anthropicKey || openaiKey || githubToken);
+  const gh = githubToken ? { githubToken } : {}; // the GitHub token is kept exactly like the API keys
   try {
     if (settings.rememberKeys && has) {
       if (resetClock || !settings.keysExpireAt || settings.keysExpireAt < Date.now()) settings.keysExpireAt = Date.now() + KEY_TTL_MS;
-      localStorage.setItem(KEYS_LS, JSON.stringify({ anthropicKey, openaiKey, savedAt: Date.now(), expiresAt: settings.keysExpireAt }));
+      localStorage.setItem(KEYS_LS, JSON.stringify({ anthropicKey, openaiKey, ...gh, savedAt: Date.now(), expiresAt: settings.keysExpireAt }));
       sessionStorage.removeItem(KEYS_SS);
     } else {
       localStorage.removeItem(KEYS_LS);
       settings.keysExpireAt = null;
-      if (has) sessionStorage.setItem(KEYS_SS, JSON.stringify({ anthropicKey, openaiKey })); else sessionStorage.removeItem(KEYS_SS);
+      if (has) sessionStorage.setItem(KEYS_SS, JSON.stringify({ anthropicKey, openaiKey, ...gh })); else sessionStorage.removeItem(KEYS_SS);
     }
   } catch (e) { console.warn('[keys] could not store keys', e); }
+  if (typeof storeAboutMe === 'function' && 'aboutMe' in settings) storeAboutMe(); // follows Remember me
 }
 function forgetKeys() {
   try { localStorage.removeItem(KEYS_LS); sessionStorage.removeItem(KEYS_SS); } catch { /* ignore */ }
-  settings.anthropicKey = ''; settings.openaiKey = ''; settings.keysExpireAt = null;
+  settings.anthropicKey = ''; settings.openaiKey = ''; settings.githubToken = ''; settings.keysExpireAt = null;
   settings.keySource = { anthropic: '', openai: '' };
   saveSettings({});
 }
@@ -275,26 +279,57 @@ settings.keySource = { anthropic: '', openai: '', ...(settings.keySource || {}) 
   const legacy = { anthropicKey: settings.anthropicKey || '', openaiKey: settings.openaiKey || '' };
   const stored = readStoredKeys();
   if (stored) {
-    Object.assign(settings, { anthropicKey: stored.anthropicKey, openaiKey: stored.openaiKey, keysExpireAt: stored.expiresAt, rememberKeys: stored.remembered });
+    Object.assign(settings, { anthropicKey: stored.anthropicKey, openaiKey: stored.openaiKey, githubToken: stored.githubToken, keysExpireAt: stored.expiresAt, rememberKeys: stored.remembered });
   } else if ((legacy.anthropicKey || legacy.openaiKey) && !KEYS_STATE.expired) {
     Object.assign(settings, legacy, { keysExpireAt: null }); // moved out of the settings blob below
     persistKeys(true);
   } else {
-    Object.assign(settings, { anthropicKey: '', openaiKey: '', keysExpireAt: null });
+    Object.assign(settings, { anthropicKey: '', openaiKey: '', githubToken: '', keysExpireAt: null });
     if (KEYS_STATE.expired) settings.keySource = { anthropic: '', openai: '' };
   }
   writeSettingsBlob();
 })();
+/* "About me" JSON — saved next to the API keys (localStorage with Remember me, otherwise only for this tab),
+   but in its own entry so it doesn't expire with the keys. Sent with every Claude and OpenAI request. */
+const ABOUT_KEY = 'teachassist.aboutme.v1';
+settings.aboutMe = lsGet(ABOUT_KEY) ?? ssGet(ABOUT_KEY) ?? '';
+function storeAboutMe() {
+  const text = settings.aboutMe || '';
+  try {
+    localStorage.removeItem(ABOUT_KEY); sessionStorage.removeItem(ABOUT_KEY);
+    if (text) (settings.rememberKeys !== false ? localStorage : sessionStorage).setItem(ABOUT_KEY, text);
+  } catch (e) { console.warn('[about] could not store', e); }
+}
+/** Valid when empty or a JSON object/array; returns the compact form that is sent. */
+function validateAboutMe(text) {
+  const t = String(text || '').trim();
+  if (!t) return { ok: true, empty: true, compact: '' };
+  try {
+    const v = JSON.parse(t);
+    if (v === null || typeof v !== 'object') return { ok: false, error: 'use a JSON object { … } or array [ … ]' };
+    return { ok: true, value: v, compact: JSON.stringify(v) };
+  } catch (e) {
+    const pos = +(String(e.message).match(/position (\d+)/)?.[1] ?? NaN);
+    const where = Number.isFinite(pos) ? (() => { const before = t.slice(0, pos).split('\n'); return ` (line ${before.length}, column ${before.at(-1).length + 1})`; })() : '';
+    return { ok: false, error: `${String(e.message).replace(/^JSON\.parse: /, '').replace(/ in JSON at position \d+.*$/, '')}${where}` };
+  }
+}
+const ABOUT_CACHE = { text: null, block: '' };
+function aboutMeBlock() {
+  const t = settings.aboutMe || '';
+  if (ABOUT_CACHE.text !== t) { const v = validateAboutMe(t); ABOUT_CACHE.text = t; ABOUT_CACHE.block = v.ok && v.compact ? `\n# About me (from the teacher)\nThe teacher's own details and standing instructions, as JSON. Follow the instructions in it and use the details where they change your answer; don't recite them.\n${v.compact}` : ''; }
+  return ABOUT_CACHE.block;
+}
 function writeSettingsBlob() {
-  const { anthropicKey, openaiKey, keysExpireAt, ...rest } = settings; // keys never go in the settings blob
+  const { anthropicKey, openaiKey, githubToken, keysExpireAt, aboutMe, ...rest } = settings; // keys, tokens and About me never go in the settings blob
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(rest)); } catch { /* ignore */ }
 }
 function saveSettings(patch = {}) {
-  const keyChanged = ['anthropicKey', 'openaiKey'].some((k) => k in patch && (patch[k] || '') !== (settings[k] || ''));
+  const keyChanged = ['anthropicKey', 'openaiKey', 'githubToken'].some((k) => k in patch && (patch[k] || '') !== (settings[k] || ''));
   const rememberChanged = 'rememberKeys' in patch && !!patch.rememberKeys !== !!settings.rememberKeys;
   settings = { ...settings, ...patch };
   writeSettingsBlob();
-  if (keyChanged || rememberChanged || 'anthropicKey' in patch || 'openaiKey' in patch) persistKeys(keyChanged || rememberChanged);
+  if (keyChanged || rememberChanged || 'anthropicKey' in patch || 'openaiKey' in patch || 'githubToken' in patch) persistKeys(keyChanged || rememberChanged);
   applyTheme();
 }
 /** Claude/OpenAI need a key; on-device AI needs a chosen model. */
@@ -362,6 +397,7 @@ function readLocalApiCache() {
   out.OPENAI_API_KEY = cache.OPENAI_API_KEY || ls('OPENAI_API_KEY') || ls('openai_api_key') || ls('VITE_OPENAI_API_KEY');
   out.CLAUDE_API_KEY = cache.CLAUDE_API_KEY || ls('CLAUDE_API_KEY') || ls('VITE_CLAUDE_API_KEY');
   out.username = cache.username || '';
+  out.GITHUB_TOKEN = cache.GITHUB_TOKEN || cache.GITHUB_PAT || ls('GITHUB_TOKEN');
   // Same-origin parent exposing the apiCache helper.
   try {
     const pc = window.parent !== window && window.parent.apiCache;
@@ -387,11 +423,12 @@ function applyMainKeys(data, via, origin = '') {
   };
   take('anthropic', 'anthropicKey', data.CLAUDE_API_KEY || data.ANTHROPIC_API_KEY);
   take('openai', 'openaiKey', data.OPENAI_API_KEY);
+  take('github', 'githubToken', data.GITHUB_TOKEN || data.GITHUB_PAT);
   if (data.OPENAI_API_KEY || data.CLAUDE_API_KEY) { MAIN.connected = true; MAIN.via = via; MAIN.origin = origin; }
   if (data.username) { MAIN.username = data.username; if (!settings.userName) patch.userName = String(data.username); }
   const changed = Object.keys(patch).length > 0 || JSON.stringify(src) !== JSON.stringify(settings.keySource);
   if (changed) saveSettings({ ...patch, keySource: src });
-  return Object.keys(patch).some((k) => k.endsWith('Key'));
+  return Object.keys(patch).some((k) => /Key$|Token$/.test(k));
 }
 /** Ask the embedding main program for keys; resolves after a reply or a short timeout. */
 function requestParentKeys(timeoutMs = 2500) {
@@ -585,7 +622,7 @@ let dbp = null;
 function openDb() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' }).createIndex('updatedAt', 'updatedAt');
@@ -596,6 +633,8 @@ function openDb() {
       if (!db.objectStoreNames.contains('tasks')) db.createObjectStore('tasks', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('blocks')) db.createObjectStore('blocks', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('artifacts')) db.createObjectStore('artifacts', { keyPath: 'id' });
+      // v3: saved memory notes — never touched by clearing chats or sessions.
+      if (!db.objectStoreNames.contains('memory')) db.createObjectStore('memory', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -847,7 +886,7 @@ function buildAnthropicMessages(chain, { codeTools, pdfPages, midSystem, dropThi
   return merged;
 }
 
-const PART_ORDER = ['identity', 'profile', 'date', 'style', 'files', 'images', 'tools', 'memory', 'web'];
+const PART_ORDER = ['identity', 'profile', 'about', 'notes', 'date', 'style', 'files', 'images', 'tools', 'github', 'memory', 'web'];
 function buildSystemPrompt(provider, opts) {
   const p = systemPromptParts(provider, opts);
   return PART_ORDER.map((k) => p[k]).filter(Boolean).join('\n');
@@ -864,11 +903,22 @@ function dateLookup(tz) {
   return rows.join(', ');
 }
 /** The prompt in sections; sections that can change mid-conversation are compared individually. */
-function systemPromptParts(provider, { codeTools, webSearch, imageTool, conv }) {
+function systemPromptParts(provider, { codeTools, webSearch, imageTool, conv, github = false }) {
   const name = settings.userName?.trim();
   const P = {};
   P.identity = `You are Teach Assist, a capable, careful AI assistant working with ${name ? name + ', ' : ''}a teacher. You help with anything they bring you: lesson planning and resources, marking and feedback, admin and emails, coding and IT, curriculum questions, general knowledge and personal productivity. Treat every request as a real task from a busy professional.`;
   P.profile = settings.profile?.trim() ? `\nAbout the teacher: ${settings.profile.trim()}` : '';
+  P.about = aboutMeBlock();
+  P.notes = memOn() ? memoryPromptSection(conv?.notesSnapshot) : '';
+  P.github = github ? `
+# GitHub
+You can work with the teacher's GitHub repositories through the github_* tools; they run in the teacher's browser with their own token.
+- If they don't give "owner/name", find the repository with github_list_repos. Look before you change: github_list_files, then github_read_file for each file you will edit.
+- Change files with github_commit_files: the COMPLETE new content of every changed file (never a fragment or a diff), related files together in one commit, with a clear message. Files you built in the sandbox or the teacher attached can be committed with from_file (their file name).
+- Commit to the branch the teacher names. If they don't name one: small, clearly requested changes go to the default branch; larger or risky ones go on a new branch with a pull request (github_create_pull_request).
+- Each change is shown to the teacher for approval first. If they decline, stop and ask what they want instead.
+- Afterwards, give the link to the commit or pull request. For repositories published with GitHub Pages, mention that the site updates in a minute or two.
+- The code sandbox has no internet access, so GitHub is only reachable through these tools.` : '';
   P.date = `\nToday's date: ${todayContext(settings.timezone)} (${settings.timezone}). Calendar for the next two weeks: ${dateLookup(settings.timezone)}.`;
   P.tools = `
 # The teacher's planner (tools)
@@ -925,7 +975,7 @@ You have the python tool (code interpreter) with python-docx, python-pptx, openp
 /** Text for a mid-conversation system note: only the sections that changed since the frozen prompt. */
 function systemUpdateNote(prevParts, nextParts) {
   const changed = [];
-  const labels = { profile: 'About the teacher', date: 'Date', style: 'How to respond', files: 'Files and documents', images: 'Images', tools: 'The teacher\'s planner (tools)', memory: 'Memory of earlier chats', web: 'Web' };
+  const labels = { profile: 'About the teacher', about: 'About me', notes: 'Saved memory', github: 'GitHub', date: 'Date', style: 'How to respond', files: 'Files and documents', images: 'Images', tools: 'The teacher\'s planner (tools)', memory: 'Memory of earlier chats', web: 'Web' };
   for (const k of Object.keys(labels)) if ((prevParts[k] || '') !== (nextParts[k] || '')) changed.push(nextParts[k] ? nextParts[k].trim() : `${labels[k]}: (section removed — no longer applies)`);
   if (!changed.length) return '';
   return `Context update — the following replaces the corresponding section(s) of your instructions from this point on:\n\n${changed.join('\n\n')}`;
@@ -951,6 +1001,7 @@ async function runAnthropic({ conv, chain, msg, signal, onProgress }) {
   const codeTools = !!conv.codeTools;
   const webSearch = !!conv.webSearch;
   const imageTool = !!(settings.imageGen && settings.openaiKey.trim());
+  const github = !!(conv.github && githubToken());
   const caps = anthropicCaps(model);
 
   // Upload attachments of the NEW user message only — earlier turns must replay unchanged.
@@ -967,8 +1018,8 @@ async function runAnthropic({ conv, chain, msg, signal, onProgress }) {
     desiredTools.push({ ...SPEC.anthropic.tools.webFetch, allowed_callers: callers });
   }
   if (codeTools) desiredTools.push({ ...SPEC.anthropic.tools.codeExec });
-  for (const t of clientToolDefs({ imageTool })) desiredTools.push(t);
-  const desiredParts = systemPromptParts('anthropic', { codeTools, webSearch, imageTool, conv });
+  for (const t of clientToolDefs({ imageTool, github })) desiredTools.push(t);
+  const desiredParts = systemPromptParts('anthropic', { codeTools, webSearch, imageTool, conv, github });
   const desiredSystem = PART_ORDER.map((k) => desiredParts[k]).filter(Boolean).join('\n');
 
   // Freeze `system` and `tools` for the conversation so the request prefix stays byte-identical
@@ -1928,11 +1979,13 @@ async function selectConversation(id) {
     setToggle($('#tglWeb'), conv.webSearch);
     setToggle($('#tglCode'), conv.codeTools);
     setToggle($('#tglMemory'), conv.memory);
+    setToggle($('#tglGithub'), conv.github ?? (settings.githubTools !== false && !!githubToken()));
   } else {
     state.messages = [];
     setToggle($('#tglWeb'), settings.webSearch);
     setToggle($('#tglCode'), settings.codeTools);
     setToggle($('#tglMemory'), settings.memoryEnabled);
+    setToggle($('#tglGithub'), settings.githubTools !== false && !!githubToken());
   }
   renderConvList();
   renderMessages();
@@ -2005,6 +2058,8 @@ async function sendMessage(text, attachments) {
   conv.provider = provider; conv.model = provider === 'local' ? settings.localModel : currentModel();
   conv.webSearch = $('#tglWeb').classList.contains('on');
   conv.codeTools = $('#tglCode').classList.contains('on');
+  conv.github = $('#tglGithub').classList.contains('on');
+  if (memOn() && !conv.notesSnapshot) conv.notesSnapshot = await memoryPromptBlock();
   const wantMemory = $('#tglMemory').classList.contains('on');
   if (wantMemory !== !!conv.memory) { conv.memory = wantMemory; conv.memorySnapshot = null; }
   if (conv.memory && !conv.memorySnapshot) conv.memorySnapshot = await buildMemorySnapshot(conv.id);
@@ -2380,7 +2435,7 @@ function renderMessage(m) {
   return wrap;
 }
 function toolCard(s) {
-  const icon = { search: 'globe', fetch: 'globe', code: 'code', bash: 'terminal', editor: 'file', image: 'image', task: 'check', timetable: 'file', library: 'file', other: 'code' }[s.kind] || 'code';
+  const icon = { search: 'globe', fetch: 'globe', code: 'code', bash: 'terminal', editor: 'file', image: 'image', task: 'check', timetable: 'file', library: 'file', github: 'git', memory: 'brain', other: 'code' }[s.kind] || 'code';
   const status = s.status === 'running' ? el('span', { class: 'status', text: '…' }) : s.status === 'error' ? el('span', { class: 'status err', text: 'failed' }) : el('span', { class: 'status ok', html: svgIcon('check'), style: { display: 'inline-flex', width: '12px' } });
   const title = s.query ? el('span', {}, `${s.title}: `, el('span', { class: 'q', text: s.query })) : el('span', { text: s.title });
   const parts = [];
@@ -2468,6 +2523,7 @@ function updateComposerState() {
     b.title = local ? 'Not available with on-device AI — switch to Claude or OpenAI for this' : b.dataset.title;
   }
   $('#composerBox')?.classList.toggle('local', local);
+  const gh = $('#tglGithub'); if (gh) gh.classList.toggle('hidden', settings.provider !== 'anthropic');
 }
 function renderPending() {
   const bar = $('#attachBar');
@@ -2495,7 +2551,8 @@ function scrollToBottom(force) { const m = $('#messages'); if (force || isNearBo
 function collapseSidebar(v) { $('#sidebar').classList.toggle('collapsed', v); $('#scrim').classList.toggle('show', !v && window.innerWidth < 1024); }
 
 /* ───────────────────────────── Settings modal ───────────────────────────── */
-function openSettings() {
+function openSettings(focus) {
+  if (typeof focus !== 'string') focus = '';
   const host = $('#modalHost');
   host.innerHTML = '';
   // On phones the chat-list drawer sits above the page; close it so the sheet is reachable.
@@ -2545,17 +2602,69 @@ function openSettings() {
   };
   const showBtn = (input) => el('button', { class: 'btn sm', text: 'Show', onclick: (e) => { input.type = input.type === 'password' ? 'text' : 'password'; e.target.textContent = input.type === 'password' ? 'Show' : 'Hide'; } });
   for (const [inp, prov] of [[anthropicKey, 'anthropic'], [openaiKey, 'openai']]) inp.addEventListener('change', () => { if (commitKey(prov, inp.value)) { ensureUsableProvider(); renderModelSelect(); updateComposerState(); paintRemember(); onKeysChanged(); } });
+  // GitHub (Claude tools)
+  const ghTok = el('input', { type: 'password', value: s.githubToken || '', placeholder: 'github_pat_… or ghp_…', autocomplete: 'off', spellcheck: 'false' });
+  const ghStatus = el('div', { class: 'key-status' });
+  const ghConfirm = el('input', { type: 'checkbox' }); ghConfirm.checked = s.githubConfirm !== false;
+  const ghDefault = el('input', { type: 'checkbox' }); ghDefault.checked = s.githubTools !== false;
+  const commitGithub = () => {
+    const v = ghTok.value.trim();
+    if (v === (settings.githubToken || '')) return false;
+    const had = !!settings.githubToken;
+    saveSettings({ githubToken: v, keySource: { ...settings.keySource, github: v ? 'user' : '' } });
+    GH.repos.clear();
+    if (v && !had) { setToggle($('#tglGithub'), true); const c = activeConv(); if (c) { c.github = true; store.put('conversations', c).catch(() => {}); } }
+    updateComposerState(); paintRemember();
+    return true;
+  };
+  ghTok.addEventListener('change', commitGithub);
+  const testGithub = async () => {
+    commitGithub();
+    if (!githubToken()) { ghStatus.textContent = ''; return; }
+    ghStatus.textContent = 'Checking…'; ghStatus.className = 'key-status wait';
+    try { const u = await githubWhoAmI(); ghStatus.textContent = `Connected as @${u.login}${u.name ? ` (${u.name})` : ''}. Turn on GitHub under the message box when using Claude.`; ghStatus.className = 'key-status ok'; }
+    catch (e) { ghStatus.textContent = e.message; ghStatus.className = 'key-status err'; }
+  };
+  const savedMem = el('input', { type: 'checkbox' }); savedMem.checked = s.savedMemory !== false;
+  const memStatus = el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 6px' } });
+  memoryAll().then((all) => { memStatus.textContent = all.length ? `${all.length} note${all.length === 1 ? '' : 's'} saved on this device.` : 'No notes yet — say “remember that…” in any chat, or import an export.'; });
+  // About me (JSON)
+  const aboutTa = el('textarea', { class: 'about-json', rows: 7, spellcheck: 'false', placeholder: '{\n  "name": "…",\n  "school": "…",\n  "subjects": ["…"],\n  "preferences": { "spelling": "Australian English" },\n  "instructions": ["…"]\n}' });
+  aboutTa.value = settings.aboutMe || '';
+  const aboutStatus = el('div', { class: 'key-status' });
+  const aboutFile = el('input', { type: 'file', accept: '.json,application/json,text/plain', hidden: true });
+  const paintAbout = () => {
+    const v = validateAboutMe(aboutTa.value);
+    if (v.empty) { aboutStatus.textContent = 'Empty — nothing extra is sent.'; aboutStatus.className = 'key-status wait'; return v; }
+    if (!v.ok) { aboutStatus.textContent = `Not valid JSON: ${v.error}. It isn't saved until it's valid.`; aboutStatus.className = 'key-status err'; return v; }
+    const n = v.compact.length;
+    aboutStatus.textContent = `Valid JSON · ${fmtBytes(n)} (≈ ${Math.ceil(n / 3.6).toLocaleString()} tokens) sent with every Claude and OpenAI request${n > 20000 ? ' — that is a lot to send every time; consider trimming it' : ''}.`;
+    aboutStatus.className = n > 20000 ? 'key-status wait' : 'key-status ok';
+    return v;
+  };
+  const commitAbout = () => {
+    const v = validateAboutMe(aboutTa.value);
+    if (!v.ok) return false;
+    const text = v.empty ? '' : aboutTa.value.trim();
+    if (text === (settings.aboutMe || '')) return false;
+    settings.aboutMe = text; storeAboutMe();
+    return true;
+  };
+  aboutTa.addEventListener('input', () => { clearTimeout(paintAbout.t); paintAbout.t = setTimeout(paintAbout, 250); });
+  aboutTa.addEventListener('change', () => { if (paintAbout().ok) commitAbout(); });
+  aboutFile.addEventListener('change', async () => { const f = aboutFile.files?.[0]; if (!f) return; aboutTa.value = await f.text(); aboutFile.value = ''; if (paintAbout().ok) commitAbout(); });
+  paintAbout();
   const remember = el('input', { type: 'checkbox' }); remember.checked = s.rememberKeys !== false;
   const rememberStatus = el('div', { class: 'help', style: { fontSize: '12px', color: 'var(--text-dim)', margin: '2px 0 0 26px' } });
   const forgetBtn = el('button', { class: 'btn sm', style: { color: 'var(--red)' }, text: 'Forget keys on this device', onclick: () => {
-    if (!confirm('Remove both API keys from this browser now?')) return;
-    forgetKeys(); anthropicKey.value = ''; openaiKey.value = '';
+    if (!confirm('Remove your API keys and GitHub token from this browser now?')) return;
+    forgetKeys(); anthropicKey.value = ''; openaiKey.value = ''; ghTok.value = ''; ghStatus.textContent = '';
     aStatus.textContent = ''; oStatus.textContent = '';
     renderModelSelect(); updateComposerState(); paintRemember();
     showBanner('warn', 'API keys removed from this device. Add a key in <b>Settings</b> to continue.');
   } });
   const paintRemember = () => {
-    const has = !!(settings.anthropicKey || settings.openaiKey);
+    const has = !!(settings.anthropicKey || settings.openaiKey || settings.githubToken);
     forgetBtn.style.display = has ? '' : 'none';
     if (!has) { rememberStatus.textContent = remember.checked ? `Keys you enter will be kept on this device for ${KEY_TTL_DAYS} days.` : 'Keys you enter will be kept only until this tab is closed.'; return; }
     rememberStatus.textContent = settings.rememberKeys && settings.keysExpireAt
@@ -2597,7 +2706,7 @@ function openSettings() {
     el('pre', { style: { fontFamily: 'var(--mono)', fontSize: '11.5px', background: 'var(--code-bg)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px', overflow: 'auto', maxHeight: '260px', whiteSpace: 'pre' }, text: RELAY_WORKER_SOURCE }),
     el('button', { class: 'btn sm', text: 'Copy worker code', onclick: (e) => { navigator.clipboard.writeText(RELAY_WORKER_SOURCE); e.target.textContent = 'Copied'; setTimeout(() => (e.target.textContent = 'Copy worker code'), 1500); } }));
 
-  const close = () => { commitKeys(); host.innerHTML = ''; };
+  const close = () => { commitKeys(); commitGithub(); commitAbout(); host.innerHTML = ''; };
   const modal = el('div', { class: 'modal-bg', onclick: (e) => { if (e.target === modal) close(); } },
     el('div', { class: 'modal' },
       el('div', { class: 'm-head' }, el('h2', { text: 'Settings' }), el('button', { class: 'btn icon ghost', html: '×', title: 'Close', onclick: close })),
@@ -2610,6 +2719,14 @@ function openSettings() {
           el('label', { class: 'check', style: { marginTop: '12px' } }, remember, el('span', {}, `Remember me — keep my API keys in this browser for ${KEY_TTL_DAYS} days`, el('span', { class: 'help', text: 'Untick on a shared or school computer: the keys are then cleared when this tab is closed.' }))),
           rememberStatus,
           el('div', { style: { marginTop: '8px' } }, forgetBtn),
+          el('div', { class: 'field about-field', style: { marginTop: '16px' } },
+            el('label', { text: 'About me (JSON)' }),
+            el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '2px 0 6px' }, text: 'Your standing details and instructions as JSON — saved in this browser next to your API keys (kept with “Remember me”, otherwise only until this tab closes) and sent with every Claude and OpenAI request. Leave out anything you wouldn’t want sent every time.' }),
+            aboutTa, aboutStatus, aboutFile,
+            el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
+              el('button', { class: 'btn sm', type: 'button', text: 'Load .json file…', onclick: () => aboutFile.click() }),
+              el('button', { class: 'btn sm', type: 'button', text: 'Format', onclick: () => { const v = validateAboutMe(aboutTa.value); if (v.ok && !v.empty) { aboutTa.value = JSON.stringify(v.value, null, 2); paintAbout(); } else paintAbout(); } }),
+              el('button', { class: 'btn sm', type: 'button', text: 'Clear', onclick: () => { if (aboutTa.value.trim() && !confirm('Clear the About me JSON from this browser?')) return; aboutTa.value = ''; paintAbout(); commitAbout(); } }))),
           el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
             el('button', { class: 'btn sm', text: 'Reload keys from main program', onclick: async (e) => {
               e.target.textContent = 'Checking…';
@@ -2630,6 +2747,18 @@ function openSettings() {
           el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
             el('button', { class: 'btn sm', type: 'button', text: settings.localModel ? 'Manage on-device models…' : 'Choose an on-device model…', onclick: () => { close(); openLocalAISheet(); } }),
             settings.localModel && isLocalDownloaded(settings.localModel) && settings.provider !== 'local' ? el('button', { class: 'btn sm', type: 'button', text: `Use ${localModelName(settings.localModel)} now`, onclick: () => { close(); useLocalModel(settings.localModel); } }) : null)),
+        el('div', { class: 'm-section', id: 'memSettings' }, el('h3', { text: 'Memory' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, text: 'The assistant keeps notes about you on this device — your classes, preferences and standing instructions — and uses them in every new chat, with Claude, OpenAI or on-device AI. They stay until you delete them: clearing chats or sessions doesn’t remove them.' }),
+          memStatus,
+          el('label', { class: 'check' }, savedMem, el('span', {}, 'Use saved memory ', el('span', { class: 'help', text: 'The assistant can save, search and update notes, and pinned plus newest notes are sent with your requests.' }))),
+          el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' } },
+            el('button', { class: 'btn sm', type: 'button', text: 'Manage memory…', onclick: () => { close(); openMemorySheet(); } }),
+            el('button', { class: 'btn sm', type: 'button', text: 'Import notes…', onclick: () => { close(); openMemoryImport(); } }))),
+        el('div', { class: 'm-section', id: 'ghSettings' }, el('h3', { text: 'GitHub (tools for Claude)' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: 'Lets Claude read your repositories and — with your OK — commit files, create branches, open pull requests and issues. The token is kept like your API keys and is sent only to api.github.com. Create one at <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → Settings → Developer settings → Fine-grained tokens</a>: pick the repositories, then give <b>Contents</b>, <b>Issues</b> and <b>Pull requests</b> read and write. To let Claude create new repositories, choose “All repositories” and add <b>Administration</b> read and write. A classic token with the <code>repo</code> scope also works.' }),
+          f('GitHub token', el('div', { class: 'key-row' }, ghTok, showBtn(ghTok), el('button', { class: 'btn sm', text: 'Test', onclick: testGithub }))), ghStatus,
+          el('label', { class: 'check' }, ghConfirm, el('span', {}, 'Ask me before Claude changes anything on GitHub ', el('span', { class: 'help', text: 'Commits, branches, pull requests, issues, comments and new repositories each need your OK (or “Allow for this chat”). Reading never asks.' }))),
+          el('label', { class: 'check' }, ghDefault, el('span', {}, 'GitHub on for new Claude chats ', el('span', { class: 'help', text: 'Switch it per chat with the GitHub button under the message box (shown when Claude is selected).' })))),
         el('div', { class: 'm-section' }, el('h3', { text: 'Claude files relay (recommended for Claude documents)' }),
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: `Anthropic lets browsers call the chat API directly, but <b>blocks browser access to its Files API</b> — which is how Claude's generated DOCX/PPTX/XLSX/PDF files are downloaded and how your Word/Excel attachments reach its sandbox. A tiny Cloudflare Worker (free) forwards just those <code>/v1/files</code> calls with your own key. Without it, Claude still works and small files (under ${SPEC.anthropic.inlineFileMaxKB} KB) are transferred inline; larger ones can't be. OpenAI needs no relay.` }),
           f('Relay URL', el('div', { class: 'key-row' }, relay, el('button', { class: 'btn sm', text: 'Test', onclick: testRelay }))), rStatus, relayCode),
@@ -2664,6 +2793,7 @@ function openSettings() {
               showThinking: showThinking.checked, webSearch: defWeb.checked, codeTools: defCode.checked, imageGen: imgGen.checked,
               saveHistory: saveHist.checked, memoryEnabled: memDefault.checked, trustedParentOrigin: trustedOrigin.value.trim().replace(/\/+$/, ''),
               rememberKeys: remember.checked,
+              savedMemory: savedMem.checked, githubConfirm: ghConfirm.checked, githubTools: ghDefault.checked,
             };
             const keysChanged = patch.anthropicKey !== settings.anthropicKey || patch.openaiKey !== settings.openaiKey;
             // A key the user typed (different from what the main program supplied) becomes theirs.
@@ -2675,6 +2805,7 @@ function openSettings() {
               // Turning saving back on keeps the chats from this session; turning it off affects new chats only.
               if (patch.saveHistory) for (const c of state.convs) if (c.ephemeral) { c.ephemeral = false; await store.put('conversations', c); }
             }
+            commitGithub(); commitAbout();
             saveSettings(patch);
             close();
             if (keysChanged || !state.models[settings.provider]?.live) await Promise.all([fetchModels('anthropic', keysChanged), fetchModels('openai', keysChanged)]);
@@ -2683,6 +2814,7 @@ function openSettings() {
             if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = '';
           } })))));
   host.append(modal);
+  if (focus) { const sec = modal.querySelector(focus === 'github' ? '#ghSettings' : focus === 'memory' ? '#memSettings' : focus === 'about' ? '.about-field' : '#localSettings'); if (sec) { sec.scrollIntoView({ block: 'start' }); sec.classList.add('flash'); } if (focus === 'github' && !isMobile()) ghTok.focus(); return; }
   // Focusing a field on a phone pops the keyboard over half the sheet; only do it on desktop.
   if (!s.anthropicKey && !s.openaiKey && !(typeof isMobile === 'function' && isMobile())) anthropicKey.focus();
 }
@@ -2828,6 +2960,8 @@ async function init() {
   $('#tglWeb').addEventListener('click', persistToggle('#tglWeb', 'webSearch'));
   $('#tglCode').addEventListener('click', persistToggle('#tglCode', 'codeTools'));
   $('#tglMemory').addEventListener('click', persistToggle('#tglMemory', 'memory'));
+  const ghToggle = persistToggle('#tglGithub', 'github');
+  $('#tglGithub').addEventListener('click', () => { if (!githubToken()) { openSettings('github'); return; } ghToggle(); });
   $('#newChatBtn').addEventListener('click', async () => { state.activeConvId = null; state.messages = []; await selectConversation(null); $('#input').focus(); });
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#sbToggle').addEventListener('click', () => collapseSidebar(!$('#sidebar').classList.contains('collapsed')));
