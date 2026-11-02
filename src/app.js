@@ -627,38 +627,74 @@ async function buildMemorySnapshot(excludeConvId) {
 /* ───────────────────────────── IndexedDB ───────────────────────────── */
 const DB_NAME = 'teachassist-standalone';
 let dbp = null;
+/* The connection can be closed under us: iPhone/iPad Safari closes it when the page goes to the background
+   (e.g. while the file picker or another app is open), and another tab may upgrade the database. So the
+   connection is dropped when that happens, and any operation that hits a closed connection reopens it and
+   retries once instead of failing with "The database connection is closing". */
+const DB_VERSION = 3;
 function openDb() {
   if (dbp) return dbp;
-  dbp = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 3);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' }).createIndex('updatedAt', 'updatedAt');
-      if (!db.objectStoreNames.contains('messages')) db.createObjectStore('messages', { keyPath: 'id' }).createIndex('conversationId', 'conversationId');
-      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'key' });
-      // v2: everything the Bolt app kept in Supabase now lives here, tagged with the session that created it.
-      if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('tasks')) db.createObjectStore('tasks', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('blocks')) db.createObjectStore('blocks', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('artifacts')) db.createObjectStore('artifacts', { keyPath: 'id' });
-      // v3: saved memory notes — never touched by clearing chats or sessions.
-      if (!db.objectStoreNames.contains('memory')) db.createObjectStore('memory', { keyPath: 'id' });
+  const p = new Promise((resolve, reject) => {
+    const open = (version) => {
+      let req;
+      try { req = version ? indexedDB.open(DB_NAME, version) : indexedDB.open(DB_NAME); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' }).createIndex('updatedAt', 'updatedAt');
+        if (!db.objectStoreNames.contains('messages')) db.createObjectStore('messages', { keyPath: 'id' }).createIndex('conversationId', 'conversationId');
+        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'key' });
+        // v2: everything the Bolt app kept in Supabase now lives here, tagged with the session that created it.
+        if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('tasks')) db.createObjectStore('tasks', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('blocks')) db.createObjectStore('blocks', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('artifacts')) db.createObjectStore('artifacts', { keyPath: 'id' });
+        // v3: saved memory notes — never touched by clearing chats or sessions.
+        if (!db.objectStoreNames.contains('memory')) db.createObjectStore('memory', { keyPath: 'id' });
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const drop = () => { if (dbp === p) dbp = null; };
+        // Another tab (a newer version of the app) wants to upgrade: let it, and reopen on next use.
+        db.onversionchange = () => { drop(); try { db.close(); } catch { /* ignore */ } };
+        db.onclose = drop; // closed by the browser (iOS background, storage pressure)
+        resolve(db);
+      };
+      req.onerror = (ev) => {
+        // A newer copy of the app already upgraded the database: open whatever version it is.
+        if (version && req.error?.name === 'VersionError') { ev.preventDefault?.(); open(0); return; }
+        reject(req.error);
+      };
+      req.onblocked = () => console.warn('[idb] waiting for another tab to release the database');
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    open(DB_VERSION);
   });
-  return dbp;
+  dbp = p;
+  p.catch(() => { if (dbp === p) dbp = null; });
+  return p;
 }
-async function idb(storeName, mode, fn) {
+function idbConnectionLost(e) {
+  const t = `${e?.name || ''} ${e?.message || ''}`;
+  return /InvalidStateError/.test(t) || /closing|is closed|connection.*lost|server lost|connection to indexed database/i.test(t);
+}
+async function idb(storeName, mode, fn, attempt = 0) {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, mode);
-    let req;
-    try { req = fn(tx.objectStore(storeName)); } catch (e) { reject(e); return; }
-    tx.oncomplete = () => resolve(req && 'result' in req ? req.result : undefined);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(storeName, mode); // throws InvalidStateError on a closing connection
+      let req;
+      try { req = fn(tx.objectStore(storeName)); } catch (e) { reject(e); return; }
+      tx.oncomplete = () => resolve(req && 'result' in req ? req.result : undefined);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new DOMException('Transaction aborted', 'AbortError'));
+    });
+  } catch (e) {
+    if (attempt < 2 && idbConnectionLost(e)) {
+      if (dbp && (await dbp.catch(() => null)) === db) dbp = null;
+      try { db.close(); } catch { /* ignore */ }
+      return idb(storeName, mode, fn, attempt + 1); // every operation here is safe to repeat (get/put/delete/clear)
+    }
+    throw e;
+  }
 }
 /* ───────────────────────────── Session ─────────────────────────────
    One "session" = one time the app is open in a tab (a reload within the tab keeps the
@@ -3035,7 +3071,12 @@ async function submit() {
   $('#input').value = ''; autosize();
   state.pending = []; renderPending();
   $('#bannerHost').innerHTML = '';
+  const before = state.messages.length;
   try { await sendMessage(text, atts); }
-  catch (e) { showBanner('err', escapeHtml(e.message || String(e))); }
+  catch (e) {
+    showBanner('err', escapeHtml(e.message || String(e)));
+    // Nothing was sent: put the message and its attachments back so nothing has to be retyped.
+    if (state.messages.length === before && !$('#input').value && !state.pending.length) { $('#input').value = text; autosize(); state.pending = atts; renderPending(); }
+  }
   updateComposerState();
 }
