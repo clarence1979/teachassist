@@ -138,6 +138,7 @@ node test/mobile.mjs      # iPhone emulation: bottom tab bar, 3-day timetable wi
 node test/ui.mjs          # light/dark, text size, accessibility modes, pills, home, sidebar, Prompts/Files, reply toolbar, feedback, desktop layout at 6 sizes, header tabs, Expand (47 checks)
 node test/local.mjs       # on-device AI with a stubbed engine: device suggestions for 11 device profiles, sheet, download → reload from storage, offline fallback, PDF text, Word download (45 checks)
 node test/github-memory.mjs # GitHub tools against a mocked GitHub API (approval, multi-file commits, branches, PRs, empty repos), saved memory, About me JSON (41 checks)
+node test/storage.mjs     # local database survives iOS closing it (file picker / background), another tab upgrading it, and failed sends keep your message (9 checks)
 node test/local-real.mjs  # no stubs: downloads SmolLM2-360M via wllama, chats on the CPU, then reloads OFFLINE and answers from the cached model (needs internet; ~300 MB)
 ```
 
