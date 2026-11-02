@@ -101,6 +101,7 @@ console.log('\n[2] Phone: On-device AI sheet');
 
 console.log('\n[3] Download once, then load from this device');
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+await ctx.route('https://claude-files-relay.clarence17.workers.dev/**', (r) => r.fulfill({ status: 503, body: 'the real relay is never used in tests' }));
 await ctx.addInitScript(emulate, { mem: 8, gpu: null, fake: true });
 const sse = (events) => events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
 const claudeCalls = [];

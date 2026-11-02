@@ -19,6 +19,7 @@ const check = (cond, msg) => { if (cond) console.log('  ✓', msg); else { conso
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 900 } });
+await ctx.route('https://claude-files-relay.clarence17.workers.dev/**', (r) => r.fulfill({ status: 503, body: 'the real relay is never used in tests' }));
 const page = await ctx.newPage();
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -256,7 +257,7 @@ check(/Attached PDF: syllabus.pdf \(.*1 pages\)/.test(c3.at(-1).text), 'attachme
 check(seen.relay.filter((r) => r.method === 'POST').length === 2, 'two uploads went through the relay');
 
 console.log('\n[5] Anthropic without relay: inline base64 file transfer');
-await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('teachassist.settings.v1')); s.anthropicRelay = ''; localStorage.setItem('teachassist.settings.v1', JSON.stringify(s)); });
+await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('teachassist.settings.v1')); s.anthropicRelay = 'off'; localStorage.setItem('teachassist.settings.v1', JSON.stringify(s)); });
 await page.reload();
 await page.waitForFunction(() => document.querySelector('#modelSel option'));
 await page.click('#newChatBtn');

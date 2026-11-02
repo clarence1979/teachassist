@@ -29,6 +29,7 @@ const textTurn = (text) => sse([
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1366, height: 860 } });
+await ctx.route('https://claude-files-relay.clarence17.workers.dev/**', (r) => r.fulfill({ status: 503, body: 'the real relay is never used in tests' }));
 // Claude: a script of replies per request.
 const claude = { script: [], bodies: [] };
 await ctx.route('https://api.anthropic.com/**', (route) => {

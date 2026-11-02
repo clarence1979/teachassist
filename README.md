@@ -13,7 +13,7 @@ One HTML file. Bring your own Claude and/or OpenAI key — or use a free **on-de
 ## Setup (5 minutes)
 
 1. Open `teach-assist.html` → **Settings** → paste your Anthropic and/or OpenAI key → **Test**. Keys live only in that browser's localStorage and go straight to the provider.
-2. **Claude users — deploy the relay once:** Cloudflare dashboard → Workers & Pages → Create → "Hello World" → replace the code with `anthropic-files-relay.js` → Deploy → copy the `https://….workers.dev` URL into Settings → "Claude files relay URL" → **Test**. (Optional: set the `ALLOWED_ORIGIN` variable to the origin you open the app from, e.g. `https://you.github.io`, or `null` for `file://`.)
+2. **Claude files relay — built in.** Claude's generated documents and your uploads go through the Cloudflare Worker `https://claude-files-relay.clarence17.workers.dev` (the code is `anthropic-files-relay.js`; it forwards only `/v1/files` calls with the user's own key and stores nothing). Nothing to set up. Settings → *Claude files relay* can point at a different Worker, or `off` to send small files inline instead.
 3. Pick a model (the live list from your key; defaults to `claude-fable-5-1` / `gpt-6-astra`), an effort level, and go.
 
 Everything is stored in the browser (IndexedDB): conversations, attachments, generated files, tasks, timetable blocks and the library. There is no account and no server. See "History file, sessions and clearing memory" for how that storage is mirrored into a JSON file and how to clear it.
