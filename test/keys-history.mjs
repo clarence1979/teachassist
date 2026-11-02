@@ -36,6 +36,7 @@ let replyN = 0;
 const browser = await chromium.launch();
 async function newCtx() {
   const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 900 } });
+  await ctx.route('https://claude-files-relay.clarence17.workers.dev/**', (r) => r.fulfill({ status: 503, body: 'the real relay is never used in tests' }));
   await ctx.route('https://api.anthropic.com/**', async (route) => {
     const req = route.request(); const url = req.url();
     keysSeen.push(req.headers()['x-api-key']);

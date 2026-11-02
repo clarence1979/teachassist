@@ -1225,6 +1225,9 @@ const SPEC = {
     maxTokensDefault: 64000,
     pdfMaxBytes: 32 * 1024 * 1024,
     inlineFileMaxKB: 160, // no-relay fallback: files are base64'd through stdout (costs tokens once)
+    // Built-in Files API relay (Cloudflare Worker "claude-files-relay" — anthropic-files-relay.js). It forwards
+    // only /v1/files calls with the user's own key and stores nothing. Settings can override it, or "off".
+    relayUrl: 'https://claude-files-relay.clarence17.workers.dev',
     preferredModels: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5'],
     fallbackModels: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5', 'claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
@@ -1564,7 +1567,12 @@ function stepTextScale(dir) {
 DARK_MQ.addEventListener?.('change', () => { if (settings.appearance === 'system') applyTheme(); });
 function keyFor(provider) { return provider === 'local' ? '' : String((provider === 'anthropic' ? settings.anthropicKey : settings.openaiKey) || '').trim(); }
 function currentModel() { return settings.provider === 'anthropic' ? settings.anthropicModel : settings.provider === 'local' ? settings.localModel : settings.openaiModel; }
-function relayBase() { return (settings.anthropicRelay || '').trim().replace(/\/+$/, ''); }
+/** The Files API relay: a URL typed in Settings, otherwise the built-in one; "off" sends files inline instead. */
+function relayBase() {
+  const v = String(settings.anthropicRelay || '').trim();
+  if (/^(off|none|no)$/i.test(v)) return '';
+  return (v || SPEC.anthropic.relayUrl || '').replace(/\/+$/, '');
+}
 
 /* ───────────────────────────── Keys from the main program ─────────────────────────────
    When Teach Assist is launched from the main program it picks up the keys the main
@@ -3751,7 +3759,7 @@ function openSettings(focus) {
   const f = (label, input, help) => el('div', { class: 'field' }, el('label', { text: label }), input, help ? el('div', { class: 'help', html: help }) : null);
   const anthropicKey = el('input', { type: 'password', value: s.anthropicKey, placeholder: 'sk-ant-…', autocomplete: 'off', spellcheck: 'false' });
   const openaiKey = el('input', { type: 'password', value: s.openaiKey, placeholder: 'sk-…', autocomplete: 'off', spellcheck: 'false' });
-  const relay = el('input', { type: 'text', value: s.anthropicRelay, placeholder: 'https://your-worker.your-subdomain.workers.dev', spellcheck: 'false' });
+  const relay = el('input', { type: 'text', value: s.anthropicRelay, placeholder: `Built in: ${SPEC.anthropic.relayUrl}`, spellcheck: 'false' });
   const aStatus = el('div', { class: 'key-status' }), oStatus = el('div', { class: 'key-status' }), rStatus = el('div', { class: 'key-status' });
   const testKey = async (provider, input, status) => {
     const key = input.value.trim();
@@ -3781,8 +3789,10 @@ function openSettings(focus) {
     if (a || o) { ensureUsableProvider(); renderModelSelect(); updateComposerState(); paintRemember(); if (keyFor('anthropic') || keyFor('openai')) $('#bannerHost').innerHTML = ''; onKeysChanged(); }
   };
   const testRelay = async () => {
-    const base = relay.value.trim().replace(/\/+$/, '');
-    if (!base) { rStatus.textContent = ''; return; }
+    const typed = relay.value.trim();
+    if (/^(off|none|no)$/i.test(typed)) { rStatus.textContent = 'Relay switched off — small files (under ' + SPEC.anthropic.inlineFileMaxKB + ' KB) are sent inline instead.'; rStatus.className = 'key-status wait'; return; }
+    const base = (typed || SPEC.anthropic.relayUrl).replace(/\/+$/, '');
+    if (!anthropicKey.value.trim()) { rStatus.textContent = 'Add your Claude key above, then Test.'; rStatus.className = 'key-status wait'; return; }
     rStatus.textContent = 'Checking…'; rStatus.className = 'key-status wait';
     try {
       const res = await fetch(`${base}/v1/files?limit=1`, { headers: anthropicHeaders(anthropicKey.value.trim() || 'x', { json: false }) });
@@ -3949,9 +3959,9 @@ function openSettings(focus) {
           f('GitHub token', el('div', { class: 'key-row' }, ghTok, showBtn(ghTok), el('button', { class: 'btn sm', text: 'Test', onclick: testGithub }))), ghStatus,
           el('label', { class: 'check' }, ghConfirm, el('span', {}, 'Ask me before Claude changes anything on GitHub ', el('span', { class: 'help', text: 'Commits, branches, pull requests, issues, comments and new repositories each need your OK (or “Allow for this chat”). Reading never asks.' }))),
           el('label', { class: 'check' }, ghDefault, el('span', {}, 'GitHub on for new Claude chats ', el('span', { class: 'help', text: 'Switch it per chat with the GitHub button under the message box (shown when Claude is selected).' })))),
-        el('div', { class: 'm-section' }, el('h3', { text: 'Claude files relay (recommended for Claude documents)' }),
-          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: `Anthropic lets browsers call the chat API directly, but <b>blocks browser access to its Files API</b> — which is how Claude's generated DOCX/PPTX/XLSX/PDF files are downloaded and how your Word/Excel attachments reach its sandbox. A tiny Cloudflare Worker (free) forwards just those <code>/v1/files</code> calls with your own key. Without it, Claude still works and small files (under ${SPEC.anthropic.inlineFileMaxKB} KB) are transferred inline; larger ones can't be. OpenAI needs no relay.` }),
-          f('Relay URL', el('div', { class: 'key-row' }, relay, el('button', { class: 'btn sm', text: 'Test', onclick: testRelay }))), rStatus, relayCode),
+        el('div', { class: 'm-section' }, el('h3', { text: 'Claude files relay (built in)' }),
+          el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 4px' }, html: `Nothing to set up: Claude's documents and uploads go through the built-in relay <code>${escapeHtml(SPEC.anthropic.relayUrl)}</code>. Anthropic blocks browsers from its Files API (how Claude's DOCX/PPTX/XLSX/PDF files come back and how your attachments reach its sandbox), so this small Cloudflare Worker forwards just those <code>/v1/files</code> calls with your own key and stores nothing. OpenAI needs no relay.` }),
+          f('Use a different relay (optional)', el('div', { class: 'key-row' }, relay, el('button', { class: 'btn sm', text: 'Test', onclick: testRelay })), 'Leave blank for the built-in relay. Enter another Worker URL to use your own, or <b>off</b> to send small files inline instead (under ' + SPEC.anthropic.inlineFileMaxKB + ' KB).'), rStatus, relayCode),
         el('div', { class: 'm-section' }, el('h3', { text: 'About you' }),
           el('div', { class: 'row' }, f('Your name', userName), f('Timezone (IANA)', tz)),
           f('Profile & standing instructions', profile, 'Sent with every request. Keep it to what changes the answers: subjects, year levels, spelling, curriculum, tone.')),

@@ -16,6 +16,7 @@ const check = (c, m) => { console.log(c ? '  ✓' : '  ✗', m); if (!c) fails.p
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 950 }, colorScheme: 'dark' });
+await ctx.route('https://claude-files-relay.clarence17.workers.dev/**', (r) => r.fulfill({ status: 503, body: 'the real relay is never used in tests' }));
 await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: A });
 await ctx.route('https://api.anthropic.com/**', (route) => route.fulfill({ json: { data: [{ id: 'claude-fable-5-1', created_at: '2026-09-01T00:00:00Z' }] } }));
 await ctx.route('https://api.openai.com/**', (route) => route.fulfill({ json: { data: [] } }));
@@ -163,6 +164,13 @@ await page.setViewportSize({ width: 1100, height: 720 }); await page.waitForTime
 const fit = await page.evaluate(() => { const b = (s) => document.querySelector(s).getBoundingClientRect(); const rail = b('#rail'), brand = b('.brand-text'), ctl = b('.appbar-ctl'); return rail.left >= brand.right - 1 && rail.right <= ctl.left + 1; });
 check(fit, '1100px: header tabs fit between the title and the controls (icons only if needed)');
 await page.setViewportSize({ width: 1280, height: 950 });
+
+console.log('\n[10] Claude files relay is built in');
+const relay = await page.evaluate(() => { const r = {}; saveSettings({ anthropicRelay: '' }); r.blank = relayBase(); saveSettings({ anthropicRelay: 'https://my-relay.example.workers.dev/' }); r.custom = relayBase(); saveSettings({ anthropicRelay: 'off' }); r.off = relayBase(); saveSettings({ anthropicRelay: '' }); return r; });
+check(relay.blank === 'https://claude-files-relay.clarence17.workers.dev' && relay.custom === 'https://my-relay.example.workers.dev' && relay.off === '', 'blank → built-in relay; a typed URL overrides it; "off" sends files inline');
+await page.click('#settingsBtn'); await page.waitForSelector('.modal');
+check(/Claude files relay \(built in\)/i.test(await page.$eval('.modal', (e) => e.textContent)) && /claude-files-relay\.clarence17\.workers\.dev/.test(await page.$eval('.modal', (e) => e.textContent)), 'Settings shows the built-in relay — nothing to enter');
+await page.click('.modal .m-head .btn');
 
 await browser.close(); server.close();
 console.log(`\n${fails.length ? fails.length + ' FAILED' : 'ALL PASSED'}`);

@@ -16,6 +16,7 @@ const check = (c, m) => { console.log(c ? '  ✓' : '  ✗', m); if (!c) fails.p
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ ...devices['iPhone 14'] });
+await ctx.route('https://claude-files-relay.clarence17.workers.dev/**', (r) => r.fulfill({ status: 503, body: 'the real relay is never used in tests' }));
 await ctx.route('https://api.anthropic.com/**', (route) => route.fulfill({ json: { data: [{ id: 'claude-fable-5-1', created_at: '2026-09-01T00:00:00Z' }] } }));
 await ctx.route('https://api.openai.com/**', (route) => route.fulfill({ json: { data: [] } }));
 const page = await ctx.newPage();
