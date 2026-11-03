@@ -109,7 +109,7 @@ check(b0.tools.some((t) => t.name === 'github_commit_files') && /# GitHub/.test(
 const tr1 = b1.messages.at(-1).content[0];
 check(tr1.type === 'tool_result' && /clarence1979\/teachassist/.test(tr1.content) && !/blender-lessons/.test(tr1.content), 'tool result returned to Claude (filtered by the query)');
 check(gh.calls.every((c) => c.auth === 'Bearer ghp_test123'), 'the token only goes to api.github.com, as a Bearer header');
-check(/Listing GitHub repositories/.test(await page.$eval('.msg.assistant:last-child', (e) => e.textContent)), 'the tool call shows as a card in the reply');
+check(await page.waitForFunction(() => /Listing GitHub repositories/.test(document.querySelector('.msg.assistant:last-child')?.textContent || ''), null, { timeout: 3000 }).then(() => true, () => false), 'the tool call shows as a card in the reply');
 
 console.log('\n[3] Writing needs approval: one commit with text and a generated file');
 await page.evaluate(async () => {

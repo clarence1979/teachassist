@@ -769,6 +769,16 @@ svg { flex: 0 0 auto; }
 .mem-pin.on { color: var(--accent); background: var(--accent-soft); }
 .mem-topic-row { align-items: flex-start; }
 .mem-preview { max-height: 46vh; overflow: auto; }
+.reconnect-note { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; padding: 10px 14px; border-radius: 14px; border: 1.5px solid var(--blue-border); background: var(--blue-soft); color: var(--text); font-size: 14px; font-weight: 600; }
+.reconnect-note .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--blue-border); border-top-color: var(--blue); animation: spin 0.9s linear infinite; flex: 0 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spend-row { border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px; margin: 8px 0; background: var(--bg-solid); }
+.spend-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; }
+.spend-line { font-size: 13px; color: var(--text-2); margin: 4px 0 8px; }
+.spend-edit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.spend-amt { width: 110px; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg-solid); color: var(--text); font: inherit; }
+.spend-left { font-weight: 800; color: var(--green); }
+.spend-left.low { color: var(--red); }
 .about-json { width: 100%; min-height: 120px; font-family: var(--mono); font-size: 13px; line-height: 1.5; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--bg-solid); color: var(--text); resize: vertical; }
 .gh-confirm .gh-ttl { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
 .gh-confirm ul { margin: 6px 0 10px; padding-left: 1.2em; font-family: var(--mono); font-size: 13px; }
@@ -2299,8 +2309,29 @@ async function runAnthropic({ conv, chain, msg, signal, onProgress }) {
   const ctx = { conv };
 
   try {
-    for (let round = 0; round < 24; round++) {
-      const result = await anthropicStreamOnce(key, body, msg, signal, onProgress, ctx);
+    let resumes = 0;
+    for (let round = 0; round < 30; round++) {
+      let result;
+      try { result = await anthropicStreamOnce(key, body, msg, signal, onProgress, ctx); }
+      catch (e) {
+        if (signal.aborted || !isNetworkDrop(e) || resumes >= 8) throw e;
+        resumes++;
+        // Keep the finished steps of the cut-off turn; resend them and ask Claude to carry on.
+        const turn = e.partialTurn;
+        if (turn) {
+          const keep = continuableBlocks(turn.content);
+          if (keep.length) {
+            turn.content = keep;
+            const note = { role: 'user', content: [{ type: 'text', text: RESUME_NOTE }] };
+            msg.native.turns.push(note);
+            body.messages = [...body.messages, { role: 'assistant', content: sanitizeAssistantBlocks(keep) }, note];
+          } else msg.native.turns.splice(msg.native.turns.indexOf(turn), 1);
+          syncAnthropicSegments(msg);
+        }
+        msg.reconnecting = true; onProgress();
+        try { await waitUntilReachable(signal, resumes); } finally { msg.reconnecting = false; }
+        continue;
+      }
       // Keep whatever tool definitions the API accepted (self-healed versions) so later turns resend them identically.
       if (body.tools && JSON.stringify(body.tools) !== JSON.stringify(fz.tools)) { fz.tools = structuredClone(body.tools); await store.put('conversations', conv); }
       if (result.container?.id) {
@@ -2447,12 +2478,19 @@ async function anthropicStreamOnce(key, body, msg, signal, onProgress, ctx = {})
     for (const b of blocks) if (b && '_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
     turn.content = blocks.filter(Boolean);
   };
+  // Keep the sandbox the moment its id is known, so a dropped connection doesn't lose its files.
+  const noteContainer = (c) => {
+    if (!c?.id) return;
+    container = c;
+    if (body.container) body.container.id = c.id;
+    if (ctx.conv && ctx.conv.anthropicContainerId !== c.id) { ctx.conv.anthropicContainerId = c.id; ctx.conv.anthropicContainerExpiresAt = c.expires_at || null; store.put('conversations', ctx.conv).catch(() => {}); }
+  };
   try {
     await readSse(res, signal, (ev) => {
       const t = ev.type;
       if (t === 'message_start') {
         usage = ev.message?.usage || {};
-        if (ev.message?.container) container = ev.message.container;
+        if (ev.message?.container) noteContainer(ev.message.container);
       } else if (t === 'content_block_start') {
         const b = structuredClone(ev.content_block);
         if (b.type === 'tool_use' || b.type === 'server_tool_use' || b.type === 'mcp_tool_use') { b._json = ''; b.input = b.input || {}; }
@@ -2470,17 +2508,18 @@ async function anthropicStreamOnce(key, body, msg, signal, onProgress, ctx = {})
       } else if (t === 'content_block_stop') {
         const b = blocks[ev.index]; if (!b) return;
         if ('_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
+        b._done = true;
       } else if (t === 'message_delta') {
         stopReason = ev.delta?.stop_reason || stopReason;
         if (ev.usage) for (const [k, v] of Object.entries(ev.usage)) if (v !== null && v !== undefined) usage[k] = v;
-        if (ev.delta?.container) container = ev.delta.container;
+        if (ev.delta?.container) noteContainer(ev.delta.container);
       } else if (t === 'error') {
         throw new Error(ev.error?.message || 'Stream error');
       }
       syncAnthropicSegments(msg);
       onProgress();
     });
-  } finally { finalize(); }
+  } catch (e) { e.partialTurn = turn; throw e; } finally { finalize(); }
   syncAnthropicSegments(msg);
   return {
     blocks: turn.content, stopReason, container,
@@ -2792,6 +2831,8 @@ async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
     input: items,
     stream: true,
     store: true,
+    // Runs on OpenAI's side even if this page loses its connection; the stream is re-attached afterwards.
+    background: true,
     max_output_tokens: settings.maxTokens || SPEC.openai.maxTokensDefault,
     include: ['code_interpreter_call.outputs', 'web_search_call.action.sources'],
     truncation: 'auto',
@@ -2802,10 +2843,14 @@ async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
 
   msg.native = { provider: 'openai', items: [], responseId: null };
   msg.segments = [];
+  // Stopping a background response must cancel it on OpenAI's side too (otherwise it keeps running).
+  const cancelRemote = () => { const id = msg.native.responseId; if (id && body.background) fetch(`${SPEC.openai.base}/v1/responses/${id}/cancel`, { method: 'POST', headers: openaiHeaders(key) }).catch(() => {}); };
+  signal.addEventListener('abort', cancelRemote, { once: true });
   const fullHistory = () => { delete body.previous_response_id; body.input = buildOpenAIInput(chain.map((m) => (m.role === 'assistant' ? { ...m, native: null } : m)), { codeTools }).items; };
   for (let attempt = 0; attempt < 8; attempt++) {
     const res = await fetch(`${SPEC.openai.base}/v1/responses`, { method: 'POST', headers: openaiHeaders(key), body: JSON.stringify(body), signal });
     if (res.ok) {
+      msg.native.background = !!body.background;
       let round = await openaiReadStream(res, key, msg, conv, signal, onProgress);
       // Function-call loop: run the app tools, send their outputs back chained to this response.
       for (let hops = 0; hops < 10 && round.functionCalls.length && !signal.aborted; hops++) {
@@ -2839,6 +2884,7 @@ async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
       delete body.reasoning; continue;
     }
     if (/summary/i.test(d) && body.reasoning?.summary) { delete body.reasoning.summary; continue; }
+    if (/background/i.test(d) && body.background) { delete body.background; continue; }
     if (/previous_response/i.test(d) && body.previous_response_id) { fullHistory(); continue; }
     if (/container/i.test(d) && /expired|not found|no longer/i.test(d)) {
       // The sandbox tied to the response chain is gone: restart from full history with a fresh container.
@@ -2914,8 +2960,11 @@ async function openaiReadStream(res, key, msg, conv, signal, onProgress) {
     segOf.set(k, seg); segs.push(seg); return seg;
   };
 
-  await readSse(res, signal, (ev) => {
+  let lastSeq = null, terminal = false;
+  const handle = (ev) => {
+    if (typeof ev.sequence_number === 'number') lastSeq = ev.sequence_number;
     const t = ev.type;
+    if (t === 'response.completed' || t === 'response.incomplete' || t === 'response.failed' || t === 'response.cancelled') terminal = true;
     if (t === 'response.created') { msg.native.responseId = ev.response?.id || msg.native.responseId; if (ev.response?.created_at) turnStart = ev.response.created_at - 2; }
     else if (t === 'response.output_item.added') segFor(itemFor(ev));
     else if (t === 'response.output_item.done') {
@@ -2974,7 +3023,21 @@ async function openaiReadStream(res, key, msg, conv, signal, onProgress) {
       if (t === 'response.failed') throw new Error(r.error?.message || 'The response failed.');
     } else if (t === 'error') throw new Error(ev.message || ev.error?.message || 'Stream error');
     onProgress();
-  });
+  };
+  // Background responses carry on at OpenAI when the connection drops: re-attach from the last event seen.
+  let stream = res;
+  for (let reconnects = 0; ; reconnects++) {
+    let dropped = null;
+    try { await readSse(stream, signal, handle); } catch (e) { if (!isNetworkDrop(e)) throw e; dropped = e; }
+    if (terminal || signal.aborted) break;
+    if (!msg.native.background || !msg.native.responseId) { if (dropped) throw dropped; break; }
+    if (reconnects >= 10) throw dropped || new Error('The connection to OpenAI kept dropping.');
+    msg.reconnecting = true; onProgress();
+    try { await waitUntilReachable(signal, reconnects + 1); } finally { msg.reconnecting = false; }
+    const q = `stream=true${lastSeq !== null ? `&starting_after=${lastSeq}` : ''}`;
+    stream = await fetch(`${SPEC.openai.base}/v1/responses/${msg.native.responseId}?${q}`, { headers: openaiHeaders(key, false), signal });
+    if (!stream.ok) throw await openaiError(stream);
+  }
 
   if (usage) msg.usage = addUsage(msg.usage, { input: usage.input_tokens || 0, output: usage.output_tokens || 0, cacheRead: usage.input_tokens_details?.cached_tokens || 0, reasoning: usage.output_tokens_details?.reasoning_tokens || 0 });
   if (conv.openaiContainerId) await store.put('conversations', conv);
@@ -3029,6 +3092,44 @@ function dedupeSources(msg) {
 }
 
 /* ───────────────────────────── Shared helpers ───────────────────────────── */
+/* ───────────── Dropped connections ("Load failed") ─────────────
+   Long replies stream over one connection for minutes. Phones drop it when the screen locks, the app
+   goes to the background or the network changes — Safari reports "Load failed", Chrome "network error".
+   OpenAI replies run in background mode and the stream is re-attached from the last event; Claude
+   replies keep every finished step and carry on from there (same sandbox). */
+function isNetworkDrop(e) {
+  if (!e || e.name === 'AbortError') return false;
+  const m = `${e.name || ''}: ${e.message || ''}`;
+  return (e.name === 'TypeError' && /load failed|failed to fetch|network ?error|network connection was lost|internet connection|cancelled|fetch failed|terminated|body stream|input stream/i.test(m))
+    || /ERR_NETWORK|ERR_CONNECTION|ERR_HTTP2|ERR_QUIC|ERR_INTERNET_DISCONNECTED|connection (was )?(reset|closed|lost)/i.test(m);
+}
+/** Resolve once the page is visible and online again (after a short back-off); reject if stopped. */
+function waitUntilReachable(signal, attempt = 1, maxWaitMs = 30 * 60 * 1000) {
+  return new Promise((resolve, reject) => {
+    const backoff = Math.min(1000 * 2 ** Math.max(0, attempt - 1), 15000);
+    const t0 = Date.now();
+    let timer = null;
+    const ready = () => document.visibilityState === 'visible' && navigator.onLine !== false;
+    const cleanup = () => { clearInterval(iv); clearTimeout(timer); document.removeEventListener('visibilitychange', check); window.removeEventListener('online', check); signal?.removeEventListener('abort', onAbort); };
+    const onAbort = () => { cleanup(); reject(new DOMException('Stopped', 'AbortError')); };
+    const check = () => {
+      if (timer) return;
+      if (ready()) { timer = setTimeout(() => { cleanup(); resolve(); }, backoff); }
+      else if (Date.now() - t0 > maxWaitMs) { cleanup(); reject(new Error('The connection was lost and did not come back.')); }
+    };
+    const iv = setInterval(check, 1000);
+    document.addEventListener('visibilitychange', check); window.addEventListener('online', check);
+    signal?.addEventListener('abort', onAbort);
+    check();
+  });
+}
+const RESUME_NOTE = '[Note from the Teach Assist app: the connection dropped while you were replying, so the reply above was cut off. Carry on from exactly where you stopped — do not repeat what you already wrote or redo finished steps. Your sandbox files should still be there; if something is missing, recreate it.]';
+/** Finished blocks of a cut-off Claude turn that can be resent: drop half-written blocks and tool calls without results. */
+function continuableBlocks(blocks) {
+  const done = (blocks || []).filter((b) => b && b._done);
+  const results = new Set(done.filter((b) => b.tool_use_id).map((b) => b.tool_use_id));
+  return done.filter((b) => b.type !== 'tool_use' && !((b.type === 'server_tool_use' || b.type === 'mcp_tool_use') && !results.has(b.id)));
+}
 async function readSse(res, signal, onEvent) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -3282,6 +3383,10 @@ async function sendMessage(text, attachments) {
   if (viaProvider === 'local' && provider !== 'local') showBanner('info', `You're offline, so this reply comes from <b>${escapeHtml(localModelName(settings.localModel))}</b> on this device. Claude and OpenAI need an internet connection.`);
   else if (provider !== 'local' && navigator.onLine === false) showBanner('warn', `You're offline — ${providerName(provider)} needs an internet connection. <a href="#" data-act="local">Set up on-device AI</a> while online to keep working offline.`);
   provider = viaProvider;
+  if (provider !== 'local' && spendSummary(provider).limited) {
+    const x = spendSummary(provider), other = provider === 'anthropic' ? 'openai' : 'anthropic';
+    showBanner('warn', `${providerName(provider)} reported its ${x.limitNote === 'out of credit' ? 'credit has run out' : `limit was reached until ${new Date(x.limitUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`} — sending anyway in case it has been raised.${keyFor(other) ? ` <a href="#" data-act="use-${other}">Switch to ${providerName(other)}</a>` : ''}`);
+  }
   if (provider === 'local' && LIVE_RE.test(text || '')) {
     const cloud = cloudProvider();
     showBanner('info', `On-device models have no internet, so they can't check the weather, news or other live information.${cloud ? ` <a href="#" data-act="cloud">Ask ${providerName(cloud)} with web search</a>` : ' Add a Claude or OpenAI key in <a href="#" data-act="settings">Settings</a> to look things up online.'}`);
@@ -3339,10 +3444,16 @@ async function runAssistantTurnInner(conv, chain, opts = {}) {
     if (controller.signal.aborted) assistant.stopReason = 'stopped';
   } catch (e) {
     if (controller.signal.aborted || e.name === 'AbortError') assistant.stopReason = 'stopped';
-    else { assistant.error = e.message || String(e); console.error(e); }
+    else {
+      assistant.error = isNetworkDrop(e) ? `The connection to ${providerName(provider)} kept dropping (“${e.message}”), so this reply stopped. Check your internet connection and press Retry — the finished part is kept above.` : e.message || String(e);
+      console.error(e);
+      if (provider !== 'local') noteProviderError(provider, e);
+    }
   } finally {
     assistant.status = 'done';
+    assistant.reconnecting = false;
     assistant.text = (assistant.segments || []).filter((s) => s.type === 'text').map((s) => s.text).join('\n\n');
+    if (provider !== 'local' && assistant.usage) { try { assistant.cost = recordSpend(provider, assistant.model, assistant.usage, assistant); } catch (err) { console.warn('[spend]', err); } }
     for (const s of assistant.segments || []) if (s.type === 'tool' && s.status === 'running') s.status = assistant.error ? 'error' : 'done';
     for (const f of assistant.files || []) { delete f._blob; delete f._b64; if (f.status === 'pending') { f.status = 'error'; f.error = f.error || 'not retrieved'; } }
     state.busy.delete(conv.id);
@@ -3531,11 +3642,12 @@ function renderModelSelect() {
     sel.title = cat?.live ? 'Models available to your API key' : 'Built-in model list (add a key to fetch the live list)';
   }
   $('#providerSel').value = provider;
-  for (const o of $('#providerSel').options) o.textContent = o.value === 'local' ? `On-device${settings.localModel ? '' : ' (free, offline)'}` : `${providerName(o.value)}${keyFor(o.value) ? '' : ' (no key)'}`;
+  for (const o of $('#providerSel').options) { const badge = o.value !== 'local' && keyFor(o.value) ? spendBadge(o.value) : ''; o.textContent = o.value === 'local' ? `On-device${settings.localModel ? '' : ' (free, offline)'}` : `${providerName(o.value)}${keyFor(o.value) ? (badge ? ` — ${badge}` : '') : ' (no key)'}`; }
   const eff = $('#effortSel'); eff.innerHTML = '';
   for (const [v, label] of EFFORTS) eff.append(el('option', { value: v, text: label, selected: v === settings.effort || undefined }));
   const effPill = $('#effortSel').closest('.pill-sel'); if (effPill) effPill.style.display = provider === 'local' ? 'none' : '';
-  $('#whoLabel').textContent = `${providerName(provider)} · ${provider === 'local' ? (current ? localModelName(current) : '—') : current || '—'}`;
+  const badge = provider !== 'local' ? spendBadge(provider) : '';
+  $('#whoLabel').textContent = `${providerName(provider)} · ${provider === 'local' ? (current ? localModelName(current) : '—') : current || '—'}${badge ? ` · ${badge}` : ''}`;
   syncPillLabels();
 }
 /** The pills show the current choice; the native selects sit invisibly on top of them. */
@@ -3634,6 +3746,7 @@ function renderMessage(m) {
     } else if (s.type === 'tool') body.append(toolCard(s));
   }
   if (streaming && (!segs.length || segs[segs.length - 1].type === 'tool')) body.append(el('div', { class: 'thinking-dots', style: { marginTop: '4px' } }, el('i'), el('i'), el('i'), !segs.length ? el('span', { text: ' Working…', style: { marginLeft: '4px' } }) : null));
+  if (streaming && m.reconnecting) body.append(el('div', { class: 'reconnect-note', role: 'status' }, el('span', { class: 'spin' }), document.visibilityState === 'visible' && navigator.onLine !== false ? 'The connection dropped — reconnecting and carrying on from where it stopped…' : 'Waiting for the connection to come back — this reply will carry on by itself.'));
   const files = m.files || [];
   const imgs = files.filter((f) => f.status === 'ready' && (f.mediaType || '').startsWith('image/'));
   const others = files.filter((f) => !imgs.includes(f));
@@ -3663,7 +3776,7 @@ function renderMessage(m) {
     const cloud = m.provider === 'local' && !streaming ? cloudProvider() : null;
     card.append(el('div', { class: 'msg-foot' }, fb('up'), fb('down'),
       cloud ? el('button', { class: 'ask-cloud', title: `Answer this again with ${providerName(cloud)} (sent to ${providerName(cloud)}, not kept on the device)`, onclick: () => askCloudInstead(m, { web: LIVE_RE.test([...state.messages.slice(0, state.messages.indexOf(m))].reverse().find((x) => x.role === 'user')?.text || '') }) }, el('span', { html: svgIcon('refresh'), style: { display: 'inline-flex', width: '16px' } }), `Ask ${providerName(cloud)}`) : null,
-      el('span', { class: 'usage', title: m.model || '', text: u?.local ? `${m.model || 'On device'}${u.output ? ` · ${fmtTokens(u.output)} out` : ''}${u.tps ? ` · ${u.tps.toFixed(1)} tokens/s` : ''}` : `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}` }),
+      el('span', { class: 'usage', title: m.model || '', text: (m.cost != null ? `≈ $${m.cost < 0.01 ? m.cost.toFixed(3) : m.cost.toFixed(2)} · ` : '') + (u?.local ? `${m.model || 'On device'}${u.output ? ` · ${fmtTokens(u.output)} out` : ''}${u.tps ? ` · ${u.tps.toFixed(1)} tokens/s` : ''}` : `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}`) }),
       el('span', { class: 'time', text: fmtClock(m.createdAt) })));
   }
   return wrap;
@@ -3977,6 +4090,7 @@ function openSettings(focus) {
               onKeysChanged();
             } })),
           f('Trusted main-program origin (optional)', trustedOrigin, `When Teach Assist runs inside the main program's frame, keys sent by message are accepted only from the parent frame${MAIN.origin ? ` (currently <code>${escapeHtml(MAIN.origin)}</code>)` : ''}. Enter the main program's origin to also reject any other parent. Leave blank to accept your own parent frame.`)),
+        spendSection(),
         el('div', { class: 'm-section', id: 'localSettings' }, el('h3', { text: 'On-device AI (free · private · offline)' }),
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 8px' }, text: 'Smaller AI models that run inside this browser — no API key, nothing leaves the device, and they keep working without internet. A model downloads once, then loads from this device every time.' }),
           el('div', { class: 'key-status ok', style: { display: settings.localModel && isLocalDownloaded(settings.localModel) ? '' : 'none' }, text: settings.localModel ? `${localModelName(settings.localModel)} is on this device${settings.provider === 'local' ? ' and in use' : ''}.` : '' }),
@@ -4226,7 +4340,7 @@ async function init() {
     }
     saveSettings(settings.provider === 'anthropic' ? { anthropicModel: v } : { openaiModel: v }); renderModelSelect(); updateComposerState();
   });
-  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); else if (a.dataset.act === 'cloud') { const last = [...state.messages].reverse().find((x) => x.role === 'assistant' && x.provider === 'local'); if (last) askCloudInstead(last, { web: true }); } });
+  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); else if (a.dataset.act === 'use-openai' || a.dataset.act === 'use-anthropic') { const p = a.dataset.act.slice(4); saveSettings({ provider: p, lastCloud: p }); (state.models[p]?.live ? Promise.resolve() : fetchModels(p)).then(() => { renderModelSelect(); updateComposerState(); }); $('#bannerHost').innerHTML = ''; toastMsg(`Switched to ${providerName(p)}.`); } else if (a.dataset.act === 'cloud') { const last = [...state.messages].reverse().find((x) => x.role === 'assistant' && x.provider === 'local'); if (last) askCloudInstead(last, { web: true }); } });
   $('#effortSel').addEventListener('change', (e) => { saveSettings({ effort: e.target.value }); syncPillLabels(); });
   window.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); $('#newChatBtn').click(); } });
 
@@ -5448,6 +5562,133 @@ async function githubWhoAmI() {
   const u = await ghFetch('/user');
   GH.user = u;
   return u;
+}
+
+
+/* ===== spend.js ===== */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Spending — what each reply costs (estimated) and how much of your limit or credit is left.
+   Neither Anthropic nor OpenAI lets an API key read the account balance, so the app adds up each
+   reply's token use at list prices and compares it with the limit or credit the teacher enters.
+   It also notices "usage limit reached" errors and shows when access returns.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const SPEND_KEY = 'teachassist.spend.v1';
+const SPEND_PRICES_AS_OF = 'November 2026';
+// US$ per million tokens [input, output]. Claude cache writes cost 1.25× input, cache reads 0.1×;
+// OpenAI cached input 0.1×. Web searches ≈ $10 per 1,000. Unknown models show no estimate.
+const MODEL_PRICES = [
+  [/fable-5|mythos/i, 10, 50],
+  [/opus-5-5/i, 4, 20],
+  [/opus-5(?![-.]5)|opus-4-[5-9]|opus-4\.[5-9]/i, 5, 25],
+  [/opus-4|opus-3/i, 15, 75],
+  [/sonnet-5/i, 2, 10],
+  [/sonnet-4|sonnet-3/i, 3, 15],
+  [/haiku-5/i, 0.10, 0.50],
+  [/haiku-4/i, 1, 5],
+  [/gpt-6(\.\d+)?-astra/i, 10, 50],
+  [/gpt-6(\.\d+)?-sol/i, 2, 10],
+  [/gpt-6(\.\d+)?-luna/i, 0.10, 0.50],
+];
+const SEARCH_USD = 0.01;
+const spendBlank = () => ({ budget: 0, mode: 'monthly', creditSetAt: 0, sinceCredit: 0, limitUntil: null, limitNote: '', months: {} });
+function spendState() {
+  const s = parseJsonLoose(lsGet(SPEND_KEY)) || {};
+  s.providers = s.providers || {};
+  for (const p of ['anthropic', 'openai']) s.providers[p] = { ...spendBlank(), ...(s.providers[p] || {}) };
+  return s;
+}
+function saveSpend(s) { try { localStorage.setItem(SPEND_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
+const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+function modelPrice(model) { const m = String(model || ''); const hit = MODEL_PRICES.find(([re]) => re.test(m)); return hit ? { input: hit[1], output: hit[2] } : null; }
+/** Estimated US$ for one reply's usage (null when the model's price isn't known). */
+function estimateCost(provider, model, u) {
+  const p = modelPrice(model); if (!p || !u) return null;
+  const M = 1e6;
+  let usd;
+  if (provider === 'anthropic') usd = ((u.input || 0) * p.input + (u.cacheWrite || 0) * p.input * 1.25 + (u.cacheRead || 0) * p.input * 0.1 + (u.output || 0) * p.output) / M;
+  else usd = (Math.max(0, (u.input || 0) - (u.cacheRead || 0)) * p.input + (u.cacheRead || 0) * p.input * 0.1 + (u.output || 0) * p.output) / M;
+  return usd + (u.searches || 0) * SEARCH_USD;
+}
+function recordSpend(provider, model, usage, msg) {
+  if (provider !== 'anthropic' && provider !== 'openai') return null;
+  const u = { ...usage };
+  if (provider === 'openai' && !u.searches && msg?.segments) u.searches = msg.segments.filter((x) => x.type === 'tool' && x.kind === 'search' && x.status === 'done').length;
+  const usd = estimateCost(provider, model, u);
+  const s = spendState(); const p = s.providers[provider];
+  const mk = monthKey();
+  const b = p.months[mk] = p.months[mk] || { usd: 0, replies: 0, unpriced: 0 };
+  b.replies++;
+  if (usd === null) b.unpriced++; else { b.usd += usd; p.sinceCredit += usd; }
+  if (p.limitUntil && Date.now() > Date.parse(p.limitUntil)) { p.limitUntil = null; p.limitNote = ''; }
+  else if (p.limitUntil && usd !== null) { p.limitUntil = null; p.limitNote = ''; } // a reply went through, so the limit is lifted
+  saveSpend(s);
+  if (typeof renderModelSelect === 'function') renderModelSelect();
+  return usd;
+}
+/** Remember "you have reached your usage limit / quota" errors so the app can say so up front. */
+function noteProviderError(provider, e) {
+  const t = `${e?.message || ''} ${e?.detail || ''}`;
+  const limited = /usage limits?|spend(ing)? limit|exceeded your current quota|insufficient_quota|credit balance is too low|billing/i.test(t);
+  if (!limited) return;
+  const s = spendState(); const p = s.providers[provider];
+  const when = t.match(/regain access on (\d{4}-\d{2}-\d{2})(?: at (\d{2}:\d{2}))?/i);
+  p.limitUntil = when ? `${when[1]}T${when[2] || '00:00'}:00Z` : new Date(Date.now() + 365 * 864e5).toISOString();
+  p.limitNote = when ? 'monthly limit' : /quota|credit/i.test(t) ? 'out of credit' : 'limit reached';
+  saveSpend(s);
+  const other = provider === 'anthropic' ? 'openai' : 'anthropic';
+  const until = when ? ` until ${new Date(p.limitUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : '';
+  showBanner('warn', `${providerName(provider)} has reached your account's ${p.limitNote === 'out of credit' ? 'credit' : 'spending'} limit${until}. Raise it in the ${provider === 'anthropic' ? '<a href="https://console.anthropic.com/settings/limits" target="_blank" rel="noopener">Anthropic console</a>' : '<a href="https://platform.openai.com/settings/organization/limits" target="_blank" rel="noopener">OpenAI dashboard</a>'}${keyFor(other) ? `, or <a href="#" data-act="use-${other}">switch to ${providerName(other)}</a>` : ''}.`);
+  if (typeof renderModelSelect === 'function') renderModelSelect();
+}
+/** This month's estimate, and what's left of the limit or credit the teacher entered. */
+function spendSummary(provider) {
+  const s = spendState(); const p = s.providers[provider];
+  const m = p.months[monthKey()] || { usd: 0, replies: 0, unpriced: 0 };
+  const used = p.mode === 'credit' ? p.sinceCredit : m.usd;
+  const limited = p.limitUntil && Date.now() < Date.parse(p.limitUntil);
+  return { month: m.usd, replies: m.replies, unpriced: m.unpriced, budget: +p.budget || 0, mode: p.mode, left: p.budget ? Math.max(0, p.budget - used) : null, used, limited, limitUntil: limited ? p.limitUntil : null, limitNote: p.limitNote };
+}
+const usd = (n) => (n == null ? '' : n < 0.01 && n > 0 ? '< $0.01' : `$${n.toFixed(2)}`);
+/** Short label for menus: "≈ $12.40 left" / "limit until 1 Dec" / "" */
+function spendBadge(provider) {
+  const x = spendSummary(provider);
+  if (x.limited) return x.limitNote === 'out of credit' ? 'out of credit' : `limit until ${new Date(x.limitUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+  if (x.left !== null) return `≈ ${usd(x.left)} left`;
+  return '';
+}
+/** Settings → Spending: per provider, this month's estimate and the limit or credit to compare with. */
+function spendSection() {
+  const wrap = el('div', { class: 'm-section', id: 'spendSettings' }, el('h3', { text: 'Spending (estimate)' }),
+    el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 8px' }, html: `Anthropic and OpenAI don't let an API key read your account balance, so Teach Assist estimates it: each reply's tokens × list prices (${SPEND_PRICES_AS_OF}) plus web searches. Enter your monthly limit or your current credit to see roughly what's left. For exact figures see the <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener">Anthropic console</a> or the <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener">OpenAI dashboard</a>.` }));
+  for (const provider of ['anthropic', 'openai']) {
+    const row = el('div', { class: 'spend-row', 'data-provider': provider });
+    const paint = () => {
+      const x = spendSummary(provider);
+      const st = spendState().providers[provider];
+      const amount = el('input', { type: 'number', min: '0', step: '1', placeholder: '0.00', value: st.budget ? String(st.budget) : '', class: 'spend-amt', 'aria-label': `${providerName(provider)} limit or credit in US dollars` });
+      const mode = el('select', { class: 'sel', 'aria-label': 'What the amount is' }, el('option', { value: 'monthly', text: 'monthly limit' }), el('option', { value: 'credit', text: 'credit balance now' }));
+      mode.value = st.mode;
+      const commit = () => {
+        const s = spendState(); const p = s.providers[provider];
+        const v = Math.max(0, parseFloat(amount.value) || 0);
+        const modeChanged = p.mode !== mode.value; const amountChanged = v !== (+p.budget || 0);
+        p.budget = v; p.mode = mode.value;
+        if (p.mode === 'credit' && (modeChanged || amountChanged)) { p.creditSetAt = Date.now(); p.sinceCredit = 0; } // the balance entered is "as of now"
+        saveSpend(s); paint(); renderModelSelect();
+      };
+      amount.addEventListener('change', commit); mode.addEventListener('change', commit);
+      row.innerHTML = '';
+      row.append(
+        el('div', { class: 'spend-h' }, el('b', { text: providerName(provider) }), x.limited ? el('span', { class: 'lm-chip fit-too-big', text: x.limitNote === 'out of credit' ? 'Out of credit' : `Limit reached until ${new Date(x.limitUntil).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}` }) : null),
+        el('div', { class: 'spend-line', text: `This month: ≈ ${usd(x.month) || '$0.00'} over ${x.replies} repl${x.replies === 1 ? 'y' : 'ies'}${x.unpriced ? ` (${x.unpriced} with a model whose price isn't known)` : ''}${x.mode === 'credit' && x.budget ? ` · since you entered the credit: ≈ ${usd(x.used)}` : ''}` }),
+        el('div', { class: 'spend-edit' }, el('span', { text: 'US$' }), amount, mode,
+          x.left !== null ? el('span', { class: `spend-left${x.limited || x.left < Math.max(1, x.budget * 0.1) ? ' low' : ''}`, text: x.limited ? `≈ ${usd(x.left)} left by this estimate — but ${providerName(provider)} says the limit is reached` : `≈ ${usd(x.left)} left` }) : el('span', { class: 'help', text: 'Enter an amount to see what’s left.' }),
+          el('button', { class: 'btn sm ghost', type: 'button', text: 'Reset', title: 'Clear this month’s estimate and any limit notice', onclick: () => { if (!confirm(`Reset ${providerName(provider)}'s spending estimate?`)) return; const s = spendState(); s.providers[provider] = { ...spendBlank(), budget: s.providers[provider].budget, mode: s.providers[provider].mode, creditSetAt: Date.now() }; saveSpend(s); paint(); renderModelSelect(); } })));
+    };
+    paint();
+    wrap.append(row);
+  }
+  return wrap;
 }
 
 

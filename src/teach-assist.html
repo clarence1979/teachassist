@@ -769,6 +769,16 @@ svg { flex: 0 0 auto; }
 .mem-pin.on { color: var(--accent); background: var(--accent-soft); }
 .mem-topic-row { align-items: flex-start; }
 .mem-preview { max-height: 46vh; overflow: auto; }
+.reconnect-note { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; padding: 10px 14px; border-radius: 14px; border: 1.5px solid var(--blue-border); background: var(--blue-soft); color: var(--text); font-size: 14px; font-weight: 600; }
+.reconnect-note .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--blue-border); border-top-color: var(--blue); animation: spin 0.9s linear infinite; flex: 0 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spend-row { border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px; margin: 8px 0; background: var(--bg-solid); }
+.spend-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; }
+.spend-line { font-size: 13px; color: var(--text-2); margin: 4px 0 8px; }
+.spend-edit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.spend-amt { width: 110px; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; background: var(--bg-solid); color: var(--text); font: inherit; }
+.spend-left { font-weight: 800; color: var(--green); }
+.spend-left.low { color: var(--red); }
 .about-json { width: 100%; min-height: 120px; font-family: var(--mono); font-size: 13px; line-height: 1.5; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--bg-solid); color: var(--text); resize: vertical; }
 .gh-confirm .gh-ttl { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
 .gh-confirm ul { margin: 6px 0 10px; padding-left: 1.2em; font-family: var(--mono); font-size: 13px; }
