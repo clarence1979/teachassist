@@ -1109,8 +1109,29 @@ async function runAnthropic({ conv, chain, msg, signal, onProgress }) {
   const ctx = { conv };
 
   try {
-    for (let round = 0; round < 24; round++) {
-      const result = await anthropicStreamOnce(key, body, msg, signal, onProgress, ctx);
+    let resumes = 0;
+    for (let round = 0; round < 30; round++) {
+      let result;
+      try { result = await anthropicStreamOnce(key, body, msg, signal, onProgress, ctx); }
+      catch (e) {
+        if (signal.aborted || !isNetworkDrop(e) || resumes >= 8) throw e;
+        resumes++;
+        // Keep the finished steps of the cut-off turn; resend them and ask Claude to carry on.
+        const turn = e.partialTurn;
+        if (turn) {
+          const keep = continuableBlocks(turn.content);
+          if (keep.length) {
+            turn.content = keep;
+            const note = { role: 'user', content: [{ type: 'text', text: RESUME_NOTE }] };
+            msg.native.turns.push(note);
+            body.messages = [...body.messages, { role: 'assistant', content: sanitizeAssistantBlocks(keep) }, note];
+          } else msg.native.turns.splice(msg.native.turns.indexOf(turn), 1);
+          syncAnthropicSegments(msg);
+        }
+        msg.reconnecting = true; onProgress();
+        try { await waitUntilReachable(signal, resumes); } finally { msg.reconnecting = false; }
+        continue;
+      }
       // Keep whatever tool definitions the API accepted (self-healed versions) so later turns resend them identically.
       if (body.tools && JSON.stringify(body.tools) !== JSON.stringify(fz.tools)) { fz.tools = structuredClone(body.tools); await store.put('conversations', conv); }
       if (result.container?.id) {
@@ -1257,12 +1278,19 @@ async function anthropicStreamOnce(key, body, msg, signal, onProgress, ctx = {})
     for (const b of blocks) if (b && '_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
     turn.content = blocks.filter(Boolean);
   };
+  // Keep the sandbox the moment its id is known, so a dropped connection doesn't lose its files.
+  const noteContainer = (c) => {
+    if (!c?.id) return;
+    container = c;
+    if (body.container) body.container.id = c.id;
+    if (ctx.conv && ctx.conv.anthropicContainerId !== c.id) { ctx.conv.anthropicContainerId = c.id; ctx.conv.anthropicContainerExpiresAt = c.expires_at || null; store.put('conversations', ctx.conv).catch(() => {}); }
+  };
   try {
     await readSse(res, signal, (ev) => {
       const t = ev.type;
       if (t === 'message_start') {
         usage = ev.message?.usage || {};
-        if (ev.message?.container) container = ev.message.container;
+        if (ev.message?.container) noteContainer(ev.message.container);
       } else if (t === 'content_block_start') {
         const b = structuredClone(ev.content_block);
         if (b.type === 'tool_use' || b.type === 'server_tool_use' || b.type === 'mcp_tool_use') { b._json = ''; b.input = b.input || {}; }
@@ -1280,17 +1308,18 @@ async function anthropicStreamOnce(key, body, msg, signal, onProgress, ctx = {})
       } else if (t === 'content_block_stop') {
         const b = blocks[ev.index]; if (!b) return;
         if ('_json' in b) { b.input = parseJsonLoose(b._json) || {}; delete b._json; }
+        b._done = true;
       } else if (t === 'message_delta') {
         stopReason = ev.delta?.stop_reason || stopReason;
         if (ev.usage) for (const [k, v] of Object.entries(ev.usage)) if (v !== null && v !== undefined) usage[k] = v;
-        if (ev.delta?.container) container = ev.delta.container;
+        if (ev.delta?.container) noteContainer(ev.delta.container);
       } else if (t === 'error') {
         throw new Error(ev.error?.message || 'Stream error');
       }
       syncAnthropicSegments(msg);
       onProgress();
     });
-  } finally { finalize(); }
+  } catch (e) { e.partialTurn = turn; throw e; } finally { finalize(); }
   syncAnthropicSegments(msg);
   return {
     blocks: turn.content, stopReason, container,
@@ -1602,6 +1631,8 @@ async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
     input: items,
     stream: true,
     store: true,
+    // Runs on OpenAI's side even if this page loses its connection; the stream is re-attached afterwards.
+    background: true,
     max_output_tokens: settings.maxTokens || SPEC.openai.maxTokensDefault,
     include: ['code_interpreter_call.outputs', 'web_search_call.action.sources'],
     truncation: 'auto',
@@ -1612,10 +1643,14 @@ async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
 
   msg.native = { provider: 'openai', items: [], responseId: null };
   msg.segments = [];
+  // Stopping a background response must cancel it on OpenAI's side too (otherwise it keeps running).
+  const cancelRemote = () => { const id = msg.native.responseId; if (id && body.background) fetch(`${SPEC.openai.base}/v1/responses/${id}/cancel`, { method: 'POST', headers: openaiHeaders(key) }).catch(() => {}); };
+  signal.addEventListener('abort', cancelRemote, { once: true });
   const fullHistory = () => { delete body.previous_response_id; body.input = buildOpenAIInput(chain.map((m) => (m.role === 'assistant' ? { ...m, native: null } : m)), { codeTools }).items; };
   for (let attempt = 0; attempt < 8; attempt++) {
     const res = await fetch(`${SPEC.openai.base}/v1/responses`, { method: 'POST', headers: openaiHeaders(key), body: JSON.stringify(body), signal });
     if (res.ok) {
+      msg.native.background = !!body.background;
       let round = await openaiReadStream(res, key, msg, conv, signal, onProgress);
       // Function-call loop: run the app tools, send their outputs back chained to this response.
       for (let hops = 0; hops < 10 && round.functionCalls.length && !signal.aborted; hops++) {
@@ -1649,6 +1684,7 @@ async function runOpenAI({ conv, chain, msg, signal, onProgress }) {
       delete body.reasoning; continue;
     }
     if (/summary/i.test(d) && body.reasoning?.summary) { delete body.reasoning.summary; continue; }
+    if (/background/i.test(d) && body.background) { delete body.background; continue; }
     if (/previous_response/i.test(d) && body.previous_response_id) { fullHistory(); continue; }
     if (/container/i.test(d) && /expired|not found|no longer/i.test(d)) {
       // The sandbox tied to the response chain is gone: restart from full history with a fresh container.
@@ -1724,8 +1760,11 @@ async function openaiReadStream(res, key, msg, conv, signal, onProgress) {
     segOf.set(k, seg); segs.push(seg); return seg;
   };
 
-  await readSse(res, signal, (ev) => {
+  let lastSeq = null, terminal = false;
+  const handle = (ev) => {
+    if (typeof ev.sequence_number === 'number') lastSeq = ev.sequence_number;
     const t = ev.type;
+    if (t === 'response.completed' || t === 'response.incomplete' || t === 'response.failed' || t === 'response.cancelled') terminal = true;
     if (t === 'response.created') { msg.native.responseId = ev.response?.id || msg.native.responseId; if (ev.response?.created_at) turnStart = ev.response.created_at - 2; }
     else if (t === 'response.output_item.added') segFor(itemFor(ev));
     else if (t === 'response.output_item.done') {
@@ -1784,7 +1823,21 @@ async function openaiReadStream(res, key, msg, conv, signal, onProgress) {
       if (t === 'response.failed') throw new Error(r.error?.message || 'The response failed.');
     } else if (t === 'error') throw new Error(ev.message || ev.error?.message || 'Stream error');
     onProgress();
-  });
+  };
+  // Background responses carry on at OpenAI when the connection drops: re-attach from the last event seen.
+  let stream = res;
+  for (let reconnects = 0; ; reconnects++) {
+    let dropped = null;
+    try { await readSse(stream, signal, handle); } catch (e) { if (!isNetworkDrop(e)) throw e; dropped = e; }
+    if (terminal || signal.aborted) break;
+    if (!msg.native.background || !msg.native.responseId) { if (dropped) throw dropped; break; }
+    if (reconnects >= 10) throw dropped || new Error('The connection to OpenAI kept dropping.');
+    msg.reconnecting = true; onProgress();
+    try { await waitUntilReachable(signal, reconnects + 1); } finally { msg.reconnecting = false; }
+    const q = `stream=true${lastSeq !== null ? `&starting_after=${lastSeq}` : ''}`;
+    stream = await fetch(`${SPEC.openai.base}/v1/responses/${msg.native.responseId}?${q}`, { headers: openaiHeaders(key, false), signal });
+    if (!stream.ok) throw await openaiError(stream);
+  }
 
   if (usage) msg.usage = addUsage(msg.usage, { input: usage.input_tokens || 0, output: usage.output_tokens || 0, cacheRead: usage.input_tokens_details?.cached_tokens || 0, reasoning: usage.output_tokens_details?.reasoning_tokens || 0 });
   if (conv.openaiContainerId) await store.put('conversations', conv);
@@ -1839,6 +1892,44 @@ function dedupeSources(msg) {
 }
 
 /* ───────────────────────────── Shared helpers ───────────────────────────── */
+/* ───────────── Dropped connections ("Load failed") ─────────────
+   Long replies stream over one connection for minutes. Phones drop it when the screen locks, the app
+   goes to the background or the network changes — Safari reports "Load failed", Chrome "network error".
+   OpenAI replies run in background mode and the stream is re-attached from the last event; Claude
+   replies keep every finished step and carry on from there (same sandbox). */
+function isNetworkDrop(e) {
+  if (!e || e.name === 'AbortError') return false;
+  const m = `${e.name || ''}: ${e.message || ''}`;
+  return (e.name === 'TypeError' && /load failed|failed to fetch|network ?error|network connection was lost|internet connection|cancelled|fetch failed|terminated|body stream|input stream/i.test(m))
+    || /ERR_NETWORK|ERR_CONNECTION|ERR_HTTP2|ERR_QUIC|ERR_INTERNET_DISCONNECTED|connection (was )?(reset|closed|lost)/i.test(m);
+}
+/** Resolve once the page is visible and online again (after a short back-off); reject if stopped. */
+function waitUntilReachable(signal, attempt = 1, maxWaitMs = 30 * 60 * 1000) {
+  return new Promise((resolve, reject) => {
+    const backoff = Math.min(1000 * 2 ** Math.max(0, attempt - 1), 15000);
+    const t0 = Date.now();
+    let timer = null;
+    const ready = () => document.visibilityState === 'visible' && navigator.onLine !== false;
+    const cleanup = () => { clearInterval(iv); clearTimeout(timer); document.removeEventListener('visibilitychange', check); window.removeEventListener('online', check); signal?.removeEventListener('abort', onAbort); };
+    const onAbort = () => { cleanup(); reject(new DOMException('Stopped', 'AbortError')); };
+    const check = () => {
+      if (timer) return;
+      if (ready()) { timer = setTimeout(() => { cleanup(); resolve(); }, backoff); }
+      else if (Date.now() - t0 > maxWaitMs) { cleanup(); reject(new Error('The connection was lost and did not come back.')); }
+    };
+    const iv = setInterval(check, 1000);
+    document.addEventListener('visibilitychange', check); window.addEventListener('online', check);
+    signal?.addEventListener('abort', onAbort);
+    check();
+  });
+}
+const RESUME_NOTE = '[Note from the Teach Assist app: the connection dropped while you were replying, so the reply above was cut off. Carry on from exactly where you stopped — do not repeat what you already wrote or redo finished steps. Your sandbox files should still be there; if something is missing, recreate it.]';
+/** Finished blocks of a cut-off Claude turn that can be resent: drop half-written blocks and tool calls without results. */
+function continuableBlocks(blocks) {
+  const done = (blocks || []).filter((b) => b && b._done);
+  const results = new Set(done.filter((b) => b.tool_use_id).map((b) => b.tool_use_id));
+  return done.filter((b) => b.type !== 'tool_use' && !((b.type === 'server_tool_use' || b.type === 'mcp_tool_use') && !results.has(b.id)));
+}
 async function readSse(res, signal, onEvent) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -2092,6 +2183,10 @@ async function sendMessage(text, attachments) {
   if (viaProvider === 'local' && provider !== 'local') showBanner('info', `You're offline, so this reply comes from <b>${escapeHtml(localModelName(settings.localModel))}</b> on this device. Claude and OpenAI need an internet connection.`);
   else if (provider !== 'local' && navigator.onLine === false) showBanner('warn', `You're offline — ${providerName(provider)} needs an internet connection. <a href="#" data-act="local">Set up on-device AI</a> while online to keep working offline.`);
   provider = viaProvider;
+  if (provider !== 'local' && spendSummary(provider).limited) {
+    const x = spendSummary(provider), other = provider === 'anthropic' ? 'openai' : 'anthropic';
+    showBanner('warn', `${providerName(provider)} reported its ${x.limitNote === 'out of credit' ? 'credit has run out' : `limit was reached until ${new Date(x.limitUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`} — sending anyway in case it has been raised.${keyFor(other) ? ` <a href="#" data-act="use-${other}">Switch to ${providerName(other)}</a>` : ''}`);
+  }
   if (provider === 'local' && LIVE_RE.test(text || '')) {
     const cloud = cloudProvider();
     showBanner('info', `On-device models have no internet, so they can't check the weather, news or other live information.${cloud ? ` <a href="#" data-act="cloud">Ask ${providerName(cloud)} with web search</a>` : ' Add a Claude or OpenAI key in <a href="#" data-act="settings">Settings</a> to look things up online.'}`);
@@ -2149,10 +2244,16 @@ async function runAssistantTurnInner(conv, chain, opts = {}) {
     if (controller.signal.aborted) assistant.stopReason = 'stopped';
   } catch (e) {
     if (controller.signal.aborted || e.name === 'AbortError') assistant.stopReason = 'stopped';
-    else { assistant.error = e.message || String(e); console.error(e); }
+    else {
+      assistant.error = isNetworkDrop(e) ? `The connection to ${providerName(provider)} kept dropping (“${e.message}”), so this reply stopped. Check your internet connection and press Retry — the finished part is kept above.` : e.message || String(e);
+      console.error(e);
+      if (provider !== 'local') noteProviderError(provider, e);
+    }
   } finally {
     assistant.status = 'done';
+    assistant.reconnecting = false;
     assistant.text = (assistant.segments || []).filter((s) => s.type === 'text').map((s) => s.text).join('\n\n');
+    if (provider !== 'local' && assistant.usage) { try { assistant.cost = recordSpend(provider, assistant.model, assistant.usage, assistant); } catch (err) { console.warn('[spend]', err); } }
     for (const s of assistant.segments || []) if (s.type === 'tool' && s.status === 'running') s.status = assistant.error ? 'error' : 'done';
     for (const f of assistant.files || []) { delete f._blob; delete f._b64; if (f.status === 'pending') { f.status = 'error'; f.error = f.error || 'not retrieved'; } }
     state.busy.delete(conv.id);
@@ -2341,11 +2442,12 @@ function renderModelSelect() {
     sel.title = cat?.live ? 'Models available to your API key' : 'Built-in model list (add a key to fetch the live list)';
   }
   $('#providerSel').value = provider;
-  for (const o of $('#providerSel').options) o.textContent = o.value === 'local' ? `On-device${settings.localModel ? '' : ' (free, offline)'}` : `${providerName(o.value)}${keyFor(o.value) ? '' : ' (no key)'}`;
+  for (const o of $('#providerSel').options) { const badge = o.value !== 'local' && keyFor(o.value) ? spendBadge(o.value) : ''; o.textContent = o.value === 'local' ? `On-device${settings.localModel ? '' : ' (free, offline)'}` : `${providerName(o.value)}${keyFor(o.value) ? (badge ? ` — ${badge}` : '') : ' (no key)'}`; }
   const eff = $('#effortSel'); eff.innerHTML = '';
   for (const [v, label] of EFFORTS) eff.append(el('option', { value: v, text: label, selected: v === settings.effort || undefined }));
   const effPill = $('#effortSel').closest('.pill-sel'); if (effPill) effPill.style.display = provider === 'local' ? 'none' : '';
-  $('#whoLabel').textContent = `${providerName(provider)} · ${provider === 'local' ? (current ? localModelName(current) : '—') : current || '—'}`;
+  const badge = provider !== 'local' ? spendBadge(provider) : '';
+  $('#whoLabel').textContent = `${providerName(provider)} · ${provider === 'local' ? (current ? localModelName(current) : '—') : current || '—'}${badge ? ` · ${badge}` : ''}`;
   syncPillLabels();
 }
 /** The pills show the current choice; the native selects sit invisibly on top of them. */
@@ -2444,6 +2546,7 @@ function renderMessage(m) {
     } else if (s.type === 'tool') body.append(toolCard(s));
   }
   if (streaming && (!segs.length || segs[segs.length - 1].type === 'tool')) body.append(el('div', { class: 'thinking-dots', style: { marginTop: '4px' } }, el('i'), el('i'), el('i'), !segs.length ? el('span', { text: ' Working…', style: { marginLeft: '4px' } }) : null));
+  if (streaming && m.reconnecting) body.append(el('div', { class: 'reconnect-note', role: 'status' }, el('span', { class: 'spin' }), document.visibilityState === 'visible' && navigator.onLine !== false ? 'The connection dropped — reconnecting and carrying on from where it stopped…' : 'Waiting for the connection to come back — this reply will carry on by itself.'));
   const files = m.files || [];
   const imgs = files.filter((f) => f.status === 'ready' && (f.mediaType || '').startsWith('image/'));
   const others = files.filter((f) => !imgs.includes(f));
@@ -2473,7 +2576,7 @@ function renderMessage(m) {
     const cloud = m.provider === 'local' && !streaming ? cloudProvider() : null;
     card.append(el('div', { class: 'msg-foot' }, fb('up'), fb('down'),
       cloud ? el('button', { class: 'ask-cloud', title: `Answer this again with ${providerName(cloud)} (sent to ${providerName(cloud)}, not kept on the device)`, onclick: () => askCloudInstead(m, { web: LIVE_RE.test([...state.messages.slice(0, state.messages.indexOf(m))].reverse().find((x) => x.role === 'user')?.text || '') }) }, el('span', { html: svgIcon('refresh'), style: { display: 'inline-flex', width: '16px' } }), `Ask ${providerName(cloud)}`) : null,
-      el('span', { class: 'usage', title: m.model || '', text: u?.local ? `${m.model || 'On device'}${u.output ? ` · ${fmtTokens(u.output)} out` : ''}${u.tps ? ` · ${u.tps.toFixed(1)} tokens/s` : ''}` : `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}` }),
+      el('span', { class: 'usage', title: m.model || '', text: (m.cost != null ? `≈ $${m.cost < 0.01 ? m.cost.toFixed(3) : m.cost.toFixed(2)} · ` : '') + (u?.local ? `${m.model || 'On device'}${u.output ? ` · ${fmtTokens(u.output)} out` : ''}${u.tps ? ` · ${u.tps.toFixed(1)} tokens/s` : ''}` : `${m.model ? m.model + ' · ' : ''}${u ? `${fmtTokens(u.input || 0)} in · ${fmtTokens(u.output || 0)} out${u.reasoning ? ` (${fmtTokens(u.reasoning)} reasoning)` : ''}${u.cacheRead ? ` · ${fmtTokens(u.cacheRead)} cached` : ''}${u.searches ? ` · ${u.searches} search${u.searches === 1 ? '' : 'es'}` : ''}` : ''}`) }),
       el('span', { class: 'time', text: fmtClock(m.createdAt) })));
   }
   return wrap;
@@ -2787,6 +2890,7 @@ function openSettings(focus) {
               onKeysChanged();
             } })),
           f('Trusted main-program origin (optional)', trustedOrigin, `When Teach Assist runs inside the main program's frame, keys sent by message are accepted only from the parent frame${MAIN.origin ? ` (currently <code>${escapeHtml(MAIN.origin)}</code>)` : ''}. Enter the main program's origin to also reject any other parent. Leave blank to accept your own parent frame.`)),
+        spendSection(),
         el('div', { class: 'm-section', id: 'localSettings' }, el('h3', { text: 'On-device AI (free · private · offline)' }),
           el('div', { class: 'help', style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '6px 0 8px' }, text: 'Smaller AI models that run inside this browser — no API key, nothing leaves the device, and they keep working without internet. A model downloads once, then loads from this device every time.' }),
           el('div', { class: 'key-status ok', style: { display: settings.localModel && isLocalDownloaded(settings.localModel) ? '' : 'none' }, text: settings.localModel ? `${localModelName(settings.localModel)} is on this device${settings.provider === 'local' ? ' and in use' : ''}.` : '' }),
@@ -3036,7 +3140,7 @@ async function init() {
     }
     saveSettings(settings.provider === 'anthropic' ? { anthropicModel: v } : { openaiModel: v }); renderModelSelect(); updateComposerState();
   });
-  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); else if (a.dataset.act === 'cloud') { const last = [...state.messages].reverse().find((x) => x.role === 'assistant' && x.provider === 'local'); if (last) askCloudInstead(last, { web: true }); } });
+  $('#bannerHost').addEventListener('click', (e) => { const a = e.target.closest('[data-act]'); if (!a) return; e.preventDefault(); if (a.dataset.act === 'local') openLocalAISheet(); else if (a.dataset.act === 'settings') openSettings(); else if (a.dataset.act === 'use-openai' || a.dataset.act === 'use-anthropic') { const p = a.dataset.act.slice(4); saveSettings({ provider: p, lastCloud: p }); (state.models[p]?.live ? Promise.resolve() : fetchModels(p)).then(() => { renderModelSelect(); updateComposerState(); }); $('#bannerHost').innerHTML = ''; toastMsg(`Switched to ${providerName(p)}.`); } else if (a.dataset.act === 'cloud') { const last = [...state.messages].reverse().find((x) => x.role === 'assistant' && x.provider === 'local'); if (last) askCloudInstead(last, { web: true }); } });
   $('#effortSel').addEventListener('change', (e) => { saveSettings({ effort: e.target.value }); syncPillLabels(); });
   window.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); $('#newChatBtn').click(); } });
 

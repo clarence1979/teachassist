@@ -98,6 +98,14 @@ A light lavender "classroom" design (glass panels over an illustrated background
 - **Saved memory** — the assistant keeps notes about you on this device and uses them in every new chat (Claude, OpenAI and on-device). Say “remember that…” and it saves them with its memory tools; it can also search, correct and delete them. Pinned notes plus the newest go with each new chat (up to ~9,000 characters); older ones are searched when relevant. Clearing chats or sessions never removes notes — only deleting them, or *Forget everything*, does. Manage them in Settings → Memory (or Tools → Memory): add, pin, edit, delete, export, and **import** an export from another assistant, with each section shown so you can untick anything personal before importing.
 - **GitHub tools for Claude** — add a GitHub token in Settings → GitHub (fine-grained: pick the repositories and give Contents, Issues and Pull requests read and write; a classic token with `repo` also works). The token stays in the browser and goes only to api.github.com. With the **GitHub** button on under the message box, Claude can list repositories, browse and read files, search code, read commits, issues and pull requests, and — with your approval each time (or “Allow for this chat”) — commit several files in one commit (including documents it generated or files you attached), create branches and repositories, open pull requests and issues, and comment. Committing to a GitHub Pages repository republishes the site.
 
+## Long replies and dropped connections
+
+Phones drop long-running connections when the screen locks, the app goes to the background or the network changes (Safari says “Load failed”). Teach Assist now recovers by itself: **OpenAI** replies run in background mode on OpenAI's side and the app re-attaches to the stream from the last event it saw; **Claude** replies keep every finished step (text, thinking, code runs with their results), resend them, and ask Claude to carry on in the same sandbox, so files it made are still there. The reply shows “reconnecting…” while this happens and waits for the page to be visible and online. Stop cancels a background OpenAI job too.
+
+## Spending (estimate) and limits
+
+Neither Anthropic nor OpenAI lets an API key read the account balance, so Settings → *Spending* estimates it: each reply's tokens × list prices (Nov 2026: Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Fable 5.1 $10/$50, GPT-6 Sol $2/$10, Astra $10/$50, Luna $0.10/$0.50 per million input/output tokens; web searches ≈ $0.01 each). Enter a monthly limit or your current credit and the provider menu shows “≈ $X left”; each reply's footer shows its cost. When a provider says “You have reached your specified API usage limits…”, the app notes the date access returns, marks the provider in the menu and offers to switch.
+
 ## More room for the conversation (desktop)
 
 On a computer the section tabs sit in the header (icons only when the window is narrow), the sidebar runs the full height beside the chat, messages are denser and wider, and the **Expand** button (top right of the chat) hides the header and sidebar for a full-window conversation — remembered until you press it again.
@@ -131,7 +139,7 @@ The same file adapts itself when the screen is narrow (≤ 640px): the layout fo
 ## Development
 
 ```
-node build.mjs            # inlines art.js, app.js, local-ai.js, memory.js, github.js, timetable-core.js, tools.js, views.js, main.js into teach-assist.html → dist/teach-assist.html
+node build.mjs            # inlines art.js, app.js, local-ai.js, memory.js, github.js, spend.js, timetable-core.js, tools.js, views.js, main.js into teach-assist.html → dist/teach-assist.html
 node test/e2e.mjs         # headless Chromium, mocked Anthropic/OpenAI/relay endpoints: chat, documents, uploads, self-healing (68 checks)
 node test/keys-history.mjs# main-program keys, history file v2, planner views, model tool loops on both providers, sessions & clearing (86 checks)
 node test/mobile.mjs      # iPhone emulation: bottom tab bar, 3-day timetable with swipe, bottom-sheet forms, no horizontal overflow (30 checks)
@@ -139,10 +147,11 @@ node test/ui.mjs          # light/dark, text size, accessibility modes, pills, h
 node test/local.mjs       # on-device AI with a stubbed engine: device suggestions for 11 device profiles, sheet, download → reload from storage, offline fallback, PDF text, Word download (45 checks)
 node test/github-memory.mjs # GitHub tools against a mocked GitHub API (approval, multi-file commits, branches, PRs, empty repos), saved memory, About me JSON (41 checks)
 node test/storage.mjs     # local database survives iOS closing it (file picker / background), another tab upgrading it, and failed sends keep your message (9 checks)
+node test/resilience.mjs  # dropped connections: Claude carries on from finished steps in the same sandbox, OpenAI re-attaches to its background stream, Stop cancels; spending estimate, credit left, usage-limit notice (22 checks)
 node test/local-real.mjs  # no stubs: downloads SmolLM2-360M via wllama, chats on the CPU, then reloads OFFLINE and answers from the cached model (needs internet; ~300 MB)
 ```
 
-Source layout: `art.js` (logo, mascot, illustrations, icons), `app.js` (chat, providers, storage, history), `local-ai.js` (on-device models: device check, catalogue, WebLLM/wllama engines, caching, the On-device AI sheet), `memory.js` (saved memory, its tools and manager), `github.js` (GitHub tools for Claude), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
+Source layout: `art.js` (logo, mascot, illustrations, icons), `app.js` (chat, providers, storage, history), `local-ai.js` (on-device models: device check, catalogue, WebLLM/wllama engines, caching, the On-device AI sheet), `memory.js` (saved memory, its tools and manager), `github.js` (GitHub tools for Claude), `spend.js` (spending estimate and limits), `timetable-core.js` (dates, RRULE, ICS), `tools.js` (the planner tools the model calls), `views.js` (Studio/Tasks/Timetable/Library/sessions UI), `main.js` (boot and session lifecycle).
 
 ## Running from the main program
 
